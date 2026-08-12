@@ -96,6 +96,24 @@ The client runs:
 
 Nothing runs for players who are not using the PvP system.
 
+### vRP integration (Dunko)
+
+Calls go straight through vRP's own Proxy and Tunnel — there is no abstraction
+layer. Two details of this framework matter and are easy to get wrong:
+
+* **Proxy passes arguments in a table.** `Proxy.lua` calls
+  `f(table.unpack(args))`, so every call is `vRP.getUserId({ source })`,
+  `vRP.hasPermission({ user_id, perm })`, `vRP.giveMoney({ user_id, amount })`
+  and so on — never plain arguments.
+* **`Tunnel.getInterface(name, identifier)` needs a second argument**: the name
+  of the calling resource. Without it vRP registers `vRP:nil:tunnel_res` and
+  throws `attempt to concatenate a nil value (local 'identifier')`.
+
+`vRP.getUserIdentity` is callback based here and cannot return through the
+synchronous Proxy, so display names come from the player's in-game name by
+default. Set `Config.vRP.identity.useIdentityName = true` to replace it with the
+RP identity (firstname lastname) asynchronously after login.
+
 ### Database
 
 Reads are cached (`leaderboardCacheTime`, `profileCacheTime`), writes are

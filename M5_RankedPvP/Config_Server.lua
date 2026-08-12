@@ -28,11 +28,15 @@ Config.vRP = {
         description = 'M5 Ranked PvP — Competitive Hub'
     },
 
-    -- Identity fields used for logs. Adjust to your vRP identity table columns.
+    -- Display name source.
+    -- useIdentityName = false : use the player's in-game name (instant, no query)
+    -- useIdentityName = true  : replace it with the vRP identity once the
+    --                           database answers (async, never blocks login)
     identity = {
-        firstnameField = 'firstname',
-        lastnameField  = 'name',
-        phoneField     = 'phone'
+        useIdentityName = false,
+        firstnameField  = 'firstname',
+        lastnameField   = 'name',
+        phoneField      = 'phone'
     }
 }
 

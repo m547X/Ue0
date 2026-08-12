@@ -135,21 +135,39 @@ end
 local Proxy  = module('vrp', 'lib/Proxy')
 local Tunnel = module('vrp', 'lib/Tunnel')
 
+-- Tunnel.getInterface(name, identifier): the second argument is THIS resource's
+-- name. Omitting it makes vRP register "vRP:nil:tunnel_res" and throw.
 vRP       = Proxy.getInterface('vRP')
-vRPclient = Tunnel.getInterface('vRP')
+vRPclient = Tunnel.getInterface('vRP', RES)
 
---- Display name taken from the vRP identity table.
+--- Immediate display name. vRP.getUserIdentity is callback based in this
+--- framework and cannot return through the synchronous Proxy, so the name is
+--- taken from the player itself and optionally upgraded afterwards.
 local function identityName(user_id, source)
-    local identity = vRP.getUserIdentity(user_id)
-    if identity then
+    if source then
+        local name = GetPlayerName(source)
+        if name and name ~= '' then return safeName(name, 60) end
+    end
+    return 'User ' .. tostring(user_id)
+end
+
+--- Optional: replace the display name with the vRP identity (firstname
+--- lastname) once the database answers. Never blocks the login path.
+local function refreshIdentityName(pd)
+    if not pd or not Config.vRP.identity.useIdentityName then return end
+
+    vRP.getUserIdentity({ pd.userId, function(identity)
+        if type(identity) ~= 'table' then return end
         local first = identity[Config.vRP.identity.firstnameField]
         local last  = identity[Config.vRP.identity.lastnameField]
-        if first or last then
-            return safeName(((first or '') .. ' ' .. (last or '')), 60)
+        if not first and not last then return end
+
+        local name = safeName(((first or '') .. ' ' .. (last or '')), 60)
+        if name ~= '' and name ~= pd.name then
+            pd.name = name
+            pd.dirtyPlayer = true
         end
-    end
-    if source then return safeName(GetPlayerName(source) or 'Unknown', 60) end
-    return 'User ' .. tostring(user_id)
+    end })
 end
 
 --- Adds the "PvP Ranked" entry to the vRP main menu. It opens exactly the same
@@ -158,23 +176,23 @@ local function registerVrpMenu()
     local cfg = Config.vRP.registerMenu
     if not cfg or not cfg.enabled then return end
 
-    vRP.registerMenuBuilder(cfg.menu or 'main', function(add, data)
-        local user_id = vRP.getUserId(data.player)
+    vRP.registerMenuBuilder({ cfg.menu or 'main', function(add, data)
+        local user_id = vRP.getUserId({ data.player })
         if not user_id then return end
-        if not Config.PublicMenu and not vRP.hasPermission(user_id, Config.Permissions.openMenu) then
+        if not Config.PublicMenu and not vRP.hasPermission({ user_id, Config.Permissions.openMenu }) then
             return
         end
 
         local choices = {}
         choices[cfg.name] = {
             function(player)
-                vRP.closeMenu(player)
+                vRP.closeMenu({ player })
                 TriggerClientEvent('m5rp:cl:openMenu', player)
             end,
             cfg.description or ''
         }
         add(choices)
-    end)
+    end })
 
     log('vRP menu entry registered ("%s")', cfg.name)
 end
@@ -4381,7 +4399,7 @@ function CustomGames.create(userId, data)
         return false, 'The custom game server is full.'
     end
     if Config.CustomGames.requirePermission
-       and not vRP.hasPermission(userId, Config.Permissions.createCustom) then
+       and not vRP.hasPermission({ userId, Config.Permissions.createCustom }) then
         return false, 'You do not have permission to create custom games.'
     end
     if CustomGames.of(userId) then return false, 'You are already in a room.' end
@@ -4420,7 +4438,7 @@ function CustomGames.create(userId, data)
 
     local ranked = false
     if data.ranked and Config.CustomGames.rankedAllowed then
-        ranked = vRP.hasPermission(userId, Config.CustomGames.rankedPermission)
+        ranked = vRP.hasPermission({ userId, Config.CustomGames.rankedPermission })
     end
 
     local cfg = Config.Modes[mode]
@@ -4829,11 +4847,11 @@ function Rewards.grant(pd, reward, seasonId, rewardKey)
 
     local applied = false
     if reward.type == 'money' then
-        applied = vRP.giveMoney(pd.userId, tonumber(reward.value) or 0)
+        applied = vRP.giveMoney({ pd.userId, tonumber(reward.value) or 0 })
     elseif reward.type == 'item' or reward.type == 'weapon' then
-        applied = vRP.giveInventoryItem(pd.userId, reward.value, reward.amount or 1, true)
+        applied = vRP.giveInventoryItem({ pd.userId, reward.value, reward.amount or 1, true })
     elseif reward.type == 'group' then
-        applied = vRP.addUserGroup(pd.userId, reward.value)
+        applied = vRP.addUserGroup({ pd.userId, reward.value })
     elseif reward.type == 'title' then
         if not inList(pd.titles, reward.value) then
             pd.titles[#pd.titles + 1] = reward.value
@@ -4897,7 +4915,7 @@ function Match.grantMatchRewards(m, pd, mp, won, draw, isMVP)
     if m.ranked then
         local money = won and R.winMoney or R.lossMoney
         if isMVP then money = money + R.mvpMoney end
-        if money > 0 then vRP.giveMoney(pd.userId, money) end
+        if money > 0 then vRP.giveMoney({ pd.userId, money }) end
     end
 
     local xp = (won and R.xpWin or R.xpLoss)
@@ -4996,7 +5014,7 @@ function Missions.progress(pd, deltas)
                     { value, done and 1 or 0, r.id })
                 if done then
                     Rewards.addXP(pd, def.xp or 0)
-                    if def.money and def.money > 0 then vRP.giveMoney(pd.userId, def.money) end
+                    if def.money and def.money > 0 then vRP.giveMoney({ pd.userId, def.money }) end
                     DB.update('UPDATE m5_player_missions SET claimed = 1 WHERE id = ?', { r.id })
                     notifyUser(pd.userId, 'success',
                         ('Mission complete: %s'):format(def.label), 'MISSION')
@@ -5599,16 +5617,16 @@ end
 local Admin = {}
 
 function Admin.level(userId)
-    if vRP.hasPermission(userId, Config.Permissions.admin) then return 'admin' end
-    if vRP.hasPermission(userId, Config.Permissions.moderator) then return 'moderator' end
+    if vRP.hasPermission({ userId, Config.Permissions.admin }) then return 'admin' end
+    if vRP.hasPermission({ userId, Config.Permissions.moderator }) then return 'moderator' end
     return nil
 end
 
 function Admin.canSeeMMR(userId)
     if Config.MMR.visibleTo == 'none' then return false end
     if Config.MMR.visibleTo == 'moderator' then return Admin.level(userId) ~= nil end
-    return vRP.hasPermission(userId, Config.Permissions.admin)
-        or vRP.hasPermission(userId, Config.Permissions.viewMMR)
+    return vRP.hasPermission({ userId, Config.Permissions.admin })
+        or vRP.hasPermission({ userId, Config.Permissions.viewMMR })
 end
 
 function Admin.dashboard(userId)
@@ -5699,7 +5717,7 @@ function Admin.handle(adminPd, action, data)
     data = type(data) == 'table' and data or {}
 
     local function requireAdmin(perm)
-        return vRP.hasPermission(adminPd.userId, perm or Config.Permissions.admin)
+        return vRP.hasPermission({ adminPd.userId, perm or Config.Permissions.admin })
     end
 
     -- ---------------- read only -------------------------------------------
@@ -5776,7 +5794,7 @@ function Admin.handle(adminPd, action, data)
         return true, { ok = true }
 
     elseif action == 'ban' then
-        if not vRP.hasPermission(adminPd.userId, Config.Permissions.manageBans) then
+        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.manageBans }) then
             return false, 'No permission.'
         end
         local target = resolveTarget(data.target)
@@ -5801,7 +5819,7 @@ function Admin.handle(adminPd, action, data)
         return true, { ok = true }
 
     elseif action == 'unban' then
-        if not vRP.hasPermission(adminPd.userId, Config.Permissions.manageBans) then
+        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.manageBans }) then
             return false, 'No permission.'
         end
         local target = resolveTarget(data.target)
@@ -5864,7 +5882,7 @@ function Admin.handle(adminPd, action, data)
         return true, { frozen = Config.Global.rankedFrozen }
 
     elseif action == 'spectate' then
-        if not vRP.hasPermission(adminPd.userId, Config.Permissions.spectate) then
+        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.spectate }) then
             return false, 'No permission.'
         end
         local m = Matches[data.matchId]
@@ -5894,7 +5912,7 @@ function Admin.handle(adminPd, action, data)
         return true, { ok = true }
 
     elseif action == 'newSeason' then
-        if not vRP.hasPermission(adminPd.userId, Config.Permissions.manageSeasons) then
+        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.manageSeasons }) then
             return false, 'No permission.'
         end
         Seasons.rollover(adminPd.name)
@@ -6128,11 +6146,11 @@ function Server_BootPayload(pd)
             number = Season.current.number, endsAt = Season.endsAt
         } or nil,
         permissions = {
-            admin        = vRP.hasPermission(pd.userId, Config.Permissions.admin),
+            admin        = vRP.hasPermission({ pd.userId, Config.Permissions.admin }),
             moderator    = Admin.level(pd.userId) ~= nil,
-            spectate     = vRP.hasPermission(pd.userId, Config.Permissions.spectate),
+            spectate     = vRP.hasPermission({ pd.userId, Config.Permissions.spectate }),
             createCustom = not Config.CustomGames.requirePermission
-                           or vRP.hasPermission(pd.userId, Config.Permissions.createCustom),
+                           or vRP.hasPermission({ pd.userId, Config.Permissions.createCustom }),
             viewMMR      = showMMR
         },
         status = {
@@ -6507,7 +6525,7 @@ local function registerCommand(entry, handler)
         end
         local pd = cmdPlayer(src)
         if not pd then return end
-        if entry.permission and not vRP.hasPermission(pd.userId, entry.permission) then
+        if entry.permission and not vRP.hasPermission({ pd.userId, entry.permission }) then
             notify(src, 'error', 'You do not have permission to use this command.', 'M5 RANKED')
             return
         end
@@ -6626,6 +6644,7 @@ AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
         if not pd then return end
         Bans.load(user_id)
         Missions.ensure(pd)
+        refreshIdentityName(pd)
 
         -- offer a reconnect if the player dropped out of a live match
         local info = Reconnects[user_id]
@@ -6697,12 +6716,18 @@ Citizen.CreateThread(function()
     -- pick up players who were already connected (resource restart)
     for _, playerSrc in ipairs(GetPlayers()) do
         local src = tonumber(playerSrc)
-        local userId = vRP.getUserId(src)
-        if userId then
-            local pd = Player.load(userId, src)
-            if pd then
-                Bans.load(userId)
-                TriggerClientEvent('m5rp:cl:boot', src, Server_BootPayload(pd))
+        -- A player who is still connecting has no identifiers yet. Handing that
+        -- to vRP fails inside the framework, so skip them here and let
+        -- vRP:playerSpawn pick them up instead.
+        if src and GetPlayerName(src) and GetNumPlayerIdentifiers(src) > 0 then
+            local ok, userId = pcall(function() return vRP.getUserId({ src }) end)
+            if ok and userId then
+                local pd = Player.load(userId, src)
+                if pd then
+                    Bans.load(userId)
+                    refreshIdentityName(pd)
+                    TriggerClientEvent('m5rp:cl:boot', src, Server_BootPayload(pd))
+                end
             end
         end
     end
