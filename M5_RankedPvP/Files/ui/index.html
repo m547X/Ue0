@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>M5 Ranked PvP</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ==================================================================== -->
+<!-- SVG sprite: rank crests, icons. Everything is inline, no external     -->
+<!-- assets, so the NUI never touches the network.                         -->
+<!-- ==================================================================== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="crest" viewBox="0 0 100 100">
+      <path d="M50 4 L92 26 v30 c0 22-19 33-42 40C27 89 8 78 8 56V26z"
+            fill="none" stroke="currentColor" stroke-width="4"/>
+      <path d="M50 18 L78 33 v22c0 14-13 21-28 26C35 76 22 69 22 55V33z"
+            fill="currentColor" opacity=".14"/>
+    </symbol>
+    <symbol id="chev" viewBox="0 0 100 100">
+      <path d="M20 58 L50 30 L80 58" fill="none" stroke="currentColor"
+            stroke-width="9" stroke-linecap="square"/>
+    </symbol>
+    <symbol id="star" viewBox="0 0 100 100">
+      <path d="M50 8 L61 38 H93 L67 57 L77 88 L50 69 L23 88 L33 57 L7 38 H39z"
+            fill="currentColor"/>
+    </symbol>
+    <symbol id="ico-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z" fill="currentColor"/></symbol>
+    <symbol id="ico-grid" viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" fill="currentColor"/></symbol>
+    <symbol id="ico-target" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="ico-board" viewBox="0 0 24 24"><path d="M4 20V10h4v10zM10 20V4h4v16zM16 20v-7h4v7z" fill="currentColor"/></symbol>
+    <symbol id="ico-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></symbol>
+    <symbol id="ico-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v6l4 2" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
+    <symbol id="ico-gift" viewBox="0 0 24 24"><path d="M3 11h18v9H3zM2 7h20v4H2zM12 7v13" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
+    <symbol id="ico-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="ico-shield" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="ico-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.4"/></symbol>
+    <symbol id="ico-head" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 14v7M8 18h8" stroke="currentColor" stroke-width="2"/></symbol>
+  </defs>
+</svg>
+
+<!-- ==================================================================== -->
+<!-- IN-GAME OVERLAY (always mounted, no NUI focus)                        -->
+<!-- ==================================================================== -->
+<div id="overlay">
+
+  <!-- Match HUD -->
+  <div id="hud" class="hud hidden">
+    <div class="hud-top">
+      <div class="hud-team hud-team-a">
+        <span class="hud-team-name">TEAM A</span>
+        <span class="hud-alive" id="hud-alive-a">0</span>
+      </div>
+      <div class="hud-score">
+        <span id="hud-score-a" class="hud-score-a">0</span>
+        <span class="hud-score-sep"></span>
+        <span id="hud-score-b" class="hud-score-b">0</span>
+      </div>
+      <div class="hud-team hud-team-b">
+        <span class="hud-alive" id="hud-alive-b">0</span>
+        <span class="hud-team-name">TEAM B</span>
+      </div>
+    </div>
+    <div class="hud-sub">
+      <span id="hud-round">ROUND 1</span>
+      <span class="hud-dot"></span>
+      <span id="hud-timer" class="hud-timer">0:00</span>
+      <span class="hud-dot"></span>
+      <span id="hud-ping">0 ms</span>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="hud-vitals">
+        <div class="vital">
+          <div class="vital-bar"><i id="hud-hp-bar" style="width:100%"></i></div>
+          <span id="hud-hp">100</span>
+        </div>
+        <div class="vital vital-armor">
+          <div class="vital-bar"><i id="hud-ar-bar" style="width:0%"></i></div>
+          <span id="hud-ar">0</span>
+        </div>
+      </div>
+      <div class="hud-weapon">
+        <span id="hud-weapon-name">—</span>
+        <span class="hud-ammo"><b id="hud-clip">0</b><i>/</i><span id="hud-ammo">0</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kill feed -->
+  <div id="killfeed" class="killfeed"></div>
+
+  <!-- Round countdown / phase banner -->
+  <div id="phase" class="phase hidden">
+    <div class="phase-count" id="phase-count">3</div>
+    <div class="phase-label" id="phase-label"></div>
+  </div>
+
+  <!-- Combat event banner (ace, clutch, multikill…) -->
+  <div id="combat-banner" class="combat-banner hidden">
+    <span id="combat-banner-text"></span>
+  </div>
+
+  <!-- Boundary warning -->
+  <div id="boundary" class="boundary hidden">
+    <div class="boundary-frame"></div>
+    <div class="boundary-body">
+      <div class="boundary-tag">WARNING</div>
+      <div class="boundary-title">RETURN TO COMBAT ZONE</div>
+      <div class="boundary-count" id="boundary-count">5</div>
+      <div class="boundary-dist" id="boundary-dist"></div>
+    </div>
+  </div>
+
+  <!-- Death / spectator strip -->
+  <div id="spectate" class="spectate hidden">
+    <div class="spectate-inner">
+      <span class="spectate-tag">SPECTATING</span>
+      <span class="spectate-name" id="spectate-name">—</span>
+      <span class="spectate-hint">← → SWITCH &nbsp;·&nbsp; BACKSPACE EXIT</span>
+    </div>
+  </div>
+
+  <!-- Training overlay -->
+  <div id="training" class="training hidden">
+    <div class="training-title" id="training-title">TRAINING</div>
+    <div class="training-stats">
+      <div><b id="training-hits">0</b><span>HITS</span></div>
+      <div><b id="training-hs">0</b><span>HEADSHOTS</span></div>
+      <div><b id="training-acc">0%</b><span>HS RATE</span></div>
+      <div><b id="training-time">0s</b><span>TIME</span></div>
+    </div>
+    <button class="btn btn-ghost sm" data-action="stop-training">EXIT TRAINING</button>
+  </div>
+
+  <!-- Hitmarker -->
+  <div id="hitmarker" class="hitmarker hidden"><i></i><i></i><i></i><i></i></div>
+
+  <!-- Toasts -->
+  <div id="toasts" class="toasts"></div>
+</div>
+
+<!-- ==================================================================== -->
+<!-- MODALS (need focus)                                                   -->
+<!-- ==================================================================== -->
+<div id="modals">
+
+  <!-- Match found -->
+  <div id="modal-found" class="modal hidden">
+    <div class="found">
+      <div class="found-glow"></div>
+      <div class="found-tag">MATCH FOUND</div>
+      <div class="found-mode" id="found-mode">RANKED</div>
+      <div class="found-ring">
+        <svg viewBox="0 0 120 120">
+          <circle class="ring-bg" cx="60" cy="60" r="52"/>
+          <circle class="ring-fg" id="found-ring" cx="60" cy="60" r="52"/>
+        </svg>
+        <span id="found-timer">15</span>
+      </div>
+      <div class="found-ready"><b id="found-accepted">0</b> / <span id="found-total">10</span> READY</div>
+      <div class="found-actions">
+        <button class="btn btn-accept" id="btn-accept">ACCEPT</button>
+        <button class="btn btn-ghost" id="btn-decline">DECLINE</button>
+      </div>
+      <div class="found-waiting hidden" id="found-waiting">WAITING FOR OTHER PLAYERS…</div>
+    </div>
+  </div>
+
+  <!-- Map vote -->
+  <div id="modal-mapvote" class="modal hidden">
+    <div class="mapvote">
+      <div class="mv-head">
+        <span class="mv-tag">MAP VOTE</span>
+        <span class="mv-timer" id="mv-timer">20</span>
+      </div>
+      <div class="mv-grid" id="mv-grid"></div>
+      <div class="mv-foot" id="mv-foot">SELECT A MAP</div>
+    </div>
+  </div>
+
+  <!-- Match result -->
+  <div id="modal-result" class="modal hidden">
+    <div class="result" id="result-root">
+      <div class="result-bg"></div>
+      <div class="result-tag" id="result-tag">VICTORY</div>
+      <div class="result-score"><span id="result-a">13</span><i>-</i><span id="result-b">8</span></div>
+
+      <div class="result-rp" id="result-rp">
+        <div class="rp-rank" id="rp-rank">DIAMOND III</div>
+        <div class="rp-numbers">
+          <span id="rp-before">1742</span>
+          <svg class="rp-arrow" viewBox="0 0 24 24"><path d="M5 12h12M13 7l5 5-5 5" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+          <span id="rp-after">1791</span>
+        </div>
+        <div class="rp-delta" id="rp-delta">+49 RP</div>
+        <div class="rp-bar"><i id="rp-bar-fill"></i></div>
+        <div class="rp-breakdown" id="rp-breakdown"></div>
+      </div>
+
+      <div class="result-stats" id="result-stats"></div>
+
+      <div class="result-scoreboard" id="result-scoreboard"></div>
+
+      <div class="result-actions">
+        <button class="btn btn-ghost" data-action="result-close">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MVP -->
+  <div id="modal-mvp" class="modal hidden">
+    <div class="mvp">
+      <div class="mvp-rays"></div>
+      <div class="mvp-tag">MVP</div>
+      <div class="mvp-name" id="mvp-name">PLAYER</div>
+      <div class="mvp-grid">
+        <div><b id="mvp-kills">0</b><span>KILLS</span></div>
+        <div><b id="mvp-deaths">0</b><span>DEATHS</span></div>
+        <div><b id="mvp-hs">0</b><span>HEADSHOTS</span></div>
+        <div><b id="mvp-dmg">0</b><span>DAMAGE</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rank up / down -->
+  <div id="modal-rank" class="modal hidden">
+    <div class="rankup" id="rankup-root">
+      <div class="rankup-burst"></div>
+      <div class="rankup-tag" id="rankup-tag">RANK UP</div>
+      <div class="rankup-crest" id="rankup-crest"></div>
+      <div class="rankup-name" id="rankup-name">DIAMOND II</div>
+      <div class="rankup-sub" id="rankup-sub">NEW RANK</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================================================================== -->
+<!-- MAIN HUB                                                              -->
+<!-- ==================================================================== -->
+<div id="app" class="hidden">
+  <div class="bg">
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-a"></div>
+    <div class="bg-glow bg-glow-b"></div>
+    <div class="bg-scan"></div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">M5</div>
+      <div class="brand-text">
+        <b>M5 RANKED</b>
+        <span>COMPETITIVE PVP</span>
+      </div>
+    </div>
+
+    <div class="topbar-center" id="season-strip"></div>
+
+    <div class="idcard">
+      <div class="idcard-av" id="id-avatar"><span id="id-initial">?</span></div>
+      <div class="idcard-info">
+        <div class="idcard-top">
+          <b id="id-name">—</b>
+          <span class="idcard-title" id="id-title"></span>
+        </div>
+        <div class="idcard-bottom">
+          <span class="chip chip-rank" id="id-rank">UNRANKED</span>
+          <span class="chip" id="id-rp">0 RP</span>
+          <span class="chip chip-lvl">LV <b id="id-level">1</b></span>
+        </div>
+        <div class="idcard-xp"><i id="id-xp-bar"></i></div>
+      </div>
+      <button class="iconbtn" data-action="close" title="Close">
+        <svg><use href="#ico-x"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="rail">
+    <button class="rail-btn active" data-page="dashboard"><svg><use href="#ico-grid"/></svg><span>HOME</span></button>
+    <button class="rail-btn" data-page="ranked"><svg><use href="#ico-play"/></svg><span>RANKED</span></button>
+    <button class="rail-btn" data-page="custom"><svg><use href="#ico-shield"/></svg><span>CUSTOM</span></button>
+    <button class="rail-btn" data-page="training"><svg><use href="#ico-target"/></svg><span>TRAINING</span></button>
+    <button class="rail-btn" data-page="leaderboard"><svg><use href="#ico-board"/></svg><span>RANKS</span></button>
+    <button class="rail-btn" data-page="profile"><svg><use href="#ico-user"/></svg><span>PROFILE</span></button>
+    <button class="rail-btn" data-page="history"><svg><use href="#ico-clock"/></svg><span>HISTORY</span></button>
+    <button class="rail-btn" data-page="rewards"><svg><use href="#ico-gift"/></svg><span>REWARDS</span></button>
+    <button class="rail-btn" data-page="settings"><svg><use href="#ico-cog"/></svg><span>SETTINGS</span></button>
+    <button class="rail-btn rail-admin hidden" data-page="admin"><svg><use href="#ico-shield"/></svg><span>ADMIN</span></button>
+  </nav>
+
+  <main class="stage">
+
+    <!-- ============ DASHBOARD ============ -->
+    <section class="page active" id="page-dashboard">
+      <div class="dash">
+        <div class="dash-left">
+          <div class="rankcard panel" id="rankcard">
+            <div class="rankcard-head">
+              <span class="panel-tag">COMPETITIVE RANK</span>
+              <span class="rankcard-pos" id="rankcard-pos"></span>
+            </div>
+            <div class="rankcard-body">
+              <div class="rankcard-crest" id="rankcard-crest"></div>
+              <div class="rankcard-info">
+                <div class="rankcard-name" id="rankcard-name">UNRANKED</div>
+                <div class="rankcard-rp"><b id="rankcard-rp">0</b><span>RP</span></div>
+                <div class="progress"><i id="rankcard-bar"></i></div>
+                <div class="rankcard-next" id="rankcard-next">PLAY PLACEMENT MATCHES</div>
+              </div>
+            </div>
+            <div class="rankpath" id="rankpath"></div>
+          </div>
+
+          <div class="quick" id="quick-modes"></div>
+        </div>
+
+        <div class="dash-right">
+          <div class="panel stat-panel">
+            <span class="panel-tag">SEASON PERFORMANCE</span>
+            <div class="statgrid" id="dash-stats"></div>
+          </div>
+          <div class="panel">
+            <span class="panel-tag">RECENT MATCHES</span>
+            <div class="minihistory" id="dash-history"></div>
+          </div>
+          <div class="panel">
+            <span class="panel-tag">DAILY MISSIONS</span>
+            <div class="missions" id="dash-missions"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RANKED ============ -->
+    <section class="page" id="page-ranked">
+      <div class="ranked">
+        <div class="ranked-modes" id="ranked-modes"></div>
+
+        <aside class="ranked-side">
+          <div class="panel party-panel">
+            <span class="panel-tag">PARTY</span>
+            <div class="party-list" id="party-list"></div>
+            <div class="party-actions">
+              <input class="input" id="party-target" placeholder="Player name or ID" />
+              <button class="btn btn-sm" data-action="party-invite">INVITE</button>
+            </div>
+            <div class="party-actions">
+              <button class="btn btn-sm btn-ghost" data-action="party-ready">READY</button>
+              <button class="btn btn-sm btn-ghost" data-action="party-leave">LEAVE</button>
+            </div>
+          </div>
+
+          <div class="panel" id="queue-panel">
+            <span class="panel-tag">QUEUE STATUS</span>
+            <div class="queue-idle" id="queue-idle">SELECT A MODE TO BEGIN</div>
+
+            <div class="searching hidden" id="searching">
+              <div class="searching-title">SEARCHING FOR MATCH</div>
+              <div class="searching-orb"><i></i><i></i><i></i></div>
+              <div class="searching-rows">
+                <div><span>ESTIMATED</span><b id="search-eta">00:00</b></div>
+                <div><span>ELAPSED</span><b id="search-elapsed">00:00</b></div>
+                <div><span>SEARCHING</span><b id="search-count">0</b></div>
+              </div>
+              <div class="searching-rank" id="search-rank"></div>
+              <button class="btn btn-danger" data-action="queue-cancel">CANCEL</button>
+            </div>
+          </div>
+
+          <div class="panel hidden" id="status-panel">
+            <span class="panel-tag">STATUS</span>
+            <div id="status-body"></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ CUSTOM ============ -->
+    <section class="page" id="page-custom">
+      <div class="section-head">
+        <h2>CUSTOM GAMES</h2>
+        <div class="section-actions">
+          <button class="btn btn-sm btn-ghost" data-action="custom-refresh">REFRESH</button>
+          <button class="btn btn-sm" data-action="custom-create-open">CREATE GAME</button>
+        </div>
+      </div>
+
+      <div class="rooms panel" id="rooms-panel">
+        <div class="rooms-head">
+          <span>ROOM</span><span>HOST</span><span>MODE</span><span>MAP</span><span>PLAYERS</span><span>STATUS</span><span></span>
+        </div>
+        <div class="rooms-body" id="rooms-body"></div>
+      </div>
+
+      <div class="roomview hidden" id="roomview"></div>
+
+      <div class="createbox panel hidden" id="createbox"></div>
+    </section>
+
+    <!-- ============ TRAINING ============ -->
+    <section class="page" id="page-training">
+      <div class="section-head"><h2>TRAINING RANGE</h2></div>
+      <div class="traingrid" id="traingrid"></div>
+    </section>
+
+    <!-- ============ LEADERBOARD ============ -->
+    <section class="page" id="page-leaderboard">
+      <div class="section-head">
+        <h2>LEADERBOARD</h2>
+        <div class="tabs" id="lb-tabs">
+          <button class="tab active" data-board="global">GLOBAL</button>
+          <button class="tab" data-board="weekly">WEEKLY</button>
+          <button class="tab" data-board="daily">DAILY</button>
+          <button class="tab" data-board="season">SEASON</button>
+          <button class="tab" data-board="friends">RECENT</button>
+        </div>
+      </div>
+
+      <div class="podium" id="podium"></div>
+
+      <div class="board panel">
+        <div class="board-head">
+          <span>#</span><span>PLAYER</span><span>RANK</span><span>RP</span><span>W / L</span><span>K/D</span><span>HS%</span>
+        </div>
+        <div class="board-body" id="board-body"></div>
+        <div class="board-foot">
+          <button class="btn btn-sm btn-ghost" data-action="lb-prev">PREV</button>
+          <span id="lb-page">PAGE 1</span>
+          <button class="btn btn-sm btn-ghost" data-action="lb-next">NEXT</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PROFILE ============ -->
+    <section class="page" id="page-profile">
+      <div class="profile" id="profile-root"></div>
+    </section>
+
+    <!-- ============ HISTORY ============ -->
+    <section class="page" id="page-history">
+      <div class="section-head"><h2>MATCH HISTORY</h2></div>
+      <div class="history" id="history-list"></div>
+      <div class="board-foot">
+        <button class="btn btn-sm btn-ghost" data-action="hist-prev">PREV</button>
+        <span id="hist-page">PAGE 1</span>
+        <button class="btn btn-sm btn-ghost" data-action="hist-next">NEXT</button>
+      </div>
+      <div class="matchdetail panel hidden" id="matchdetail"></div>
+    </section>
+
+    <!-- ============ REWARDS ============ -->
+    <section class="page" id="page-rewards">
+      <div class="section-head"><h2>REWARDS &amp; PROGRESSION</h2></div>
+      <div class="rewards" id="rewards-root"></div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="page" id="page-settings">
+      <div class="section-head"><h2>SETTINGS</h2></div>
+      <div class="settings" id="settings-root"></div>
+    </section>
+
+    <!-- ============ ADMIN ============ -->
+    <section class="page" id="page-admin">
+      <div class="section-head">
+        <h2>ADMIN CONTROL</h2>
+        <div class="section-actions">
+          <button class="btn btn-sm btn-ghost" data-action="admin-refresh">REFRESH</button>
+          <button class="btn btn-sm btn-danger" data-action="admin-freeze">FREEZE RANKED</button>
+        </div>
+      </div>
+      <div class="admin" id="admin-root"></div>
+    </section>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
