@@ -109,10 +109,10 @@ layer. Two details of this framework matter and are easy to get wrong:
   of the calling resource. Without it vRP registers `vRP:nil:tunnel_res` and
   throws `attempt to concatenate a nil value (local 'identifier')`.
 
-`vRP.getUserIdentity` is callback based here and cannot return through the
-synchronous Proxy, so display names come from the player's in-game name by
-default. Set `Config.vRP.identity.useIdentityName = true` to replace it with the
-RP identity (firstname lastname) asynchronously after login.
+Display names come from `GetPlayerName` and nothing else — synchronous, always
+available, and no database round trip on login. `vRP.getUserIdentity` is
+callback based in this framework and cannot return through the synchronous
+Proxy, so it is not used anywhere in the resource.
 
 ### Database
 

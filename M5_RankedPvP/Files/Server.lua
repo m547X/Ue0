@@ -140,34 +140,14 @@ local Tunnel = module('vrp', 'lib/Tunnel')
 vRP       = Proxy.getInterface('vRP')
 vRPclient = Tunnel.getInterface('vRP', RES)
 
---- Immediate display name. vRP.getUserIdentity is callback based in this
---- framework and cannot return through the synchronous Proxy, so the name is
---- taken from the player itself and optionally upgraded afterwards.
-local function identityName(user_id, source)
+--- Display name. GetPlayerName is the only source: it is synchronous, always
+--- available, and costs no database round trip.
+local function playerName(user_id, source)
     if source then
         local name = GetPlayerName(source)
         if name and name ~= '' then return safeName(name, 60) end
     end
     return 'User ' .. tostring(user_id)
-end
-
---- Optional: replace the display name with the vRP identity (firstname
---- lastname) once the database answers. Never blocks the login path.
-local function refreshIdentityName(pd)
-    if not pd or not Config.vRP.identity.useIdentityName then return end
-
-    vRP.getUserIdentity({ pd.userId, function(identity)
-        if type(identity) ~= 'table' then return end
-        local first = identity[Config.vRP.identity.firstnameField]
-        local last  = identity[Config.vRP.identity.lastnameField]
-        if not first and not last then return end
-
-        local name = safeName(((first or '') .. ' ' .. (last or '')), 60)
-        if name ~= '' and name ~= pd.name then
-            pd.name = name
-            pd.dirtyPlayer = true
-        end
-    end })
 end
 
 --- Adds the "PvP Ranked" entry to the vRP main menu. It opens exactly the same
@@ -1053,7 +1033,7 @@ local Player = {}
 function Player.load(userId, source)
     local seasonId = Season.id()
     local ids      = source and identifiersOf(source) or { license = '', discord = '', ip = '' }
-    local name     = identityName(userId, source)
+    local name     = playerName(userId, source)
     local ipHash   = ids.ip ~= '' and hashString(ids.ip) or ''
 
     -- ---- core row --------------------------------------------------------
@@ -6644,7 +6624,6 @@ AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
         if not pd then return end
         Bans.load(user_id)
         Missions.ensure(pd)
-        refreshIdentityName(pd)
 
         -- offer a reconnect if the player dropped out of a live match
         local info = Reconnects[user_id]
@@ -6725,7 +6704,6 @@ Citizen.CreateThread(function()
                 local pd = Player.load(userId, src)
                 if pd then
                     Bans.load(userId)
-                    refreshIdentityName(pd)
                     TriggerClientEvent('m5rp:cl:boot', src, Server_BootPayload(pd))
                 end
             end

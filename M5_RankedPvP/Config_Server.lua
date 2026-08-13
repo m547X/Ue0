@@ -26,18 +26,11 @@ Config.vRP = {
         menu        = 'main',       -- vRP menu builder target
         name        = 'PvP Ranked',
         description = 'M5 Ranked PvP — Competitive Hub'
-    },
-
-    -- Display name source.
-    -- useIdentityName = false : use the player's in-game name (instant, no query)
-    -- useIdentityName = true  : replace it with the vRP identity once the
-    --                           database answers (async, never blocks login)
-    identity = {
-        useIdentityName = false,
-        firstnameField  = 'firstname',
-        lastnameField   = 'name',
-        phoneField      = 'phone'
     }
+
+    -- Display names come from GetPlayerName only. vRP.getUserIdentity is
+    -- callback based and cannot return through the synchronous Proxy, so it is
+    -- deliberately not used anywhere in this resource.
 }
 
 -- ============================================================================
