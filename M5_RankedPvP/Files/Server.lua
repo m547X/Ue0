@@ -1067,9 +1067,13 @@ function Player.load(userId, source)
             level = 1, xp = 0, titles = '[]', badges = '[]', active_title = '',
             frame = 'default', settings = '{}', commendations = 0, reports = 0, playtime = 0
         }
-    else
+    elseif source then
+        -- only refresh identity columns for a real connection; loading an
+        -- offline row for an admin edit must not overwrite the stored name
         DB.update('UPDATE m5_players SET name = ?, license = ?, discord = ?, ip_hash = ?, last_seen = ? WHERE user_id = ?',
             { name, ids.license, ids.discord, ipHash, sqlDate(), userId })
+    else
+        name = row.name or name
     end
 
     -- ---- rank row --------------------------------------------------------
@@ -5851,10 +5855,11 @@ function Admin.allowed(userId)
     for action, def in pairs(Config.AdminActions) do
         if Admin.can(userId, action) then
             out[action] = {
-                label   = def.label,
-                group   = def.group,
-                reason  = def.reason == true,
-                confirm = def.confirm == true
+                label      = def.label,
+                group      = def.group,
+                permission = def.permission,
+                reason     = def.reason == true,
+                confirm    = def.confirm == true
             }
         end
     end
@@ -5992,6 +5997,21 @@ local function resolveTarget(value)
     return nil
 end
 
+--- Saves immediately and pushes a fresh payload to the player, so an admin
+--- edit shows up on their screen at once instead of after a reconnect.
+function Player.pushUpdate(userId)
+    local pd = Players[userId]
+    if not pd then return false end
+
+    Player.save(pd, false)
+    Board.cache = {}
+
+    local s = srcOf(userId)
+    if not s then return false end
+    TriggerClientEvent('m5rp:cl:boot', s, Server_BootPayload(pd))
+    return true
+end
+
 --- Loads a player row into the cache for offline edits.
 local function withPlayer(userId, fn)
     local pd = Players[userId]
@@ -6000,9 +6020,15 @@ local function withPlayer(userId, fn)
         pd = Player.load(userId, nil)
         temporary = true
     end
+
     local result = fn(pd)
+
     if temporary then
+        -- offline: write straight through and drop the cache entry again
         Player.save(pd, true)
+    else
+        -- online: persist now and refresh the player's interface
+        Player.pushUpdate(userId)
     end
     return result
 end
@@ -6198,8 +6224,16 @@ function Admin.handle(adminPd, action, data)
             local before = pd.rp
             pd.rankId, pd.division = rank.id, rank.division
             pd.rp = rank.rpRequired
-            pd.placementDone = true
-            pd.highestRankId = math.max(pd.highestRankId, rank.id)
+
+            if rank.id == 0 then
+                -- rank 0 means "send them back to placement"
+                pd.placementDone   = false
+                pd.placementPlayed = 0
+                pd.placementData   = {}
+            else
+                pd.placementDone = true
+                pd.highestRankId = math.max(pd.highestRankId, rank.id)
+            end
             pd.dirtyRank = true
 
             Admin.audit(adminPd, action, who,
