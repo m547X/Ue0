@@ -128,6 +128,42 @@ Config.OpenMenu = {
 }
 
 -- ============================================================================
+-- 2b. TRAINING
+-- ============================================================================
+
+Config.Training = {
+    -- How the player leaves the training range.
+    exit = {
+        enabled = true,
+
+        -- Key binding. The player can rebind it in
+        -- FiveM: Settings > Key Bindings > FiveM.
+        keybind = {
+            enabled = true,
+            key     = 'BACK',                              -- backspace
+            display = 'BACKSPACE',                         -- shown in the on screen hint
+            label   = 'M5 Ranked PvP — Exit Training'
+        },
+
+        -- Chat command, e.g. /exittraining
+        command = {
+            enabled = true,
+            name    = 'exittraining'
+        },
+
+        -- On screen hint inside the training panel
+        hint = {
+            enabled = true,
+            text    = 'EXIT TRAINING'
+        },
+
+        -- Press the key twice inside this window (ms) to leave.
+        -- 0 = a single press exits immediately.
+        confirmWindow = 2500
+    }
+}
+
+-- ============================================================================
 -- 3. ADAPTIVE THREAD TIMING (performance)
 -- ============================================================================
 -- The proximity thread scales its wait time with the distance to the point,

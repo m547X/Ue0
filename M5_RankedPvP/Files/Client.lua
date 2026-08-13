@@ -399,6 +399,56 @@ if Config.OpenMenu.keybind and Config.OpenMenu.keybind.enabled then
         'keyboard', Config.OpenMenu.keybind.key or 'F6')
 end
 
+-- Leaving the training range. The overlay itself has no NUI focus, so the
+-- in-world exit is a key binding; the hub's Training page also carries a
+-- clickable button while training is active.
+local function exitTraining()
+    if not State.training then return end
+    TriggerServerEvent('m5rp:sv:action', 'training', { enable = false })
+end
+
+if Config.Training and Config.Training.exit and Config.Training.exit.enabled then
+    local exitCfg = Config.Training.exit
+
+    local confirmUntil = 0
+
+    RegisterCommand('m5rp_exittraining', function()
+        if not State.training then return end
+
+        local window = exitCfg.confirmWindow or 0
+        if window <= 0 then
+            exitTraining()
+            return
+        end
+
+        -- press twice inside the window to leave, so a stray key press during
+        -- a training run does not throw the player out
+        if ms() <= confirmUntil then
+            confirmUntil = 0
+            exitTraining()
+        else
+            confirmUntil = ms() + window
+            nui({ action = 'training', data = { confirm = true, seconds = math.ceil(window / 1000) } })
+        end
+    end, false)
+
+    if exitCfg.keybind and exitCfg.keybind.enabled then
+        RegisterKeyMapping('m5rp_exittraining',
+            exitCfg.keybind.label or 'M5 Ranked PvP — Exit Training',
+            'keyboard', exitCfg.keybind.key or 'BACK')
+    end
+
+    if exitCfg.command and exitCfg.command.enabled then
+        RegisterCommand(exitCfg.command.name or 'exittraining', function()
+            if State.training then
+                exitTraining()
+            else
+                nui({ action = 'toast', kind = 'warning', message = 'You are not in the training range.' })
+            end
+        end, false)
+    end
+end
+
 if Config.OpenMenu.cancelKeybind and Config.OpenMenu.cancelKeybind.enabled then
     RegisterCommand('m5rp_cancelsearch', function()
         TriggerServerEvent('m5rp:sv:queue', 'leave')
@@ -1278,9 +1328,16 @@ RegisterNetEvent('m5rp:cl:training', function(data)
     spawnTrainingTargets(data.spawn, data.targets or 0, data.spacing or 8.0,
                          data.kind == 'headshot')
 
+    local exitCfg = (Config.Training and Config.Training.exit) or {}
     nui({ action = 'training', data = {
         active = true, label = data.label, kind = data.kind,
-        targets = data.targets, time = data.time
+        targets = data.targets, time = data.time,
+        exit = (exitCfg.enabled and exitCfg.hint and exitCfg.hint.enabled) and {
+            key  = (exitCfg.keybind and exitCfg.keybind.display) or 'BACKSPACE',
+            text = (exitCfg.hint and exitCfg.hint.text) or 'EXIT TRAINING',
+            command = (exitCfg.command and exitCfg.command.enabled)
+                      and ('/' .. (exitCfg.command.name or 'exittraining')) or nil
+        } or nil
     } })
 
     -- lightweight training loop: respawn targets, report nothing to the server

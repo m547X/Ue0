@@ -64,7 +64,8 @@ const S = {
     map: null, mapPage: 1, step: 1
   },
 
-  hud: null, hudTime: 0
+  hud: null, hudTime: 0,
+  training: null
 };
 
 /* ------------------------------------------------------------------ audio */
@@ -781,14 +782,33 @@ function renderRewards(d) {
 /* ============================================================== TRAINING */
 function renderTraining() {
   const host = $('traingrid');
+  const active = S.training;
   const modes = [
     { kind: 'aim', label: 'AIM TRAINING', desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
     { kind: 'headshot', label: 'HEADSHOT TRAINING', desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
     { kind: 'range', label: 'FREE RANGE', desc: 'Open range with a full loadout. No targets, no timer.' }
   ];
   host.innerHTML = '';
+
+  if (active) {
+    const bar = el('div', 'train-active', `
+      <div style="flex:1">
+        <b>${esc(active.label || 'TRAINING')}</b>
+        <div><span>Session in progress${active.exit
+          ? ` — press ${esc(active.exit.key)} in game${active.exit.command ? ` or ${esc(active.exit.command)}` : ''}`
+          : ''}</span></div>
+      </div>`);
+    const leave = el('button', 'btn', '<svg><use href="#i-x"/></svg> EXIT TRAINING');
+    leave.onclick = () => { Sfx.play('click'); post('action', { action: 'training', enable: false }); };
+    bar.appendChild(leave);
+    bar.style.gridColumn = '1 / -1';
+    host.appendChild(bar);
+  }
+
   modes.forEach((m) => {
-    const c = el('div', 'traincard', `<div><b>${m.label}</b><p>${m.desc}</p></div><button class="btn">ENTER</button>`);
+    const c = el('div', 'traincard',
+      `<div><b>${m.label}</b><p>${m.desc}</p></div>
+       <button class="btn">${active ? 'SWITCH' : 'ENTER'}</button>`);
     c.onclick = () => post('action', { action: 'training', enable: true, kind: m.kind });
     host.appendChild(c);
   });
@@ -1238,9 +1258,36 @@ window.addEventListener('message', (e) => {
 
     case 'training': {
       const n = $('training'), t = d.data || {};
+      const hint = $('training-exit');
+
+      // a press-again-to-confirm prompt from the exit key
+      if (t.confirm) {
+        hint.classList.remove('hidden');
+        hint.classList.add('confirm');
+        $('training-exit-text').textContent = 'PRESS AGAIN TO EXIT';
+        clearTimeout(hint._t);
+        hint._t = setTimeout(() => {
+          hint.classList.remove('confirm');
+          $('training-exit-text').textContent = (S.training && S.training.exit && S.training.exit.text) || 'EXIT TRAINING';
+        }, (t.seconds || 2) * 1000);
+        break;
+      }
+
       n.classList.toggle('hidden', !t.active);
-      if (t.active) {
+
+      if (!t.active) {
+        S.training = null;
+        hint.classList.add('hidden');
+      } else {
+        // periodic updates only carry counters, so merge instead of replacing
+        S.training = Object.assign({ active: true }, S.training, t);
+
         if (t.label) $('training-title').textContent = t.label;
+        if (t.exit) {
+          hint.classList.remove('hidden');
+          $('training-exit-key').textContent = t.exit.key || 'BACKSPACE';
+          $('training-exit-text').textContent = t.exit.text || 'EXIT TRAINING';
+        }
         if (t.hits !== undefined) {
           $('training-hits').textContent = t.hits;
           $('training-hs').textContent = t.headshots;
@@ -1248,6 +1295,8 @@ window.addEventListener('message', (e) => {
           $('training-time').textContent = t.elapsed + 's';
         }
       }
+
+      if (S.page === 'training') renderTraining();
       break;
     }
 

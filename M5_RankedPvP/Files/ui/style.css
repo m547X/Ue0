@@ -157,6 +157,19 @@ h1,h2,h3,h4{font-weight:700}
 .tb-stats div{display:flex;flex-direction:column}
 .tb-stats b{font-size:22px;font-weight:700;line-height:1}
 .tb-stats span{font-size:9px;letter-spacing:.2em;color:var(--dim)}
+.tb-exit{display:flex;align-items:center;gap:9px;margin-top:13px;padding-top:11px;
+  border-top:1px solid rgba(255,255,255,.06);font-size:11px;font-weight:700;
+  letter-spacing:.18em;color:var(--dim)}
+.tb-exit .key{padding:3px 9px;border-radius:6px;font-size:10px;color:var(--red);
+  background:var(--red-soft);border:1px solid var(--red)}
+.tb-exit.confirm{color:var(--red);animation:blink .6s infinite}
+
+/* training page: leave button while a session is running */
+.train-active{display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:16px 18px;
+  border-radius:11px;background:linear-gradient(90deg,var(--red-soft),transparent);
+  border:1px solid var(--red)}
+.train-active b{font-size:15px;font-weight:700;letter-spacing:.14em}
+.train-active span{font-size:11px;color:var(--dim);letter-spacing:.1em}
 
 /* ---------- hitmarker / toasts ---------- */
 .hitmarker{position:absolute;top:50%;left:50%;width:24px;height:24px;transform:translate(-50%,-50%)}
