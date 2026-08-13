@@ -115,6 +115,15 @@ Config.OpenMenu = {
         enabled = true,
         key     = 'F6',
         label   = 'M5 Ranked PvP — Open Menu'
+    },
+
+    -- The search dock stays on screen after the hub is closed. NUI without
+    -- focus cannot receive clicks, so this key cancels the search from the
+    -- game world; the dock's X still works while the hub is open.
+    cancelKeybind = {
+        enabled = true,
+        key     = 'F7',
+        label   = 'M5 Ranked PvP — Cancel Search'
     }
 }
 

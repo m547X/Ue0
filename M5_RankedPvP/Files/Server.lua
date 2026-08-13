@@ -2334,20 +2334,60 @@ local function configureBucket(bucket)
     SetRoutingBucketEntityLockdownMode(bucket, Config.Buckets.lockdownMode or 'strict')
 end
 
-local function loadoutFor(m, userId)
-    local base = Config.Loadouts[m.settings.loadout] or Config.Loadouts.standard
-    local weapons = {}
-    for i = 1, #base.weapons do
-        local w = base.weapons[i]
-        if Security.weaponAllowed(w.name) then
-            weapons[#weapons + 1] = { name = w.name, ammo = w.ammo }
+local PresetById = {}
+for i = 1, #Config.WeaponPresets do
+    PresetById[Config.WeaponPresets[i].id] = Config.WeaponPresets[i]
+end
+
+--- Resolves the weapon list a room selected in the custom match UI.
+local function presetWeapons(ids)
+    local out = {}
+    for i = 1, #(ids or {}) do
+        local preset = PresetById[ids[i]]
+        if preset and Security.weaponAllowed(preset.weapon) then
+            out[#out + 1] = { name = preset.weapon, ammo = preset.ammo }
         end
     end
+    return out
+end
+
+function Match.loadoutFor(m, userId)
+    local base = Config.Loadouts[m.settings.loadout] or Config.Loadouts.standard
+
+    -- a custom room with an explicit weapon selection overrides the preset
+    local weapons = presetWeapons(m.settings.weapons)
+    if #weapons == 0 then
+        for i = 1, #base.weapons do
+            local w = base.weapons[i]
+            if Security.weaponAllowed(w.name) then
+                weapons[#weapons + 1] = { name = w.name, ammo = w.ammo }
+            end
+        end
+    end
+
+    local mp = m.players[userId]
+
+    if m.settings.matchType == 'random' and #weapons > 1 then
+        -- one random weapon from the selection, rerolled every round
+        weapons = { weapons[((m.round + (userId % 7)) % #weapons) + 1] }
+
+    elseif m.settings.matchType == 'gungame' and mp then
+        local level = math.min((mp.gunLevel or 0) + 1, #weapons)
+        weapons = { weapons[level] }
+    end
+
+    local armor = m.settings.armor or base.armor or 0
+    if m.settings.armorEnabled == false then armor = 0 end
+
     return {
         health  = m.settings.health or base.health or 100,
-        armor   = m.settings.armor  or base.armor  or 0,
+        armor   = armor,
         weapons = weapons
     }
+end
+
+local function loadoutFor(m, userId)
+    return Match.loadoutFor(m, userId)
 end
 
 local function spawnPointFor(m, mp, index)
@@ -2455,6 +2495,10 @@ function Match.create(opts)
         overtime      = opts.settings and opts.settings.overtime ~= nil and opts.settings.overtime or cfg.overtime,
         suddenDeath   = opts.settings and opts.settings.suddenDeath ~= nil and opts.settings.suddenDeath or cfg.suddenDeath,
         headshotOneShot = opts.settings and opts.settings.headshotOneShot ~= false,
+        headshotOnly  = opts.settings and opts.settings.headshotOnly == true,
+        matchType     = opts.settings and opts.settings.matchType or 'normal',
+        weapons       = opts.settings and opts.settings.weapons or nil,
+        armorEnabled  = opts.settings and opts.settings.armorEnabled,
         loadout       = opts.settings and opts.settings.loadout       or cfg.loadout or 'standard',
         spectators    = opts.settings and opts.settings.spectators ~= false
     }
@@ -2521,7 +2565,7 @@ function Match.addPlayer(m, userId, team)
 
         kills = 0, deaths = 0, assists = 0, headshots = 0,
         damage = 0, score = 0, clutches = 0, firstBloods = 0, roundsWon = 0,
-        killStreak = 0, bestKillStreak = 0,
+        killStreak = 0, bestKillStreak = 0, gunLevel = 0,
         multiKill = { n = 0, ts = 0 },
         lastKiller = nil,
         nemesis = {},
@@ -2585,6 +2629,8 @@ function Match.deploy(m, userId)
             movement        = m.settings.movement,
             jump            = m.settings.jump,
             headshotOneShot = m.settings.headshotOneShot and Config.Headshot.oneShotKill,
+            headshotOnly    = m.settings.headshotOnly,
+            matchType       = m.settings.matchType,
             respawn         = m.settings.respawn,
             spawnProtection = Config.Match.spawnProtection,
             roundsToWin     = m.settings.roundsToWin,
@@ -3091,6 +3137,27 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
         victim.damageTaken = {}
 
         addKillFeed(m, killer.name, victim.name, weapon, headshot, killer.team, victim.team)
+
+        -- gun game: every kill advances the killer to the next weapon
+        if m.settings.matchType == 'gungame' then
+            local ladder = presetWeapons(m.settings.weapons)
+            if #ladder == 0 then ladder = (Config.Loadouts[m.settings.loadout] or Config.Loadouts.standard).weapons end
+            killer.gunLevel = (killer.gunLevel or 0) + 1
+
+            if killer.gunLevel >= #ladder then
+                Match.endMatch(m, killer.team, 'GUN_GAME')
+                return true
+            end
+
+            local ks = srcOf(killerId)
+            if ks then
+                TriggerClientEvent('m5rp:cl:round', ks, {
+                    phase = 'loadout', matchId = m.id,
+                    loadout = Match.loadoutFor(m, killerId),
+                    gunLevel = killer.gunLevel + 1, gunTotal = #ladder
+                })
+            end
+        end
     else
         addKillFeed(m, nil, victim.name, weapon or 'SUICIDE', false, nil, victim.team)
         victim.score = victim.score - 25
@@ -4223,6 +4290,19 @@ function Combat.death(victimPd, data)
     local v = m.players[victimPd.userId]
     if not v or not v.alive then return end
 
+    -- HEADSHOT ONLY rooms: nothing but a validated head hit may kill, and those
+    -- come through Combat.headshot rather than here.
+    if m.settings.headshotOnly then
+        local s = srcOf(victimPd.userId)
+        if s then
+            TriggerClientEvent('m5rp:cl:round', s, {
+                phase = 'revive', matchId = m.id,
+                health = m.settings.health or 100
+            })
+        end
+        return
+    end
+
     data = type(data) == 'table' and data or {}
 
     local killerUserId = nil
@@ -4295,7 +4375,21 @@ end
 -- 14. CUSTOM GAMES
 -- ============================================================================
 
-CustomGames = { rooms = {} }
+CustomGames = { rooms = {}, byCode = {} }
+
+--- Short, unambiguous room code used by JOIN CODE in the UI.
+local function newRoomCode()
+    local cfg = Config.CustomGames.roomCode
+    for _ = 1, 40 do
+        local code = ''
+        for _ = 1, cfg.length do
+            local i = math.random(#cfg.alphabet)
+            code = code .. cfg.alphabet:sub(i, i)
+        end
+        if not CustomGames.byCode[code] then return code end
+    end
+    return tostring(math.random(1000, 9999))
+end
 
 local function roomPayload(room, includePrivate)
     local players = {}
@@ -4319,6 +4413,7 @@ local function roomPayload(room, includePrivate)
     local map = MapById[room.mapId]
     return {
         id       = room.id,
+        code     = room.code,
         name     = room.name,
         host     = Players[room.hostId] and Players[room.hostId].name or '?',
         hostId   = room.hostId,
@@ -4390,7 +4485,23 @@ function CustomGames.create(userId, data)
     local mode = Config.Modes[data.mode] and data.mode or d.mode
     local mapId = MapById[data.map] and data.map or d.map
 
+    -- weapon chips picked in the UI (validated against the preset table)
+    local weapons = {}
+    for _, id in ipairs(type(data.weapons) == 'table' and data.weapons or {}) do
+        if PresetById[id] and not inList(weapons, id) then weapons[#weapons + 1] = id end
+    end
+    if #weapons == 0 then weapons = copy(d.weapons) end
+
+    local matchType = d.matchType
+    for _, t in ipairs(Config.CustomGames.matchTypes) do
+        if t.id == data.matchType then matchType = t.id end
+    end
+
     local settings = {
+        matchType   = matchType,
+        weapons     = weapons,
+        armorEnabled= data.armorEnabled == true,
+        headshotOnly= data.headshotOnly == true,
         rounds      = clampSetting('rounds', data.rounds, d.rounds),
         roundTime   = clampSetting('roundTime', data.roundTime, d.roundTime),
         matchTime   = clampSetting('matchTime', data.matchTime, d.matchTime),
@@ -4443,6 +4554,9 @@ function CustomGames.create(userId, data)
     }
     if room.name == '' then room.name = (pd.name .. "'s Room") end
 
+    room.code = newRoomCode()
+    CustomGames.byCode[room.code] = room.id
+
     room.dbId = DB.insert([[INSERT INTO m5_custom_games
         (room_uid, name, host_id, host_name, mode, map_id, ranked, settings, players)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)]],
@@ -4494,6 +4608,14 @@ function CustomGames.join(userId, roomId, password)
     return true
 end
 
+--- Join using the short room code shown in the UI.
+function CustomGames.joinByCode(userId, code, password)
+    code = tostring(code or ''):upper():gsub('%s', '')
+    local roomId = CustomGames.byCode[code]
+    if not roomId then return false, 'No room with that code.' end
+    return CustomGames.join(userId, roomId, password)
+end
+
 function CustomGames.leave(userId)
     local room = CustomGames.of(userId)
     if not room then return false end
@@ -4537,6 +4659,7 @@ function CustomGames.destroy(room, reason)
         end
     end
     DB.update('UPDATE m5_custom_games SET ended_at = ? WHERE id = ?', { sqlDate(), room.dbId })
+    if room.code then CustomGames.byCode[room.code] = nil end
     CustomGames.rooms[room.id] = nil
 end
 
@@ -4625,6 +4748,20 @@ function CustomGames.host(userId, action, data)
         if d.overtime        ~= nil then s.overtime        = d.overtime == true end
         if d.suddenDeath     ~= nil then s.suddenDeath     = d.suddenDeath == true end
         if d.loadout and Config.Loadouts[d.loadout] then s.loadout = d.loadout end
+        if d.armorEnabled ~= nil then s.armorEnabled = d.armorEnabled == true end
+        if d.headshotOnly ~= nil then s.headshotOnly = d.headshotOnly == true end
+        if d.matchType then
+            for _, t in ipairs(Config.CustomGames.matchTypes) do
+                if t.id == d.matchType then s.matchType = t.id end
+            end
+        end
+        if type(d.weapons) == 'table' then
+            local picked = {}
+            for _, id in ipairs(d.weapons) do
+                if PresetById[id] and not inList(picked, id) then picked[#picked + 1] = id end
+            end
+            if #picked > 0 then s.weapons = picked end
+        end
         s.roundsToWin = math.ceil((s.rounds + 1) / 2)
         DB.update('UPDATE m5_custom_games SET settings = ? WHERE id = ?',
             { jsonEncode(s), room.dbId })
@@ -5316,6 +5453,72 @@ function Board.period(kind, page, showMMR)
         end
         return out
     end)
+end
+
+--- Per mode ladder. RP stays a single season ladder, but the board can be
+--- narrowed to one mode: points are the RP earned inside that mode and the
+--- kill/death columns only count matches of that mode.
+function Board.byMode(mode, page, showMMR)
+    local size   = Config.Database.pageSize
+    local offset = math.max(0, (page or 1) - 1) * size
+
+    return cached(('mode_%s_%d_%s'):format(tostring(mode), page or 1, tostring(showMMR)),
+        Config.Database.leaderboardCacheTime, function()
+        local rows = DB.query([[SELECT mp.user_id, p.name, p.level, r.rank_id, m.mmr,
+                                       SUM(mp.rp_change) AS points,
+                                       SUM(mp.kills) AS kills, SUM(mp.deaths) AS deaths,
+                                       SUM(mp.headshots) AS headshots, SUM(mp.mvp) AS mvp,
+                                       SUM(CASE WHEN mp.result = 'WIN' THEN 1 ELSE 0 END) AS wins,
+                                       SUM(CASE WHEN mp.result = 'LOSS' THEN 1 ELSE 0 END) AS losses,
+                                       COUNT(*) AS matches
+                                FROM m5_match_players mp
+                                JOIN m5_matches mt ON mt.id = mp.match_id
+                                LEFT JOIN m5_players p ON p.user_id = mp.user_id
+                                LEFT JOIN m5_player_ranks r ON r.user_id = mp.user_id AND r.season_id = mt.season_id
+                                LEFT JOIN m5_player_mmr m ON m.user_id = mp.user_id AND m.season_id = mt.season_id
+                                WHERE mt.ranked = 1 AND mt.mode = ? AND mt.season_id = ?
+                                GROUP BY mp.user_id, p.name, p.level, r.rank_id, m.mmr
+                                ORDER BY points DESC, wins DESC
+                                LIMIT ? OFFSET ?]],
+            { mode, Season.id(), size, offset }) or {}
+
+        local out = {}
+        for i = 1, #rows do
+            local e = decorateRow(rows[i], showMMR)
+            e.position = offset + i
+            e.points   = tonumber(rows[i].points) or 0
+            out[#out + 1] = e
+        end
+        return out
+    end)
+end
+
+--- The "YOUR STATISTICS" card next to the per mode board.
+function Board.modeStats(userId, mode)
+    local row = DB.single([[SELECT SUM(mp.kills) AS kills, SUM(mp.deaths) AS deaths,
+                                   SUM(mp.rp_change) AS points, COUNT(*) AS matches,
+                                   SUM(CASE WHEN mp.result = 'WIN' THEN 1 ELSE 0 END) AS wins
+                            FROM m5_match_players mp
+                            JOIN m5_matches mt ON mt.id = mp.match_id
+                            WHERE mp.user_id = ? AND mt.mode = ? AND mt.season_id = ?]],
+        { userId, mode, Season.id() })
+
+    local kills  = tonumber(row and row.kills) or 0
+    local deaths = tonumber(row and row.deaths) or 0
+    local pd     = Players[userId]
+
+    return {
+        mode      = mode,
+        wins      = tonumber(row and row.wins) or 0,
+        matches   = tonumber(row and row.matches) or 0,
+        kills     = kills,
+        deaths    = deaths,
+        points    = tonumber(row and row.points) or 0,
+        kd        = deaths > 0 and round(kills / deaths, 2) or kills,
+        rank      = pd and (pd.placementDone and Rank.get(pd.rankId).name or 'Unranked') or 'Unranked',
+        rankId    = pd and (pd.placementDone and pd.rankId or 0) or 0,
+        rankColor = pd and Rank.get(pd.rankId).color or '#5A616D'
+    }
 end
 
 function Board.season(seasonId, page)
@@ -6078,6 +6281,18 @@ function Server_BootPayload(pd)
         }
     end
 
+    local weaponPresets = {}
+    for i = 1, #Config.WeaponPresets do
+        local w = Config.WeaponPresets[i]
+        weaponPresets[#weaponPresets + 1] = { id = w.id, label = w.label }
+    end
+
+    local matchTypes = {}
+    for i = 1, #Config.CustomGames.matchTypes do
+        local t = Config.CustomGames.matchTypes[i]
+        matchTypes[#matchTypes + 1] = { id = t.id, label = t.label, description = t.description }
+    end
+
     local loadouts = {}
     for key, l in pairs(Config.Loadouts) do
         loadouts[#loadouts + 1] = { id = key, health = l.health, armor = l.armor, weapons = #l.weapons }
@@ -6120,6 +6335,11 @@ function Server_BootPayload(pd)
         allModes= allModes,
         maps    = maps,
         loadouts= loadouts,
+        weaponPresets = weaponPresets,
+        matchTypes    = matchTypes,
+        customDefaults = Config.CustomGames.defaults,
+        customLimits   = Config.CustomGames.limits,
+        maxParty = Config.Party.maxSize,
         missions= Missions.list(pd.userId),
         season  = Season.current and {
             id = Season.current.id, name = Season.current.name,
@@ -6238,6 +6458,8 @@ RegisterNetEvent('m5rp:sv:custom', function(action, data)
         ok, reason = CustomGames.create(pd.userId, data)
     elseif action == 'join' then
         ok, reason = CustomGames.join(pd.userId, tostring(data.roomId or ''), tostring(data.password or ''))
+    elseif action == 'joinCode' then
+        ok, reason = CustomGames.joinByCode(pd.userId, data.code, tostring(data.password or ''))
     elseif action == 'leave' then
         ok = CustomGames.leave(pd.userId)
     else
@@ -6290,19 +6512,25 @@ RegisterNetEvent('m5rp:sv:fetch', function(what, data)
 
     if what == 'leaderboard' then
         local board = tostring(data.board or 'global'):lower()
-        local rows
+        local mode  = Config.Modes[data.mode] and data.mode or nil
+        local rows, mine
+
         if board == 'daily' or board == 'weekly' then
             rows = Board.period(board, page, showMMR)
         elseif board == 'season' then
             rows = Board.season(tonumber(data.seasonId) or Season.id(), page)
         elseif board == 'friends' then
             rows = Board.recent(pd.userId, showMMR)
+        elseif mode then
+            rows = Board.byMode(mode, page, showMMR)
+            mine = Board.modeStats(pd.userId, mode)
         else
             rows = Board.global(page, showMMR)
         end
+
         TriggerClientEvent('m5rp:cl:data', src, {
-            what = 'leaderboard', board = board, page = page,
-            rows = rows, you = Board.myPosition(pd.userId)
+            what = 'leaderboard', board = board, mode = mode, page = page,
+            rows = rows, you = Board.myPosition(pd.userId), stats = mine
         })
 
     elseif what == 'profile' then

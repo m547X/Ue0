@@ -9,79 +9,84 @@
 <body>
 
 <!-- ==================================================================== -->
-<!-- SVG sprite: rank crests, icons. Everything is inline, no external     -->
-<!-- assets, so the NUI never touches the network.                         -->
+<!-- Inline SVG sprite — no external assets                                -->
 <!-- ==================================================================== -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <symbol id="crest" viewBox="0 0 100 100">
-      <path d="M50 4 L92 26 v30 c0 22-19 33-42 40C27 89 8 78 8 56V26z"
-            fill="none" stroke="currentColor" stroke-width="4"/>
-      <path d="M50 18 L78 33 v22c0 14-13 21-28 26C35 76 22 69 22 55V33z"
-            fill="currentColor" opacity=".14"/>
+    <symbol id="hex" viewBox="0 0 100 100">
+      <path d="M50 6 L88 28 v44 L50 94 L12 72 V28z" fill="currentColor" opacity=".22"/>
+      <path d="M50 6 L88 28 v44 L50 94 L12 72 V28z" fill="none" stroke="currentColor" stroke-width="6"/>
     </symbol>
-    <symbol id="chev" viewBox="0 0 100 100">
-      <path d="M20 58 L50 30 L80 58" fill="none" stroke="currentColor"
-            stroke-width="9" stroke-linecap="square"/>
+    <symbol id="hex-chev" viewBox="0 0 100 100">
+      <path d="M50 6 L88 28 v44 L50 94 L12 72 V28z" fill="currentColor" opacity=".22"/>
+      <path d="M50 6 L88 28 v44 L50 94 L12 72 V28z" fill="none" stroke="currentColor" stroke-width="6"/>
+      <path d="M32 58 L50 40 L68 58" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="square"/>
     </symbol>
-    <symbol id="star" viewBox="0 0 100 100">
-      <path d="M50 8 L61 38 H93 L67 57 L77 88 L50 69 L23 88 L33 57 L7 38 H39z"
-            fill="currentColor"/>
+    <symbol id="hex-star" viewBox="0 0 100 100">
+      <path d="M50 6 L88 28 v44 L50 94 L12 72 V28z" fill="currentColor" opacity=".22"/>
+      <path d="M50 6 L88 28 v44 L50 94 L12 72 V28z" fill="none" stroke="currentColor" stroke-width="6"/>
+      <path d="M50 30 L57 46 H74 L60 56 L65 73 L50 63 L35 73 L40 56 L26 46 H43z" fill="currentColor"/>
     </symbol>
-    <symbol id="ico-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z" fill="currentColor"/></symbol>
-    <symbol id="ico-grid" viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" fill="currentColor"/></symbol>
-    <symbol id="ico-target" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></symbol>
-    <symbol id="ico-board" viewBox="0 0 24 24"><path d="M4 20V10h4v10zM10 20V4h4v16zM16 20v-7h4v7z" fill="currentColor"/></symbol>
-    <symbol id="ico-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></symbol>
-    <symbol id="ico-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v6l4 2" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
-    <symbol id="ico-gift" viewBox="0 0 24 24"><path d="M3 11h18v9H3zM2 7h20v4H2zM12 7v13" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
-    <symbol id="ico-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2"/></symbol>
-    <symbol id="ico-shield" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-    <symbol id="ico-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.4"/></symbol>
-    <symbol id="ico-head" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 14v7M8 18h8" stroke="currentColor" stroke-width="2"/></symbol>
+
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 12H5M11 6l-6 6 6 6" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M4 12h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-ranked" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/></symbol>
+    <symbol id="i-board" viewBox="0 0 24 24"><path d="M4 20V11h4v9zM10 20V4h4v16zM16 20v-6h4v6z" fill="currentColor"/></symbol>
+    <symbol id="i-custom" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="11" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 11v3M5.5 12.5h3M16 12h.01M18.5 14h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z" fill="currentColor"/></symbol>
+    <symbol id="i-party" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4" fill="currentColor"/><path d="M2 20c0-3.9 3.1-6.2 7-6.2s7 2.3 7 6.2z" fill="currentColor"/><circle cx="18" cy="9" r="2.6" fill="currentColor" opacity=".6"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 4v14M15 6v14" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="7" r="2.2" fill="currentColor"/><circle cx="15" cy="12" r="2.2" fill="currentColor"/><circle cx="7" cy="17" r="2.2" fill="currentColor"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M3 20l18-8L3 4v6l11 2-11 2z" fill="currentColor"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a2 2 0 012-2h10" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+    <symbol id="i-head" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 14v7M8 18h8" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-login" viewBox="0 0 24 24"><path d="M14 3h5a2 2 0 012 2v14a2 2 0 01-2 2h-5M10 17l5-5-5-5M15 12H3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9L7 7M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v6l4 2" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
+    <symbol id="i-gift" viewBox="0 0 24 24"><path d="M3 11h18v9H3zM2 7h20v4H2zM12 7v13" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></symbol>
   </defs>
 </svg>
 
 <!-- ==================================================================== -->
-<!-- IN-GAME OVERLAY (always mounted, no NUI focus)                        -->
+<!-- IN-GAME OVERLAY (no NUI focus)                                        -->
 <!-- ==================================================================== -->
 <div id="overlay">
+
+  <!-- Compact search dock, stays on screen after the hub is closed -->
+  <div id="searchdock" class="searchdock hidden">
+    <span class="sd-orb"></span>
+    <div class="sd-text">
+      <b>SEARCHING</b>
+      <span id="sd-mode">1V1</span>
+    </div>
+    <div class="sd-time" id="sd-time">0:00</div>
+    <button class="sd-x" id="sd-cancel" title="Cancel search"><svg><use href="#i-x"/></svg></button>
+  </div>
 
   <!-- Match HUD -->
   <div id="hud" class="hud hidden">
     <div class="hud-top">
-      <div class="hud-team hud-team-a">
-        <span class="hud-team-name">TEAM A</span>
-        <span class="hud-alive" id="hud-alive-a">0</span>
+      <div class="hud-side a"><span class="hud-label">TEAM A</span><span class="hud-alive" id="hud-alive-a">0</span></div>
+      <div class="hud-mid">
+        <span id="hud-score-a">0</span><i></i><span id="hud-score-b">0</span>
       </div>
-      <div class="hud-score">
-        <span id="hud-score-a" class="hud-score-a">0</span>
-        <span class="hud-score-sep"></span>
-        <span id="hud-score-b" class="hud-score-b">0</span>
-      </div>
-      <div class="hud-team hud-team-b">
-        <span class="hud-alive" id="hud-alive-b">0</span>
-        <span class="hud-team-name">TEAM B</span>
-      </div>
+      <div class="hud-side b"><span class="hud-alive" id="hud-alive-b">0</span><span class="hud-label">TEAM B</span></div>
     </div>
     <div class="hud-sub">
-      <span id="hud-round">ROUND 1</span>
-      <span class="hud-dot"></span>
-      <span id="hud-timer" class="hud-timer">0:00</span>
-      <span class="hud-dot"></span>
+      <span id="hud-round">ROUND 1</span><em></em>
+      <span id="hud-timer" class="hud-timer">0:00</span><em></em>
       <span id="hud-ping">0 ms</span>
     </div>
-
     <div class="hud-bottom">
       <div class="hud-vitals">
-        <div class="vital">
-          <div class="vital-bar"><i id="hud-hp-bar" style="width:100%"></i></div>
-          <span id="hud-hp">100</span>
-        </div>
-        <div class="vital vital-armor">
-          <div class="vital-bar"><i id="hud-ar-bar" style="width:0%"></i></div>
-          <span id="hud-ar">0</span>
-        </div>
+        <div class="vital"><div class="vbar"><i id="hud-hp-bar" style="width:100%"></i></div><span id="hud-hp">100</span></div>
+        <div class="vital armor"><div class="vbar"><i id="hud-ar-bar" style="width:0%"></i></div><span id="hud-ar">0</span></div>
       </div>
       <div class="hud-weapon">
         <span id="hud-weapon-name">—</span>
@@ -90,124 +95,111 @@
     </div>
   </div>
 
-  <!-- Kill feed -->
   <div id="killfeed" class="killfeed"></div>
 
-  <!-- Round countdown / phase banner -->
   <div id="phase" class="phase hidden">
     <div class="phase-count" id="phase-count">3</div>
     <div class="phase-label" id="phase-label"></div>
   </div>
 
-  <!-- Combat event banner (ace, clutch, multikill…) -->
-  <div id="combat-banner" class="combat-banner hidden">
-    <span id="combat-banner-text"></span>
-  </div>
+  <div id="combat-banner" class="combat-banner hidden"><span id="combat-banner-text"></span></div>
 
-  <!-- Boundary warning -->
   <div id="boundary" class="boundary hidden">
     <div class="boundary-frame"></div>
     <div class="boundary-body">
-      <div class="boundary-tag">WARNING</div>
-      <div class="boundary-title">RETURN TO COMBAT ZONE</div>
-      <div class="boundary-count" id="boundary-count">5</div>
-      <div class="boundary-dist" id="boundary-dist"></div>
+      <div class="b-tag">WARNING</div>
+      <div class="b-title">RETURN TO COMBAT ZONE</div>
+      <div class="b-count" id="boundary-count">5</div>
+      <div class="b-dist" id="boundary-dist"></div>
     </div>
   </div>
 
-  <!-- Death / spectator strip -->
   <div id="spectate" class="spectate hidden">
-    <div class="spectate-inner">
-      <span class="spectate-tag">SPECTATING</span>
-      <span class="spectate-name" id="spectate-name">—</span>
-      <span class="spectate-hint">← → SWITCH &nbsp;·&nbsp; BACKSPACE EXIT</span>
+    <div class="sp-inner">
+      <span class="sp-tag">SPECTATING</span>
+      <span class="sp-name" id="spectate-name">—</span>
+      <span class="sp-hint">← → SWITCH · BACKSPACE EXIT</span>
     </div>
   </div>
 
-  <!-- Training overlay -->
-  <div id="training" class="training hidden">
-    <div class="training-title" id="training-title">TRAINING</div>
-    <div class="training-stats">
+  <div id="training" class="trainbox hidden">
+    <div class="tb-title" id="training-title">TRAINING</div>
+    <div class="tb-stats">
       <div><b id="training-hits">0</b><span>HITS</span></div>
       <div><b id="training-hs">0</b><span>HEADSHOTS</span></div>
       <div><b id="training-acc">0%</b><span>HS RATE</span></div>
       <div><b id="training-time">0s</b><span>TIME</span></div>
     </div>
-    <button class="btn btn-ghost sm" data-action="stop-training">EXIT TRAINING</button>
   </div>
 
-  <!-- Hitmarker -->
   <div id="hitmarker" class="hitmarker hidden"><i></i><i></i><i></i><i></i></div>
-
-  <!-- Toasts -->
   <div id="toasts" class="toasts"></div>
 </div>
 
 <!-- ==================================================================== -->
-<!-- MODALS (need focus)                                                   -->
+<!-- MODALS                                                                -->
 <!-- ==================================================================== -->
 <div id="modals">
+
+  <!-- Invite by ID -->
+  <div id="modal-invite" class="modal hidden">
+    <div class="dlg">
+      <div class="dlg-head"><span class="dlg-dot"></span>Matchmaking</div>
+      <div class="dlg-body">
+        <div class="dlg-input">
+          <svg class="dlg-ico"><use href="#i-user"/></svg>
+          <input id="invite-id" placeholder="ID (سجل رقم اللاعب)" autocomplete="off" />
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn ghost" data-action="invite-cancel">Cancel</button>
+        <button class="btn" data-action="invite-send">Send</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Match found -->
   <div id="modal-found" class="modal hidden">
     <div class="found">
-      <div class="found-glow"></div>
       <div class="found-tag">MATCH FOUND</div>
       <div class="found-mode" id="found-mode">RANKED</div>
       <div class="found-ring">
-        <svg viewBox="0 0 120 120">
-          <circle class="ring-bg" cx="60" cy="60" r="52"/>
-          <circle class="ring-fg" id="found-ring" cx="60" cy="60" r="52"/>
-        </svg>
+        <svg viewBox="0 0 120 120"><circle class="rbg" cx="60" cy="60" r="52"/><circle class="rfg" id="found-ring" cx="60" cy="60" r="52"/></svg>
         <span id="found-timer">15</span>
       </div>
-      <div class="found-ready"><b id="found-accepted">0</b> / <span id="found-total">10</span> READY</div>
+      <div class="found-ready"><b id="found-accepted">0</b> / <span id="found-total">2</span> READY</div>
       <div class="found-actions">
-        <button class="btn btn-accept" id="btn-accept">ACCEPT</button>
-        <button class="btn btn-ghost" id="btn-decline">DECLINE</button>
+        <button class="btn big" id="btn-accept">ACCEPT</button>
+        <button class="btn ghost" id="btn-decline">DECLINE</button>
       </div>
-      <div class="found-waiting hidden" id="found-waiting">WAITING FOR OTHER PLAYERS…</div>
+      <div class="found-wait hidden" id="found-waiting">WAITING FOR OTHER PLAYERS…</div>
     </div>
   </div>
 
   <!-- Map vote -->
   <div id="modal-mapvote" class="modal hidden">
     <div class="mapvote">
-      <div class="mv-head">
-        <span class="mv-tag">MAP VOTE</span>
-        <span class="mv-timer" id="mv-timer">20</span>
-      </div>
+      <div class="mv-head"><span class="mv-tag">MAP VOTE</span><span class="mv-timer" id="mv-timer">20</span></div>
       <div class="mv-grid" id="mv-grid"></div>
       <div class="mv-foot" id="mv-foot">SELECT A MAP</div>
     </div>
   </div>
 
-  <!-- Match result -->
+  <!-- Result -->
   <div id="modal-result" class="modal hidden">
     <div class="result" id="result-root">
-      <div class="result-bg"></div>
-      <div class="result-tag" id="result-tag">VICTORY</div>
-      <div class="result-score"><span id="result-a">13</span><i>-</i><span id="result-b">8</span></div>
-
-      <div class="result-rp" id="result-rp">
-        <div class="rp-rank" id="rp-rank">DIAMOND III</div>
-        <div class="rp-numbers">
-          <span id="rp-before">1742</span>
-          <svg class="rp-arrow" viewBox="0 0 24 24"><path d="M5 12h12M13 7l5 5-5 5" stroke="currentColor" stroke-width="2" fill="none"/></svg>
-          <span id="rp-after">1791</span>
-        </div>
-        <div class="rp-delta" id="rp-delta">+49 RP</div>
+      <div class="res-tag" id="result-tag">VICTORY</div>
+      <div class="res-score"><span id="result-a">0</span><i>-</i><span id="result-b">0</span></div>
+      <div class="res-rp" id="result-rp">
+        <div class="rp-rank" id="rp-rank">IRON I</div>
+        <div class="rp-nums"><span id="rp-before">0</span><svg class="rp-arrow"><use href="#i-back"/></svg><span id="rp-after">0</span></div>
+        <div class="rp-delta" id="rp-delta">+0 RP</div>
         <div class="rp-bar"><i id="rp-bar-fill"></i></div>
-        <div class="rp-breakdown" id="rp-breakdown"></div>
+        <div class="rp-break" id="rp-breakdown"></div>
       </div>
-
-      <div class="result-stats" id="result-stats"></div>
-
-      <div class="result-scoreboard" id="result-scoreboard"></div>
-
-      <div class="result-actions">
-        <button class="btn btn-ghost" data-action="result-close">CONTINUE</button>
-      </div>
+      <div class="res-stats" id="result-stats"></div>
+      <div class="res-board" id="result-scoreboard"></div>
+      <div class="res-actions"><button class="btn ghost" data-action="result-close">CONTINUE</button></div>
     </div>
   </div>
 
@@ -226,258 +218,212 @@
     </div>
   </div>
 
-  <!-- Rank up / down -->
+  <!-- Rank change -->
   <div id="modal-rank" class="modal hidden">
     <div class="rankup" id="rankup-root">
-      <div class="rankup-burst"></div>
-      <div class="rankup-tag" id="rankup-tag">RANK UP</div>
-      <div class="rankup-crest" id="rankup-crest"></div>
-      <div class="rankup-name" id="rankup-name">DIAMOND II</div>
-      <div class="rankup-sub" id="rankup-sub">NEW RANK</div>
+      <div class="ru-burst"></div>
+      <div class="ru-tag" id="rankup-tag">RANK UP</div>
+      <div class="ru-crest" id="rankup-crest"></div>
+      <div class="ru-name" id="rankup-name">IRON I</div>
+      <div class="ru-sub" id="rankup-sub">NEW RANK</div>
     </div>
   </div>
 </div>
 
 <!-- ==================================================================== -->
-<!-- MAIN HUB                                                              -->
+<!-- HUB — centered window, never full bleed                               -->
 <!-- ==================================================================== -->
 <div id="app" class="hidden">
-  <div class="bg">
-    <div class="bg-grid"></div>
-    <div class="bg-glow bg-glow-a"></div>
-    <div class="bg-glow bg-glow-b"></div>
-    <div class="bg-scan"></div>
+  <div class="shell">
+
+    <!-- ---------- header ---------- -->
+    <header class="hd">
+      <div class="idcard">
+        <div class="id-av" id="id-avatar"><span id="id-initial">?</span><i class="id-lvl" id="id-levelbadge">1</i></div>
+        <div class="id-info">
+          <div class="id-name" id="id-name">—</div>
+          <div class="id-rank"><span class="id-crest" id="id-crest"></span><span id="id-rankname">Unranked</span></div>
+          <div class="id-xp"><i id="id-xp-bar"></i></div>
+          <div class="id-xp-row"><span id="id-xp-text">0 / 0 XP</span><span id="id-lvl-text">LVL 1 / ∞</span></div>
+        </div>
+      </div>
+
+      <h1 class="hd-title">MATCHMAKING</h1>
+
+      <div class="hd-actions">
+        <button class="sqbtn hidden" id="btn-back" data-action="back"><svg><use href="#i-back"/></svg></button>
+        <button class="sqbtn" data-action="close"><svg><use href="#i-x"/></svg></button>
+      </div>
+    </header>
+
+    <!-- ---------- body ---------- -->
+    <div class="bd">
+
+      <!-- ======================= RANKED ======================= -->
+      <section class="pg active" id="pg-ranked">
+        <div class="slots" id="party-slots"></div>
+        <div class="modebar" id="mode-tabs"></div>
+      </section>
+
+      <!-- ======================= LEADERBOARD ======================= -->
+      <section class="pg" id="pg-leaderboard">
+        <div class="modebar wide" id="lb-tabs"></div>
+        <div class="lb">
+          <aside class="lb-side">
+            <div class="lb-side-head">YOUR STATISTICS</div>
+            <div class="lb-me" id="lb-me"></div>
+            <div class="lb-stats" id="lb-stats"></div>
+          </aside>
+          <div class="lb-main">
+            <div class="lb-head">
+              <span></span><span>PLAYER</span><span>POINTS</span><span>WIN</span><span>TOTAL KILL</span><span>DEATH</span><span>K/D</span>
+            </div>
+            <div class="lb-body" id="lb-body"></div>
+            <div class="lb-foot">
+              <button class="mini" data-action="lb-prev">PREV</button>
+              <span id="lb-page">PAGE 1</span>
+              <button class="mini" data-action="lb-next">NEXT</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================= CUSTOM MATCH ======================= -->
+      <section class="pg" id="pg-custom">
+        <div class="cm">
+
+          <!-- left: settings -->
+          <aside class="cm-left">
+            <div class="cm-title"><svg><use href="#i-sliders"/></svg>MATCH SETTINGS</div>
+
+            <div class="fld">
+              <label>GAME MODE</label>
+              <div class="stepper">
+                <button data-step="mode:-1"><svg><use href="#i-minus"/></svg></button>
+                <b id="cm-mode">1v1</b>
+                <button data-step="mode:1"><svg><use href="#i-plus"/></svg></button>
+              </div>
+            </div>
+
+            <div class="fld">
+              <label>ROUNDS</label>
+              <div class="stepper">
+                <button data-step="rounds:-1"><svg><use href="#i-minus"/></svg></button>
+                <b id="cm-rounds">7</b>
+                <button data-step="rounds:1"><svg><use href="#i-plus"/></svg></button>
+              </div>
+            </div>
+
+            <div class="fld">
+              <label>MATCH TYPE</label>
+              <div class="pills" id="cm-types"></div>
+            </div>
+
+            <div class="fld">
+              <label>WEAPONS <em class="dot"></em><span class="count" id="cm-wcount">0 / 0</span>
+                <button class="mini right" data-action="cm-all"><svg><use href="#i-shield"/></svg> All</button>
+              </label>
+              <div class="chips" id="cm-weapons"></div>
+            </div>
+
+            <div class="fld row">
+              <label>ARMOR</label>
+              <label class="sw"><input type="checkbox" id="cm-armor"/><i></i></label>
+            </div>
+
+            <div class="fld row">
+              <label>HEADSHOT ONLY</label>
+              <label class="sw"><input type="checkbox" id="cm-hsonly"/><i></i></label>
+            </div>
+          </aside>
+
+          <!-- center: steps + maps -->
+          <div class="cm-mid">
+            <div class="steps" id="cm-steps">
+              <span class="stp on"><i>1</i>SETTINGS</span>
+              <span class="stp"><i>2</i>PICK MAP</span>
+              <span class="stp"><i>3</i>CREATE ROOM</span>
+              <span class="stp"><i>4</i>TEAMS</span>
+              <span class="stp"><i>5</i>START</span>
+            </div>
+
+            <div class="cm-panel">
+              <div class="cm-panel-head"><svg><use href="#i-map"/></svg>SELECT MAP <em class="dot"></em></div>
+              <div class="mapgrid" id="cm-maps"></div>
+              <div class="pager" id="cm-pager"></div>
+            </div>
+
+            <div class="cm-panel hidden" id="cm-roomview"></div>
+          </div>
+
+          <!-- right: party / room -->
+          <aside class="cm-right">
+            <div class="cm-title"><svg><use href="#i-party"/></svg>PARTY <span class="count" id="cm-partycount">1/5</span></div>
+            <div class="cm-party" id="cm-party"></div>
+
+            <div class="inviterow">
+              <input class="inp" id="cm-invite" placeholder="ID اللاعب" autocomplete="off"/>
+              <button class="sqbtn sm" data-action="cm-invite"><svg><use href="#i-send"/></svg></button>
+            </div>
+
+            <div class="codebox">
+              <span class="code-lbl">Room Code</span>
+              <div class="code" id="cm-code">- - - -</div>
+              <button class="mini" data-action="cm-copy"><svg><use href="#i-copy"/></svg> نسخ</button>
+              <button class="mini" data-action="cm-chat"><svg><use href="#i-chat"/></svg></button>
+            </div>
+
+            <button class="btn wide" data-action="cm-create"><svg><use href="#i-plus"/></svg> CREATE ROOM</button>
+            <button class="btn ghost wide" data-action="cm-joincode"><svg><use href="#i-login"/></svg> JOIN CODE</button>
+            <button class="btn ghost wide hidden" id="cm-leave" data-action="cm-leave">LEAVE ROOM</button>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ======================= PROFILE ======================= -->
+      <section class="pg" id="pg-profile"><div class="scroll" id="profile-root"></div></section>
+
+      <!-- ======================= HISTORY ======================= -->
+      <section class="pg" id="pg-history">
+        <div class="scroll">
+          <div class="history" id="history-list"></div>
+          <div class="lb-foot">
+            <button class="mini" data-action="hist-prev">PREV</button>
+            <span id="hist-page">PAGE 1</span>
+            <button class="mini" data-action="hist-next">NEXT</button>
+          </div>
+          <div class="cm-panel hidden" id="matchdetail"></div>
+        </div>
+      </section>
+
+      <!-- ======================= REWARDS ======================= -->
+      <section class="pg" id="pg-rewards"><div class="scroll" id="rewards-root"></div></section>
+
+      <!-- ======================= TRAINING ======================= -->
+      <section class="pg" id="pg-training"><div class="scroll traingrid" id="traingrid"></div></section>
+
+      <!-- ======================= SETTINGS ======================= -->
+      <section class="pg" id="pg-settings"><div class="scroll settings" id="settings-root"></div></section>
+
+      <!-- ======================= ADMIN ======================= -->
+      <section class="pg" id="pg-admin"><div class="scroll admin" id="admin-root"></div></section>
+    </div>
+
+    <!-- ---------- footer ---------- -->
+    <footer class="ft">
+      <button class="tab active" data-page="ranked"><svg><use href="#i-ranked"/></svg>Ranked</button>
+      <button class="tab" data-page="leaderboard"><svg><use href="#i-board"/></svg>Leaderboard</button>
+      <button class="tab" data-page="custom"><svg><use href="#i-custom"/></svg>Custom Match</button>
+      <button class="tab more" data-page="profile"><svg><use href="#i-user"/></svg>Profile</button>
+      <button class="tab more" data-page="history"><svg><use href="#i-clock"/></svg>History</button>
+      <button class="tab more" data-page="rewards"><svg><use href="#i-gift"/></svg>Rewards</button>
+      <button class="tab more" data-page="training"><svg><use href="#i-target"/></svg>Training</button>
+      <button class="tab more" data-page="settings"><svg><use href="#i-cog"/></svg>Settings</button>
+      <button class="tab more admin-only hidden" data-page="admin"><svg><use href="#i-shield"/></svg>Admin</button>
+      <button class="tab start" id="btn-start"><svg><use href="#i-play"/></svg>START</button>
+    </footer>
+
   </div>
-
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">M5</div>
-      <div class="brand-text">
-        <b>M5 RANKED</b>
-        <span>COMPETITIVE PVP</span>
-      </div>
-    </div>
-
-    <div class="topbar-center" id="season-strip"></div>
-
-    <div class="idcard">
-      <div class="idcard-av" id="id-avatar"><span id="id-initial">?</span></div>
-      <div class="idcard-info">
-        <div class="idcard-top">
-          <b id="id-name">—</b>
-          <span class="idcard-title" id="id-title"></span>
-        </div>
-        <div class="idcard-bottom">
-          <span class="chip chip-rank" id="id-rank">UNRANKED</span>
-          <span class="chip" id="id-rp">0 RP</span>
-          <span class="chip chip-lvl">LV <b id="id-level">1</b></span>
-        </div>
-        <div class="idcard-xp"><i id="id-xp-bar"></i></div>
-      </div>
-      <button class="iconbtn" data-action="close" title="Close">
-        <svg><use href="#ico-x"/></svg>
-      </button>
-    </div>
-  </header>
-
-  <nav class="rail">
-    <button class="rail-btn active" data-page="dashboard"><svg><use href="#ico-grid"/></svg><span>HOME</span></button>
-    <button class="rail-btn" data-page="ranked"><svg><use href="#ico-play"/></svg><span>RANKED</span></button>
-    <button class="rail-btn" data-page="custom"><svg><use href="#ico-shield"/></svg><span>CUSTOM</span></button>
-    <button class="rail-btn" data-page="training"><svg><use href="#ico-target"/></svg><span>TRAINING</span></button>
-    <button class="rail-btn" data-page="leaderboard"><svg><use href="#ico-board"/></svg><span>RANKS</span></button>
-    <button class="rail-btn" data-page="profile"><svg><use href="#ico-user"/></svg><span>PROFILE</span></button>
-    <button class="rail-btn" data-page="history"><svg><use href="#ico-clock"/></svg><span>HISTORY</span></button>
-    <button class="rail-btn" data-page="rewards"><svg><use href="#ico-gift"/></svg><span>REWARDS</span></button>
-    <button class="rail-btn" data-page="settings"><svg><use href="#ico-cog"/></svg><span>SETTINGS</span></button>
-    <button class="rail-btn rail-admin hidden" data-page="admin"><svg><use href="#ico-shield"/></svg><span>ADMIN</span></button>
-  </nav>
-
-  <main class="stage">
-
-    <!-- ============ DASHBOARD ============ -->
-    <section class="page active" id="page-dashboard">
-      <div class="dash">
-        <div class="dash-left">
-          <div class="rankcard panel" id="rankcard">
-            <div class="rankcard-head">
-              <span class="panel-tag">COMPETITIVE RANK</span>
-              <span class="rankcard-pos" id="rankcard-pos"></span>
-            </div>
-            <div class="rankcard-body">
-              <div class="rankcard-crest" id="rankcard-crest"></div>
-              <div class="rankcard-info">
-                <div class="rankcard-name" id="rankcard-name">UNRANKED</div>
-                <div class="rankcard-rp"><b id="rankcard-rp">0</b><span>RP</span></div>
-                <div class="progress"><i id="rankcard-bar"></i></div>
-                <div class="rankcard-next" id="rankcard-next">PLAY PLACEMENT MATCHES</div>
-              </div>
-            </div>
-            <div class="rankpath" id="rankpath"></div>
-          </div>
-
-          <div class="quick" id="quick-modes"></div>
-        </div>
-
-        <div class="dash-right">
-          <div class="panel stat-panel">
-            <span class="panel-tag">SEASON PERFORMANCE</span>
-            <div class="statgrid" id="dash-stats"></div>
-          </div>
-          <div class="panel">
-            <span class="panel-tag">RECENT MATCHES</span>
-            <div class="minihistory" id="dash-history"></div>
-          </div>
-          <div class="panel">
-            <span class="panel-tag">DAILY MISSIONS</span>
-            <div class="missions" id="dash-missions"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ RANKED ============ -->
-    <section class="page" id="page-ranked">
-      <div class="ranked">
-        <div class="ranked-modes" id="ranked-modes"></div>
-
-        <aside class="ranked-side">
-          <div class="panel party-panel">
-            <span class="panel-tag">PARTY</span>
-            <div class="party-list" id="party-list"></div>
-            <div class="party-actions">
-              <input class="input" id="party-target" placeholder="Player name or ID" />
-              <button class="btn btn-sm" data-action="party-invite">INVITE</button>
-            </div>
-            <div class="party-actions">
-              <button class="btn btn-sm btn-ghost" data-action="party-ready">READY</button>
-              <button class="btn btn-sm btn-ghost" data-action="party-leave">LEAVE</button>
-            </div>
-          </div>
-
-          <div class="panel" id="queue-panel">
-            <span class="panel-tag">QUEUE STATUS</span>
-            <div class="queue-idle" id="queue-idle">SELECT A MODE TO BEGIN</div>
-
-            <div class="searching hidden" id="searching">
-              <div class="searching-title">SEARCHING FOR MATCH</div>
-              <div class="searching-orb"><i></i><i></i><i></i></div>
-              <div class="searching-rows">
-                <div><span>ESTIMATED</span><b id="search-eta">00:00</b></div>
-                <div><span>ELAPSED</span><b id="search-elapsed">00:00</b></div>
-                <div><span>SEARCHING</span><b id="search-count">0</b></div>
-              </div>
-              <div class="searching-rank" id="search-rank"></div>
-              <button class="btn btn-danger" data-action="queue-cancel">CANCEL</button>
-            </div>
-          </div>
-
-          <div class="panel hidden" id="status-panel">
-            <span class="panel-tag">STATUS</span>
-            <div id="status-body"></div>
-          </div>
-        </aside>
-      </div>
-    </section>
-
-    <!-- ============ CUSTOM ============ -->
-    <section class="page" id="page-custom">
-      <div class="section-head">
-        <h2>CUSTOM GAMES</h2>
-        <div class="section-actions">
-          <button class="btn btn-sm btn-ghost" data-action="custom-refresh">REFRESH</button>
-          <button class="btn btn-sm" data-action="custom-create-open">CREATE GAME</button>
-        </div>
-      </div>
-
-      <div class="rooms panel" id="rooms-panel">
-        <div class="rooms-head">
-          <span>ROOM</span><span>HOST</span><span>MODE</span><span>MAP</span><span>PLAYERS</span><span>STATUS</span><span></span>
-        </div>
-        <div class="rooms-body" id="rooms-body"></div>
-      </div>
-
-      <div class="roomview hidden" id="roomview"></div>
-
-      <div class="createbox panel hidden" id="createbox"></div>
-    </section>
-
-    <!-- ============ TRAINING ============ -->
-    <section class="page" id="page-training">
-      <div class="section-head"><h2>TRAINING RANGE</h2></div>
-      <div class="traingrid" id="traingrid"></div>
-    </section>
-
-    <!-- ============ LEADERBOARD ============ -->
-    <section class="page" id="page-leaderboard">
-      <div class="section-head">
-        <h2>LEADERBOARD</h2>
-        <div class="tabs" id="lb-tabs">
-          <button class="tab active" data-board="global">GLOBAL</button>
-          <button class="tab" data-board="weekly">WEEKLY</button>
-          <button class="tab" data-board="daily">DAILY</button>
-          <button class="tab" data-board="season">SEASON</button>
-          <button class="tab" data-board="friends">RECENT</button>
-        </div>
-      </div>
-
-      <div class="podium" id="podium"></div>
-
-      <div class="board panel">
-        <div class="board-head">
-          <span>#</span><span>PLAYER</span><span>RANK</span><span>RP</span><span>W / L</span><span>K/D</span><span>HS%</span>
-        </div>
-        <div class="board-body" id="board-body"></div>
-        <div class="board-foot">
-          <button class="btn btn-sm btn-ghost" data-action="lb-prev">PREV</button>
-          <span id="lb-page">PAGE 1</span>
-          <button class="btn btn-sm btn-ghost" data-action="lb-next">NEXT</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ PROFILE ============ -->
-    <section class="page" id="page-profile">
-      <div class="profile" id="profile-root"></div>
-    </section>
-
-    <!-- ============ HISTORY ============ -->
-    <section class="page" id="page-history">
-      <div class="section-head"><h2>MATCH HISTORY</h2></div>
-      <div class="history" id="history-list"></div>
-      <div class="board-foot">
-        <button class="btn btn-sm btn-ghost" data-action="hist-prev">PREV</button>
-        <span id="hist-page">PAGE 1</span>
-        <button class="btn btn-sm btn-ghost" data-action="hist-next">NEXT</button>
-      </div>
-      <div class="matchdetail panel hidden" id="matchdetail"></div>
-    </section>
-
-    <!-- ============ REWARDS ============ -->
-    <section class="page" id="page-rewards">
-      <div class="section-head"><h2>REWARDS &amp; PROGRESSION</h2></div>
-      <div class="rewards" id="rewards-root"></div>
-    </section>
-
-    <!-- ============ SETTINGS ============ -->
-    <section class="page" id="page-settings">
-      <div class="section-head"><h2>SETTINGS</h2></div>
-      <div class="settings" id="settings-root"></div>
-    </section>
-
-    <!-- ============ ADMIN ============ -->
-    <section class="page" id="page-admin">
-      <div class="section-head">
-        <h2>ADMIN CONTROL</h2>
-        <div class="section-actions">
-          <button class="btn btn-sm btn-ghost" data-action="admin-refresh">REFRESH</button>
-          <button class="btn btn-sm btn-danger" data-action="admin-freeze">FREEZE RANKED</button>
-        </div>
-      </div>
-      <div class="admin" id="admin-root"></div>
-    </section>
-
-  </main>
 </div>
 
 <script src="app.js"></script>

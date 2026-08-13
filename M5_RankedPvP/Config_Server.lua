@@ -449,6 +449,18 @@ Config.Loadouts = {
     }
 }
 
+-- Weapons offered as pickable chips in the custom match UI.
+-- `weapon` must also be present in Config.Weapons.allowed below.
+Config.WeaponPresets = {
+    { id = 'pistol_mk2',    label = 'Pistol MK2',    weapon = 'WEAPON_PISTOL_MK2',   ammo = 250 },
+    { id = 'combat_mg',     label = 'Combat MG',     weapon = 'WEAPON_COMBATMG',     ammo = 400 },
+    { id = 'assault_rifle', label = 'Assault Rifle', weapon = 'WEAPON_ASSAULTRIFLE', ammo = 300 },
+    { id = 'sniper',        label = 'Sniper',        weapon = 'WEAPON_SNIPERRIFLE',  ammo = 50  },
+    { id = 'shotgun',       label = 'Shotgun',       weapon = 'WEAPON_PUMPSHOTGUN',  ammo = 40  },
+    { id = 'smg',           label = 'SMG',           weapon = 'WEAPON_SMG',          ammo = 250 },
+    { id = 'knife',         label = 'Knife',         weapon = 'WEAPON_KNIFE',        ammo = 1   }
+}
+
 Config.Weapons = {
     -- Global whitelist. Any weapon not listed here cannot deal validated damage.
     allowed = {
@@ -1138,9 +1150,26 @@ Config.CustomGames = {
     rankedPermission = 'pvp.admin',
 
     -- Default room settings (host can change every one of these)
+    -- Short human friendly code used by JOIN CODE in the UI
+    roomCode = {
+        length   = 4,
+        alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' -- no I/O/0/1
+    },
+
+    -- Match types offered in the custom match UI
+    matchTypes = {
+        { id = 'normal',  label = 'Normal',   description = 'Everyone spawns with the selected weapons.' },
+        { id = 'random',  label = 'Random',   description = 'A random weapon from the selection each round.' },
+        { id = 'gungame', label = 'Gun Game', description = 'Every kill advances you to the next weapon.' }
+    },
+
     defaults = {
         mode          = '5v5',
         map           = 'harbor',
+        matchType     = 'normal',
+        weapons       = { 'pistol_mk2' },
+        armorEnabled  = false,
+        headshotOnly  = false,
         rounds        = 13,
         roundTime     = 120,
         matchTime     = 3600,

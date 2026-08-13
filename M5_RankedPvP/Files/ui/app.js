@@ -1,12 +1,10 @@
 /* ==========================================================================
    M5 Ranked PvP — NUI controller
 
-   Design rules followed here:
-     · No full DOM rebuilds. Every list has its own render function and is only
-       touched when its data actually changes.
-     · No animation loops. Timers are plain setInterval at 1 Hz for countdowns
-       and everything else is CSS driven.
-     · All NUI traffic is event based; nothing polls the client.
+   Rules kept throughout:
+     · no full DOM rebuilds — each list owns its render function
+     · no animation loops — one shared 1 Hz timer, everything else is CSS
+     · all traffic is event driven, nothing polls the client
    ========================================================================== */
 
 const RES = 'M5_RankedPvP';
@@ -22,15 +20,9 @@ const el = (tag, cls, html) => {
 const esc = (s) => String(s === undefined || s === null ? '' : s)
   .replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const pad = (n) => String(n).padStart(2, '0');
-const clock = (s) => {
-  s = Math.max(0, Math.floor(s || 0));
-  return `${Math.floor(s / 60)}:${pad(s % 60)}`;
-};
-const clockLong = (s) => {
-  s = Math.max(0, Math.floor(s || 0));
-  return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
-};
-const num = (n) => (n || 0).toLocaleString('en-US');
+const clock = (s) => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s / 60)}:${pad(s % 60)}`; };
+const num = (n) => (Number(n) || 0).toLocaleString('en-US');
+const initial = (s) => (String(s || '?').trim().charAt(0) || '?').toUpperCase();
 
 function post(name, data) {
   return fetch(`https://${RES}/${name}`, {
@@ -40,7 +32,7 @@ function post(name, data) {
   }).catch(() => {});
 }
 
-/* ---------------------------------------------------------------- defaults */
+/* --------------------------------------------------------------- defaults */
 const DEFAULTS = {
   uiVolume: 55, musicVolume: 25, killSounds: true, hudSize: 100,
   killFeedPos: 'right', showPing: true, showMinimap: false,
@@ -50,130 +42,126 @@ const DEFAULTS = {
 
 /* ------------------------------------------------------------------ state */
 const S = {
-  defaults: DEFAULTS,
   boot: null,
-  theme: null,
-  text: {},
   settings: {},
-  page: 'dashboard',
+  page: 'ranked',
 
-  queue: { state: 'IDLE', mode: null, elapsed: 0, eta: 0, count: 0 },
-  found: null,
-  foundTimer: null,
-  mapvote: null,
-  mapvoteTimer: null,
+  mode: '1v1',
+  queue: { searching: false, elapsed: 0 },
+  found: null, foundTimer: null,
+  mapvote: null, mapvoteTimer: null,
 
-  lb: { board: 'global', page: 1, rows: [] },
-  hist: { page: 1, rows: [] },
-  profile: null,
-  rewards: null,
-  admin: null,
   party: null,
-  rooms: [],
-  room: null,
+  lb: { mode: '1v1', page: 1 },
+  hist: { page: 1 },
+  profile: null,
+  admin: null,
 
-  match: null,
-  hud: null,
-  killfeed: [],
-  tickTimer: null,
-  hudTime: 0,
-  boundaryTimer: null
+  rooms: [], room: null,
+  cm: {
+    mode: '1v1', rounds: 7, matchType: 'normal',
+    weapons: [], armor: false, hsOnly: false,
+    map: null, mapPage: 1, step: 1
+  },
+
+  hud: null, hudTime: 0
 };
 
 /* ------------------------------------------------------------------ audio */
-const Audio_ = (() => {
+const Sfx = (() => {
   let ctx = null;
-  const volume = () => (S.settings.uiVolume !== undefined ? S.settings.uiVolume : 55) / 100;
-
-  const TONES = {
-    click:    [{ f: 620, d: 0.05, t: 'square', g: 0.05 }],
-    hover:    [{ f: 380, d: 0.03, t: 'sine',   g: 0.02 }],
-    open:     [{ f: 300, d: 0.09, t: 'sawtooth', g: 0.05 }, { f: 620, d: 0.12, t: 'sine', g: 0.05, at: 0.06 }],
-    close:    [{ f: 480, d: 0.08, t: 'sine', g: 0.04 }, { f: 240, d: 0.1, t: 'sine', g: 0.04, at: 0.05 }],
-    queue:    [{ f: 440, d: 0.1, t: 'sine', g: 0.05 }, { f: 660, d: 0.14, t: 'sine', g: 0.05, at: 0.08 }],
-    found:    [{ f: 520, d: 0.14, t: 'square', g: 0.07 }, { f: 780, d: 0.2, t: 'square', g: 0.07, at: 0.12 },
-               { f: 1040, d: 0.26, t: 'sine', g: 0.06, at: 0.26 }],
-    accept:   [{ f: 720, d: 0.1, t: 'sine', g: 0.06 }, { f: 980, d: 0.16, t: 'sine', g: 0.05, at: 0.07 }],
-    tick:     [{ f: 900, d: 0.04, t: 'square', g: 0.05 }],
-    go:       [{ f: 1200, d: 0.22, t: 'sawtooth', g: 0.07 }],
-    roundwin: [{ f: 660, d: 0.12, t: 'sine', g: 0.06 }, { f: 990, d: 0.18, t: 'sine', g: 0.05, at: 0.1 }],
-    roundloss:[{ f: 330, d: 0.16, t: 'sine', g: 0.05 }, { f: 220, d: 0.2, t: 'sine', g: 0.05, at: 0.1 }],
-    kill:     [{ f: 1100, d: 0.05, t: 'square', g: 0.05 }],
-    headshot: [{ f: 1400, d: 0.05, t: 'square', g: 0.06 }, { f: 1800, d: 0.06, t: 'square', g: 0.05, at: 0.04 }],
-    victory:  [{ f: 523, d: 0.18, t: 'sine', g: 0.07 }, { f: 659, d: 0.18, t: 'sine', g: 0.07, at: 0.16 },
-               { f: 784, d: 0.34, t: 'sine', g: 0.07, at: 0.32 }],
-    defeat:   [{ f: 392, d: 0.24, t: 'sine', g: 0.06 }, { f: 311, d: 0.34, t: 'sine', g: 0.06, at: 0.22 }],
-    rankup:   [{ f: 523, d: 0.14, t: 'square', g: 0.06 }, { f: 698, d: 0.14, t: 'square', g: 0.06, at: 0.13 },
-               { f: 880, d: 0.3, t: 'sine', g: 0.07, at: 0.26 }],
-    rankdown: [{ f: 440, d: 0.2, t: 'sine', g: 0.05 }, { f: 294, d: 0.3, t: 'sine', g: 0.05, at: 0.18 }],
-    error:    [{ f: 200, d: 0.16, t: 'square', g: 0.05 }],
-    warning:  [{ f: 660, d: 0.09, t: 'square', g: 0.05 }, { f: 660, d: 0.09, t: 'square', g: 0.05, at: 0.14 }]
+  const vol = () => (S.settings.uiVolume !== undefined ? S.settings.uiVolume : 55) / 100;
+  const T = {
+    click:[{f:620,d:.05,t:'square',g:.05}],
+    hover:[{f:380,d:.03,t:'sine',g:.02}],
+    open:[{f:300,d:.09,t:'sawtooth',g:.05},{f:620,d:.12,t:'sine',g:.05,at:.06}],
+    close:[{f:480,d:.08,t:'sine',g:.04},{f:240,d:.1,t:'sine',g:.04,at:.05}],
+    queue:[{f:440,d:.1,t:'sine',g:.05},{f:660,d:.14,t:'sine',g:.05,at:.08}],
+    found:[{f:520,d:.14,t:'square',g:.07},{f:780,d:.2,t:'square',g:.07,at:.12},{f:1040,d:.26,t:'sine',g:.06,at:.26}],
+    accept:[{f:720,d:.1,t:'sine',g:.06},{f:980,d:.16,t:'sine',g:.05,at:.07}],
+    tick:[{f:900,d:.04,t:'square',g:.05}],
+    go:[{f:1200,d:.22,t:'sawtooth',g:.07}],
+    roundwin:[{f:660,d:.12,t:'sine',g:.06},{f:990,d:.18,t:'sine',g:.05,at:.1}],
+    roundloss:[{f:330,d:.16,t:'sine',g:.05},{f:220,d:.2,t:'sine',g:.05,at:.1}],
+    kill:[{f:1100,d:.05,t:'square',g:.05}],
+    headshot:[{f:1400,d:.05,t:'square',g:.06},{f:1800,d:.06,t:'square',g:.05,at:.04}],
+    victory:[{f:523,d:.18,t:'sine',g:.07},{f:659,d:.18,t:'sine',g:.07,at:.16},{f:784,d:.34,t:'sine',g:.07,at:.32}],
+    defeat:[{f:392,d:.24,t:'sine',g:.06},{f:311,d:.34,t:'sine',g:.06,at:.22}],
+    rankup:[{f:523,d:.14,t:'square',g:.06},{f:698,d:.14,t:'square',g:.06,at:.13},{f:880,d:.3,t:'sine',g:.07,at:.26}],
+    rankdown:[{f:440,d:.2,t:'sine',g:.05},{f:294,d:.3,t:'sine',g:.05,at:.18}],
+    error:[{f:200,d:.16,t:'square',g:.05}],
+    warning:[{f:660,d:.09,t:'square',g:.05},{f:660,d:.09,t:'square',g:.05,at:.14}]
   };
-
-  function play(key) {
-    const spec = TONES[key];
-    if (!spec) return;
-    const v = volume();
-    if (v <= 0) return;
+  return { play(key) {
+    const spec = T[key]; if (!spec) return;
+    const v = vol(); if (v <= 0) return;
     try {
       if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
       const now = ctx.currentTime;
       spec.forEach((s) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = s.t;
-        osc.frequency.setValueAtTime(s.f, now + (s.at || 0));
-        gain.gain.setValueAtTime(0, now + (s.at || 0));
-        gain.gain.linearRampToValueAtTime(s.g * v, now + (s.at || 0) + 0.012);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + (s.at || 0) + s.d);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(now + (s.at || 0));
-        osc.stop(now + (s.at || 0) + s.d + 0.02);
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = s.t; o.frequency.setValueAtTime(s.f, now + (s.at || 0));
+        g.gain.setValueAtTime(0, now + (s.at || 0));
+        g.gain.linearRampToValueAtTime(s.g * v, now + (s.at || 0) + .012);
+        g.gain.exponentialRampToValueAtTime(.0001, now + (s.at || 0) + s.d);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + (s.at || 0)); o.stop(now + (s.at || 0) + s.d + .02);
       });
-    } catch (e) { /* audio unavailable, silently ignore */ }
-  }
-  return { play };
+    } catch (e) { /* audio unavailable */ }
+  } };
 })();
 
-/* ------------------------------------------------------------- rank crest */
-function crest(tier, color, size) {
-  const c = color || '#5A616D';
-  const chevrons = { IRON: 1, BRONZE: 1, SILVER: 2, GOLD: 2, PLATINUM: 3, DIAMOND: 3, ASCENDANT: 4 };
-  const n = chevrons[tier] || 0;
-  const star = tier === 'IMMORTAL' || tier === 'RADIANT';
-
-  let inner = '';
-  for (let i = 0; i < n; i++) {
-    inner += `<use href="#chev" x="0" y="${-4 + i * 13}" width="100" height="100" opacity="${1 - i * 0.16}"/>`;
-  }
-  if (star) inner = `<use href="#star" x="22" y="20" width="56" height="56"/>`;
-  if (tier === 'RADIANT') {
-    inner += `<use href="#star" x="8" y="52" width="20" height="20" opacity=".6"/>
-              <use href="#star" x="72" y="52" width="20" height="20" opacity=".6"/>`;
-  }
-
-  return `<svg viewBox="0 0 100 100" style="color:${c};width:${size || '100%'};height:${size || '100%'}">
-    <use href="#crest" width="100" height="100"/>${inner}</svg>`;
+/* --------------------------------------------------------------- rank art */
+function crestSymbol(tier) {
+  if (tier === 'IMMORTAL' || tier === 'RADIANT') return '#hex-star';
+  if (!tier || tier === 'UNRANKED') return '#hex';
+  return '#hex-chev';
+}
+function crest(tier, color) {
+  return `<svg viewBox="0 0 100 100" style="color:${color || '#5A616D'}"><use href="${crestSymbol(tier)}"/></svg>`;
+}
+function mapArt(id, forced) {
+  let h = 0;
+  const str = String(id);
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
+  const hue = forced !== undefined ? forced : h;
+  return `background:linear-gradient(155deg,hsl(${hue} 26% 20%),hsl(${(hue + 42) % 360} 32% 9%))`;
+}
+function tierOf(rankId) {
+  const r = ((S.boot && S.boot.ranks) || []).find((x) => x.id === rankId);
+  return r ? r.tier : 'UNRANKED';
+}
+function tierColor(rankId) {
+  const r = ((S.boot && S.boot.ranks) || []).find((x) => x.id === rankId);
+  return r ? r.color : '#5A616D';
 }
 
-/* ------------------------------------------------------------ page router */
+/* ---------------------------------------------------------------- routing */
+const PAGE_TITLES = {
+  ranked: 'MATCHMAKING', leaderboard: 'MATCHMAKING', custom: 'MATCHMAKING',
+  profile: 'PROFILE', history: 'MATCH HISTORY', rewards: 'REWARDS',
+  training: 'TRAINING', settings: 'SETTINGS', admin: 'ADMIN CONTROL'
+};
+
 function showPage(page) {
   S.page = page;
-  document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
-  const target = $('page-' + page);
+  document.querySelectorAll('.pg').forEach((p) => p.classList.remove('active'));
+  const target = $('pg-' + page);
   if (target) target.classList.add('active');
-  document.querySelectorAll('.rail-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.page === page);
-  });
+  document.querySelectorAll('.ft .tab').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
+
+  document.querySelector('.hd-title').textContent = PAGE_TITLES[page] || 'MATCHMAKING';
+  $('btn-start').classList.toggle('hidden', page !== 'ranked');
+  $('btn-back').classList.toggle('hidden', !(page === 'custom' && S.room));
 
   if (page === 'leaderboard') fetchBoard();
   if (page === 'history') post('fetch', { what: 'history', page: S.hist.page });
   if (page === 'profile') post('fetch', { what: 'profile' });
   if (page === 'rewards') post('fetch', { what: 'rewards' });
-  if (page === 'custom') post('custom', { action: 'list' });
-  if (page === 'admin') post('admin', { action: 'dashboard' });
+  if (page === 'custom') { post('custom', { action: 'list' }); renderCustom(); }
   if (page === 'training') renderTraining();
   if (page === 'settings') renderSettings();
+  if (page === 'admin') post('admin', { action: 'dashboard' });
 }
 
 /* ============================================================ BOOT RENDER */
@@ -182,237 +170,140 @@ function renderBoot(data) {
   const p = data.player;
 
   $('id-name').textContent = p.name || '—';
-  $('id-initial').textContent = (p.name || '?').charAt(0).toUpperCase();
-  $('id-title').textContent = p.activeTitle || '';
-  $('id-rank').textContent = (p.rank || 'UNRANKED').toUpperCase();
-  $('id-rank').style.color = p.rankColor || '#8A929E';
-  $('id-rp').textContent = `${num(p.rp)} RP`;
-  $('id-level').textContent = p.level || 1;
-  $('id-xp-bar').style.width =
-    Math.min(100, ((p.xp || 0) / Math.max(1, p.xpNeeded || 1)) * 100) + '%';
+  $('id-initial').textContent = initial(p.name);
+  $('id-levelbadge').textContent = p.level || 1;
+  $('id-rankname').textContent = p.rank || 'Unranked';
+  $('id-crest').innerHTML = crest(p.tier, p.rankColor);
+  $('id-xp-bar').style.width = Math.min(100, ((p.xp || 0) / Math.max(1, p.xpNeeded || 1)) * 100) + '%';
+  $('id-xp-text').textContent = `${num(p.xp)} / ${num(p.xpNeeded)} XP`;
+  $('id-lvl-text').textContent = `LVL ${p.level || 1} / ∞`;
 
-  // season strip
-  const strip = $('season-strip');
-  strip.innerHTML = '';
-  if (data.season) {
-    const left = Math.max(0, (data.season.endsAt || 0) - Math.floor(Date.now() / 1000));
-    const days = Math.floor(left / 86400);
-    strip.appendChild(el('div', 'season-pill',
-      `<i></i><span>${esc(data.season.name)} · <b>${days}d</b> LEFT</span>`));
-  }
-  if (data.status && data.status.frozen) {
-    strip.appendChild(el('div', 'season-pill', `<i style="background:#FFC94A;box-shadow:0 0 10px #FFC94A"></i><span>RANKED FROZEN</span>`));
-  }
-
-  document.querySelector('.rail-admin')
+  document.querySelector('.admin-only')
     .classList.toggle('hidden', !(data.permissions && data.permissions.moderator));
 
-  renderRankCard(p);
-  renderRankPath(p);
-  renderQuickModes(data.modes);
-  renderModeCards(data.modes);
-  renderDashStats(data.stats);
-  renderDashMissions(data.missions);
-  renderStatus(data.status);
-  post('fetch', { what: 'history', page: 1 });
-
-  if (data.stats) {
-    S.profile = data.stats;
-    if (S.page === 'profile') renderProfile();
+  if (data.modes && data.modes.length && !data.modes.find((m) => m.id === S.mode)) {
+    S.mode = data.modes[0].id;
+    S.lb.mode = data.modes[0].id;
   }
-}
 
-function renderRankCard(p) {
-  $('rankcard-crest').innerHTML = crest(p.tier, p.rankColor);
-  $('rankcard-name').textContent = (p.rank || 'UNRANKED').toUpperCase();
-  $('rankcard-name').style.color = p.rankColor || '#F4F6F8';
-  $('rankcard-rp').textContent = num(p.rp);
-  $('rankcard-pos').textContent = p.position ? `GLOBAL #${p.position}` : '';
+  const d = data.customDefaults || {};
+  if (!S.cm.weapons.length) S.cm.weapons = (d.weapons || []).slice();
+  if (!S.cm.map && data.maps && data.maps.length) S.cm.map = data.maps[0].id;
 
-  const pr = p.progress || {};
-  $('rankcard-bar').style.width = (pr.percent || 0) + '%';
-
-  if (p.placement && !p.placement.done && p.placement.enabled) {
-    $('rankcard-next').textContent =
-      `PLACEMENT ${p.placement.played} / ${p.placement.total} MATCHES`;
-  } else if (pr.next) {
-    $('rankcard-next').textContent = `${pr.needed} RP TO ${pr.next.toUpperCase()}`;
-  } else {
-    $('rankcard-next').textContent = 'MAXIMUM RANK REACHED';
-  }
-}
-
-function renderRankPath(p) {
-  const path = (S.boot && S.boot.rankPath) || [];
-  const host = $('rankpath');
-  host.innerHTML = '';
-  const curIndex = path.indexOf(p.tier);
-  path.forEach((tier, i) => {
-    const node = el('div', 'rp-node', tier.slice(0, 4));
-    if (curIndex >= 0 && i < curIndex) node.classList.add('done');
-    if (tier === p.tier) node.classList.add('cur');
-    host.appendChild(node);
-  });
-}
-
-function renderQuickModes(modes) {
-  const host = $('quick-modes');
-  host.innerHTML = '';
-  (modes || []).slice(0, 4).forEach((m) => {
-    const card = el('div', 'qmode', `<b>${esc(m.label)}</b><span>${esc(m.teamSize)}v${esc(m.teamSize)} · ${esc(m.type).toUpperCase()}</span>`);
-    card.onclick = () => { showPage('ranked'); selectMode(m.id); };
-    card.onmouseenter = () => Audio_.play('hover');
-    host.appendChild(card);
-  });
-}
-
-function renderDashStats(profile) {
-  const host = $('dash-stats');
-  host.innerHTML = '';
-  if (!profile || !profile.stats) return;
-  const s = profile.stats;
-  const rows = [
-    ['MATCHES', num(s.matches), ''],
-    ['WIN RATE', s.winRate + '%', s.winRate >= 50 ? 'good' : 'bad'],
-    ['K / D', s.kd, s.kd >= 1 ? 'good' : 'bad'],
-    ['KILLS', num(s.kills), ''],
-    ['HEADSHOT %', s.hsPercent + '%', ''],
-    ['MVP', num(s.mvp), ''],
-    ['WIN STREAK', num(s.winStreak), ''],
-    ['CLUTCHES', num(s.clutches), ''],
-    ['ACES', num(s.aces), '']
-  ];
-  rows.forEach(([label, value, cls]) => {
-    host.appendChild(el('div', 'stat ' + cls, `<b>${esc(value)}</b><span>${label}</span>`));
-  });
-}
-
-function renderDashMissions(missions) {
-  const host = $('dash-missions');
-  host.innerHTML = '';
-  const list = (missions && missions.daily) || [];
-  if (!list.length) {
-    host.appendChild(el('div', 'party-empty', 'NO ACTIVE MISSIONS'));
-    return;
-  }
-  list.forEach((m) => {
-    const pct = Math.min(100, (m.progress / Math.max(1, m.target)) * 100);
-    const node = el('div', 'mission' + (m.completed ? ' done' : ''),
-      `<div class="mission-top"><span>${esc(m.label)}</span><s>${m.progress}/${m.target}</s></div>
-       <div class="mission-bar"><i style="width:${pct}%"></i></div>`);
-    host.appendChild(node);
-  });
-}
-
-function renderMiniHistory(rows) {
-  const host = $('dash-history');
-  host.innerHTML = '';
-  if (!rows || !rows.length) {
-    host.appendChild(el('div', 'party-empty', 'NO MATCHES YET'));
-    return;
-  }
-  rows.slice(0, 5).forEach((r) => {
-    const loss = r.result === 'LOSS';
-    host.appendChild(el('div', 'mh' + (loss ? ' loss' : ''),
-      `<i></i>
-       <div><div class="mh-mode">${esc(r.mode)}</div><div class="mh-map">${esc(r.map)}</div></div>
-       <div class="mh-kd">${r.kills}/${r.deaths}</div>
-       <div class="mh-rp ${r.rpChange < 0 ? 'neg' : ''}">${r.rpChange > 0 ? '+' : ''}${r.rpChange}</div>`));
-  });
-}
-
-function renderStatus(status) {
-  const panel = $('status-panel');
-  const body = $('status-body');
-  if (!status) return;
-  body.innerHTML = '';
-  let show = false;
-
-  if (status.banned) {
-    show = true;
-    const until = status.banned.permanent ? 'PERMANENT'
-      : new Date(status.banned.expiry * 1000).toLocaleString();
-    body.appendChild(el('div', 'toast error',
-      `<b>RANKED BAN</b><span>${esc(status.banned.reason)} — ${esc(until)}</span>`));
-  }
-  if (status.cooldown > 0) {
-    show = true;
-    body.appendChild(el('div', 'toast warning',
-      `<b>QUEUE COOLDOWN</b><span>${Math.ceil(status.cooldown / 60)} minutes remaining</span>`));
-  }
-  if (status.reconnect) {
-    show = true;
-    const b = el('div', 'toast');
-    b.innerHTML = `<b>MATCH IN PROGRESS</b><span>You can rejoin your match.</span>`;
-    const btn = el('button', 'btn btn-sm', 'RECONNECT');
-    btn.style.marginTop = '8px';
-    btn.onclick = () => post('action', { action: 'reconnect' });
-    b.appendChild(btn);
-    body.appendChild(b);
-  }
-  panel.classList.toggle('hidden', !show);
+  renderModeTabs();
+  renderSlots();
+  renderCustom();
 }
 
 /* ============================================================ RANKED PAGE */
-let selectedMode = null;
+function renderModeTabs() {
+  const modes = (S.boot && S.boot.modes) || [];
+  const build = (host, current, onPick) => {
+    host.innerHTML = '';
+    modes.forEach((m) => {
+      const b = el('button', 'mtab' + (m.id === current ? ' active' : ''), esc(m.label));
+      b.onclick = () => { Sfx.play('click'); onPick(m.id); };
+      host.appendChild(b);
+    });
+  };
+  build($('mode-tabs'), S.mode, (id) => { S.mode = id; renderModeTabs(); renderSlots(); });
+  build($('lb-tabs'), S.lb.mode, (id) => { S.lb.mode = id; S.lb.page = 1; renderModeTabs(); fetchBoard(); });
+}
 
-function renderModeCards(modes) {
-  const host = $('ranked-modes');
+/** The party slots. Slot 1 is always you, the rest fill from the party. */
+function renderSlots() {
+  const host = $('party-slots');
+  const p = S.boot && S.boot.player;
+  const max = (S.boot && S.boot.maxParty) || 5;
+  const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode);
+  const capacity = Math.min(max, modeCfg ? modeCfg.teamSize : max);
+
+  const members = (S.party && S.party.members && S.party.members.length)
+    ? S.party.members
+    : (p ? [{ userId: p.userId, name: p.name, rank: p.rank, rankId: p.rankId, rp: p.rp, leader: true, ready: true }] : []);
+
+  const meId = p && p.userId;
+  const iAmLeader = !S.party || S.party.leader === meId;
+
   host.innerHTML = '';
-  (modes || []).forEach((m) => {
-    const card = el('div', 'modecard',
-      `<div class="modecard-glyph">${esc(m.label.replace(/[^0-9V]/gi, '').slice(0, 3) || m.label.slice(0, 3))}</div>
-       <div><b>${esc(m.label)}</b><p>${esc(m.description || '')}</p></div>
-       <div class="modecard-meta">
-         <span>${m.teamSize}v${m.teamSize}</span>
-         <span>${esc((m.type || '').toUpperCase())}</span>
-         ${m.roundsToWin ? `<span>FIRST TO ${m.roundsToWin}</span>` : ''}
-       </div>`);
-    card.dataset.mode = m.id;
-    card.onmouseenter = () => Audio_.play('hover');
-    card.onclick = () => { selectMode(m.id); startQueue(m.id); };
-    host.appendChild(card);
-  });
+  for (let i = 0; i < max; i++) {
+    const m = members[i];
+
+    if (!m) {
+      const slot = el('div', 'slot empty', '<svg><use href="#i-plus"/></svg>');
+      if (i < capacity && iAmLeader) slot.onclick = () => openInvite();
+      else slot.style.opacity = '.4';
+      host.appendChild(slot);
+      continue;
+    }
+
+    const isMe = m.userId === meId;
+    const tier = isMe && p ? p.tier : tierOf(m.rankId);
+    const color = isMe && p ? p.rankColor : tierColor(m.rankId);
+    const prog = (isMe && p && p.progress) ? p.progress : null;
+    const pct = prog ? prog.percent : 0;
+    const lo = m.rp || 0;
+    const hi = prog && prog.needed ? (lo + prog.needed) : (lo + 50);
+
+    const slot = el('div', 'slot filled' + (m.leader ? ' leader' : ''), `
+      <div class="slot-top">
+        <div class="slot-av">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
+        <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
+        <div class="slot-ready ${m.ready ? 'on' : ''}">${m.ready ? 'READY' : 'NOT READY'}</div>
+      </div>
+      <div class="slot-foot">
+        <div class="slot-crest">${crest(tier, color)}</div>
+        <div class="slot-track"><i style="width:${pct}%"></i></div>
+        <div class="slot-nums">
+          <span>${num(lo)}</span>
+          <span class="slot-rank">${esc(m.rank || 'Unranked')} (${esc((modeCfg && modeCfg.label) || S.mode)})</span>
+          <span>${num(hi)}</span>
+        </div>
+      </div>`);
+
+    if (!isMe && iAmLeader) {
+      const kick = el('button', 'slot-kick', '<svg><use href="#i-x"/></svg>');
+      kick.onclick = (ev) => { ev.stopPropagation(); post('party', { action: 'kick', target: m.userId }); };
+      slot.appendChild(kick);
+    }
+    host.appendChild(slot);
+  }
 }
 
-function selectMode(mode) {
-  selectedMode = mode;
-  document.querySelectorAll('.modecard').forEach((c) =>
-    c.classList.toggle('selected', c.dataset.mode === mode));
+function openInvite() {
+  $('modal-invite').classList.remove('hidden');
+  const input = $('invite-id');
+  input.value = '';
+  setTimeout(() => input.focus(), 40);
 }
 
-function startQueue(mode) {
-  if (S.queue.state === 'SEARCHING') { post('queue', { action: 'leave' }); return; }
-  Audio_.play('queue');
-  post('queue', { action: 'join', mode: mode || selectedMode });
+function toggleQueue() {
+  if (S.queue.searching) { post('queue', { action: 'leave' }); return; }
+  Sfx.play('queue');
+  post('queue', { action: 'join', mode: S.mode });
 }
 
 function renderQueue(q) {
-  const searching = q && q.state === 'SEARCHING';
-  $('searching').classList.toggle('hidden', !searching);
-  $('queue-idle').classList.toggle('hidden', searching);
+  const searching = !!(q && q.state === 'SEARCHING');
+  S.queue.searching = searching;
 
-  if (!searching) {
-    S.queue.state = 'IDLE';
-    return;
-  }
-  S.queue.state = 'SEARCHING';
-  if (q.mode) S.queue.mode = q.mode;
-  if (q.elapsed !== undefined) $('search-elapsed').textContent = clockLong(q.elapsed);
-  if (q.estimate !== undefined) $('search-eta').textContent = clockLong(q.estimate);
-  if (q.searching !== undefined) $('search-count').textContent = q.searching;
+  const start = $('btn-start');
+  start.classList.toggle('searching', searching);
+  start.innerHTML = searching ? '<svg><use href="#i-x"/></svg>CANCEL'
+                              : '<svg><use href="#i-play"/></svg>START';
 
-  if (S.boot && S.boot.player) {
-    const p = S.boot.player;
-    $('search-rank').innerHTML =
-      `<span style="color:${p.rankColor}">${esc((p.rank || '').toUpperCase())}</span> · ${num(p.rp)} RP`;
-  }
+  $('searchdock').classList.toggle('hidden', !searching);
+  if (!searching) { S.queue.elapsed = 0; return; }
+
+  if (q.elapsed !== undefined) S.queue.elapsed = q.elapsed;
+  const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === (q.mode || S.mode));
+  $('sd-mode').textContent = (modeCfg && modeCfg.label) || String(q.mode || S.mode).toUpperCase();
+  $('sd-time').textContent = clock(S.queue.elapsed);
 }
 
-/* =========================================================== MATCH FOUND */
+/* ============================================================ MATCH FOUND */
 function renderFound(d) {
   const modal = $('modal-found');
-
   if (!d || d.cancel || d.done) {
     modal.classList.add('hidden');
     if (S.foundTimer) { clearInterval(S.foundTimer); S.foundTimer = null; }
@@ -422,9 +313,9 @@ function renderFound(d) {
 
   const first = !S.found;
   S.found = d;
-
   modal.classList.remove('hidden');
-  $('found-mode').textContent = (d.modeLabel || d.mode || 'RANKED').toUpperCase();
+
+  $('found-mode').textContent = String(d.modeLabel || d.mode || 'RANKED').toUpperCase();
   $('found-accepted').textContent = d.accepted || 0;
   $('found-total').textContent = d.total || 0;
 
@@ -433,42 +324,25 @@ function renderFound(d) {
   document.querySelector('.found-actions').classList.toggle('hidden', mine);
 
   if (first) {
-    Audio_.play('found');
+    Sfx.play('found');
     let left = d.timeout || 15;
     const total = left;
     const ring = $('found-ring');
-    const circumference = 2 * Math.PI * 52;
-    ring.style.strokeDasharray = circumference;
-
+    const circ = 2 * Math.PI * 52;
+    ring.style.strokeDasharray = circ;
     const tick = () => {
       $('found-timer').textContent = Math.max(0, left);
-      ring.style.strokeDashoffset = circumference * (1 - left / total);
-      if (left <= 5 && left > 0) Audio_.play('tick');
+      ring.style.strokeDashoffset = circ * (1 - left / total);
+      if (left <= 5 && left > 0) Sfx.play('tick');
       left -= 1;
-      if (left < 0) {
-        clearInterval(S.foundTimer);
-        S.foundTimer = null;
-      }
+      if (left < 0) { clearInterval(S.foundTimer); S.foundTimer = null; }
     };
     tick();
     S.foundTimer = setInterval(tick, 1000);
   }
 }
 
-$('btn-accept').onclick = () => {
-  if (!S.found) return;
-  Audio_.play('accept');
-  post('ready', { id: S.found.id, accept: true });
-  $('found-waiting').classList.remove('hidden');
-  document.querySelector('.found-actions').classList.add('hidden');
-};
-$('btn-decline').onclick = () => {
-  if (!S.found) return;
-  post('ready', { id: S.found.id, accept: false });
-  renderFound(null);
-};
-
-/* ============================================================== MAP VOTE */
+/* =============================================================== MAP VOTE */
 function renderMapVote(d) {
   const modal = $('modal-mapvote');
   if (!d) return;
@@ -477,37 +351,31 @@ function renderMapVote(d) {
     modal.classList.add('hidden');
     if (S.mapvoteTimer) { clearInterval(S.mapvoteTimer); S.mapvoteTimer = null; }
     if (d.result) {
-      const name = (S.mapvote && S.mapvote.names && S.mapvote.names[d.result]) || d.result;
-      toast('info', `Map selected: ${name}`, 'MAP VOTE');
+      const nm = (S.mapvote && S.mapvote.names && S.mapvote.names[d.result]) || d.result;
+      toast('info', `Map selected: ${nm}`, 'MAP VOTE');
     }
     S.mapvote = null;
     return;
   }
 
   if (d.options) {
-    S.mapvote = { names: {}, picked: null };
+    S.mapvote = { names: {} };
     modal.classList.remove('hidden');
     const grid = $('mv-grid');
     grid.innerHTML = '';
-
     d.options.forEach((m, i) => {
       S.mapvote.names[m.id] = m.name;
-      const hue = (i * 47 + 200) % 360;
-      const card = el('div', 'mv-card',
-        `<div class="mv-card-art" style="background:
-            linear-gradient(150deg,hsl(${hue} 40% 16%),hsl(${(hue + 40) % 360} 50% 8%)),
-            repeating-linear-gradient(60deg,rgba(255,255,255,.03) 0 2px,transparent 2px 16px)"></div>
-         <div class="mv-card-votes" data-map="${esc(m.id)}">0</div>
-         <div class="mv-card-name">${esc(m.name)}</div>`);
+      const card = el('div', 'mv-card', `
+        <div class="mv-art" style="${mapArt(m.id, (i * 47 + 200) % 360)}"></div>
+        <div class="mv-votes" data-map="${esc(m.id)}">0</div>
+        <div class="mv-name">${esc(m.name)}</div>`);
       card.onclick = () => {
         document.querySelectorAll('.mv-card').forEach((c) => c.classList.remove('picked'));
         card.classList.add('picked');
-        S.mapvote.picked = m.id;
-        Audio_.play('click');
+        Sfx.play('click');
         post('mapVote', { mapId: m.id });
-        $('mv-foot').textContent = `YOU VOTED FOR ${m.name.toUpperCase()}`;
+        $('mv-foot').textContent = `YOU VOTED FOR ${String(m.name).toUpperCase()}`;
       };
-      card.onmouseenter = () => Audio_.play('hover');
       grid.appendChild(card);
     });
 
@@ -515,16 +383,15 @@ function renderMapVote(d) {
     $('mv-timer').textContent = left;
     if (S.mapvoteTimer) clearInterval(S.mapvoteTimer);
     S.mapvoteTimer = setInterval(() => {
-      left -= 1;
-      $('mv-timer').textContent = Math.max(0, left);
+      left -= 1; $('mv-timer').textContent = Math.max(0, left);
       if (left <= 0) { clearInterval(S.mapvoteTimer); S.mapvoteTimer = null; }
     }, 1000);
   }
 
   if (d.votes) {
-    Object.keys(d.votes).forEach((mapId) => {
-      const node = document.querySelector(`.mv-card-votes[data-map="${mapId}"]`);
-      if (node) node.textContent = d.votes[mapId];
+    Object.keys(d.votes).forEach((id) => {
+      const n = document.querySelector(`.mv-votes[data-map="${id}"]`);
+      if (n) n.textContent = d.votes[id];
     });
   }
 }
@@ -532,12 +399,13 @@ function renderMapVote(d) {
 /* ================================================================== PARTY */
 function renderParty(d) {
   if (!d) return;
+
   if (d.invite) {
     const t = toast('info', `${d.invite.from} invited you to a party`, 'PARTY INVITE', 12000);
     const row = el('div');
     row.style.cssText = 'display:flex;gap:6px;margin-top:8px';
-    const a = el('button', 'btn sm', 'ACCEPT');
-    const r = el('button', 'btn sm btn-ghost', 'DECLINE');
+    const a = el('button', 'btn', 'ACCEPT'); a.style.cssText = 'padding:6px 14px;font-size:10px';
+    const r = el('button', 'btn ghost', 'DECLINE'); r.style.cssText = 'padding:6px 14px;font-size:10px';
     a.onclick = () => { post('party', { action: 'accept' }); t.remove(); };
     r.onclick = () => { post('party', { action: 'decline' }); t.remove(); };
     row.appendChild(a); row.appendChild(r);
@@ -545,240 +413,208 @@ function renderParty(d) {
     return;
   }
 
-  S.party = d;
-  const host = $('party-list');
-  host.innerHTML = '';
+  S.party = d.id ? d : null;
+  renderSlots();
+  renderCustomParty();
+}
 
-  if (!d.members || !d.members.length) {
-    host.appendChild(el('div', 'party-empty', 'NO PARTY — INVITE A PLAYER TO BEGIN'));
-    return;
-  }
+/* ========================================================== CUSTOM MATCH */
+function renderCustom() {
+  if (!S.boot) return;
+  renderCustomTypes();
+  renderCustomWeapons();
+  renderCustomMaps();
+  renderCustomParty();
+  renderCustomRoom();
+  $('cm-mode').textContent = S.cm.mode;
+  $('cm-rounds').textContent = S.cm.rounds;
+  $('cm-armor').checked = S.cm.armor;
+  $('cm-hsonly').checked = S.cm.hsOnly;
+  updateSteps();
+}
 
-  d.members.forEach((m) => {
-    const node = el('div', 'party-member' + (m.leader ? ' leader' : '') + (m.ready ? ' ready' : ''),
-      `<span class="dot"></span><b>${esc(m.name)}</b>
-       <span class="chip">${esc(m.rank)}</span>`);
-    if (S.party.leader === (S.boot && S.boot.player.userId) && !m.leader) {
-      const kick = el('button', '', '✕');
-      kick.style.cssText = 'color:var(--dim);font-size:11px';
-      kick.onclick = () => post('party', { action: 'kick', target: m.userId });
-      node.appendChild(kick);
-    }
-    host.appendChild(node);
+function updateSteps() {
+  const step = S.room ? 4 : (S.cm.map ? 2 : 1);
+  S.cm.step = step;
+  document.querySelectorAll('#cm-steps .stp').forEach((n, i) => {
+    n.classList.toggle('on', i + 1 === step);
+    n.classList.toggle('done', i + 1 < step);
   });
 }
 
-/* ================================================================ CUSTOM */
-function renderRooms(list) {
-  S.rooms = list || [];
-  const host = $('rooms-body');
+function renderCustomTypes() {
+  const host = $('cm-types');
   host.innerHTML = '';
+  ((S.boot && S.boot.matchTypes) || []).forEach((t) => {
+    const icon = t.id === 'gungame' ? '#i-party' : (t.id === 'random' ? '#i-target' : '#i-ranked');
+    const b = el('button', 'pill' + (t.id === S.cm.matchType ? ' on' : ''),
+      `<svg><use href="${icon}"/></svg>${esc(t.label)}`);
+    b.title = t.description || '';
+    b.onclick = () => { S.cm.matchType = t.id; Sfx.play('click'); renderCustomTypes(); };
+    host.appendChild(b);
+  });
+}
 
-  if (!S.rooms.length) {
-    host.appendChild(el('div', 'room-empty', 'NO ACTIVE ROOMS — CREATE ONE'));
-    return;
-  }
-
-  S.rooms.forEach((r) => {
-    const row = el('div', 'room',
-      `<b>${esc(r.name)}${r.hasPassword ? ' <span class="locked">🔒</span>' : ''}</b>
-       <span>${esc(r.host)}</span>
-       <span>${esc(r.modeLabel)}</span>
-       <span>${esc(r.mapName)}</span>
-       <span>${r.players}/${r.maxPlayers}</span>
-       <span class="${r.state === 'LIVE' ? 'locked' : ''}">${esc(r.state)}</span>`);
-    const join = el('button', 'btn sm', 'JOIN');
-    join.onclick = () => {
-      const password = r.hasPassword ? (prompt('Room password:') || '') : '';
-      post('custom', { action: 'join', roomId: r.id, password });
+function renderCustomWeapons() {
+  const host = $('cm-weapons');
+  const list = (S.boot && S.boot.weaponPresets) || [];
+  host.innerHTML = '';
+  list.forEach((w) => {
+    const on = S.cm.weapons.includes(w.id);
+    const b = el('button', 'chip' + (on ? ' on' : ''), esc(w.label));
+    b.onclick = () => {
+      const i = S.cm.weapons.indexOf(w.id);
+      if (i >= 0) { if (S.cm.weapons.length > 1) S.cm.weapons.splice(i, 1); }
+      else S.cm.weapons.push(w.id);
+      Sfx.play('click');
+      renderCustomWeapons();
     };
-    row.appendChild(join);
-    host.appendChild(row);
+    host.appendChild(b);
   });
+  $('cm-wcount').textContent = `${S.cm.weapons.length} / ${list.length}`;
 }
 
-function renderRoom(room) {
-  S.room = room;
-  const view = $('roomview');
-  $('rooms-panel').classList.toggle('hidden', !!room);
-  $('createbox').classList.add('hidden');
+function renderCustomMaps() {
+  const host = $('cm-maps');
+  const all = ((S.boot && S.boot.maps) || []).filter((m) => !m.modes || m.modes.includes(S.cm.mode));
+  const perPage = 9;
+  const pages = Math.max(1, Math.ceil(all.length / perPage));
+  if (S.cm.mapPage > pages) S.cm.mapPage = 1;
+  const slice = all.slice((S.cm.mapPage - 1) * perPage, S.cm.mapPage * perPage);
 
-  if (!room) { view.classList.add('hidden'); view.innerHTML = ''; return; }
+  host.innerHTML = '';
+  if (!slice.length) host.appendChild(el('div', 'empty', 'NO MAP SUPPORTS THIS MODE'));
+  slice.forEach((m) => {
+    const card = el('div', 'mapcard' + (m.id === S.cm.map ? ' on' : ''),
+      `<div class="art" style="${mapArt(m.id)}"></div><div class="cap">${esc(m.name)}</div>`);
+    card.onclick = () => { S.cm.map = m.id; Sfx.play('click'); renderCustomMaps(); updateSteps(); };
+    host.appendChild(card);
+  });
+
+  const pager = $('cm-pager');
+  pager.innerHTML = '';
+  for (let i = 1; i <= pages; i++) {
+    const b = el('button', 'pgn' + (i === S.cm.mapPage ? ' on' : ''), i);
+    b.onclick = () => { S.cm.mapPage = i; renderCustomMaps(); };
+    pager.appendChild(b);
+  }
+}
+
+function renderCustomParty() {
+  const host = $('cm-party');
+  if (!host) return;
+  const max = (S.boot && S.boot.maxParty) || 5;
+  const p = S.boot && S.boot.player;
+
+  let members = [];
+  if (S.room && S.room.roster) members = S.room.roster;
+  else if (S.party && S.party.members) members = S.party.members;
+  else if (p) members = [{ userId: p.userId, name: p.name, leader: true }];
+
+  host.innerHTML = '';
+  members.slice(0, max).forEach((m) => {
+    host.appendChild(el('div', 'cm-slot',
+      `<span class="av">${esc(initial(m.name))}</span><b>${esc(m.name)}</b>
+       ${(m.host || m.leader) ? '<span class="tag">HOST</span>' : ''}`));
+  });
+  for (let i = members.length; i < max; i++) host.appendChild(el('div', 'cm-slot free', 'EMPTY'));
+
+  $('cm-partycount').textContent = `${Math.min(members.length, max)}/${max}`;
+  $('cm-code').textContent = (S.room && S.room.code) ? S.room.code.split('').join(' ') : '- - - -';
+  $('cm-leave').classList.toggle('hidden', !S.room);
+}
+
+function renderCustomRoom() {
+  const view = $('cm-roomview');
+  if (!S.room) { view.classList.add('hidden'); view.innerHTML = ''; return; }
 
   const me = S.boot && S.boot.player.userId;
-  const isHost = room.hostId === me;
-  const roster = room.roster || [];
-  const teamA = roster.filter((p) => p.team === 1 && !p.spectator);
-  const teamB = roster.filter((p) => p.team === 2 && !p.spectator);
-  const specs = roster.filter((p) => p.spectator);
+  const isHost = S.room.hostId === me;
+  const roster = S.room.roster || [];
+  const team = (t) => roster.filter((r) => r.team === t && !r.spectator);
 
-  const slot = (p) => `
-    <div class="slot">
-      <b>${esc(p.name)}</b>
-      <span class="chip">${esc(p.rank)}</span>
-      ${p.host ? '<span class="host">HOST</span>' : ''}
-      ${isHost && !p.host ? `<span class="tools">
-        <button data-room-act="move" data-user="${p.userId}" data-team="${p.team === 1 ? 2 : 1}">SWAP</button>
-        <button data-room-act="kick" data-user="${p.userId}">KICK</button>
-        <button data-room-act="ban" data-user="${p.userId}">BAN</button>
-      </span>` : ''}
+  const slot = (r) => `
+    <div class="cm-slot">
+      <span class="av">${esc(initial(r.name))}</span><b>${esc(r.name)}</b>
+      ${r.host ? '<span class="tag">HOST</span>' : ''}
+      ${isHost && !r.host ? `<button class="mini" data-room="move" data-user="${r.userId}" data-team="${r.team === 1 ? 2 : 1}">SWAP</button>
+        <button class="mini" data-room="kick" data-user="${r.userId}">KICK</button>` : ''}
     </div>`;
 
   view.classList.remove('hidden');
   view.innerHTML = `
-    <div class="panel">
-      <div class="section-head" style="margin-bottom:12px">
-        <h2 style="font-size:22px">${esc(room.name)}</h2>
-        <div class="section-actions">
-          ${isHost ? `<button class="btn btn-sm" data-room-act="start">START</button>` : ''}
-          ${isHost ? `<button class="btn btn-sm btn-ghost" data-room-act="lock">${room.locked ? 'UNLOCK' : 'LOCK'}</button>` : ''}
-          ${isHost && room.state === 'LIVE' ? `<button class="btn btn-sm btn-ghost" data-room-act="stop">STOP</button>` : ''}
-          <button class="btn btn-sm btn-danger" data-room-act="leave">LEAVE</button>
-        </div>
-      </div>
-      <div class="modecard-meta" style="margin:0 0 12px">
-        <span>${esc(room.modeLabel)}</span><span>${esc(room.mapName)}</span>
-        <span>${room.players}/${room.maxPlayers} PLAYERS</span>
-        <span>${room.ranked ? 'RANKED' : 'UNRANKED'}</span>
-        <span>${esc(room.state)}</span>
-      </div>
-      <div class="teams">
-        <div class="teamcol a"><h4>TEAM A · ${teamA.length}</h4>${teamA.map(slot).join('') || '<div class="party-empty">EMPTY</div>'}</div>
-        <div class="teamcol b"><h4>TEAM B · ${teamB.length}</h4>${teamB.map(slot).join('') || '<div class="party-empty">EMPTY</div>'}</div>
-      </div>
-      ${specs.length ? `<div class="teamcol" style="margin-top:14px"><h4>SPECTATORS</h4>${specs.map(slot).join('')}</div>` : ''}
-      ${isHost ? renderRoomSettings(room) : ''}
-    </div>`;
+    <div class="cm-panel-head"><svg><use href="#i-party"/></svg>${esc(S.room.name)} <em class="dot"></em>
+      <span style="margin-left:auto;color:var(--dim);letter-spacing:.1em">${esc(S.room.state)}</span></div>
+    <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><div class="fld"><label style="color:var(--team-a)">TEAM A</label></div>
+        ${team(1).map(slot).join('') || '<div class="empty">EMPTY</div>'}</div>
+      <div><div class="fld"><label style="color:var(--team-b)">TEAM B</label></div>
+        ${team(2).map(slot).join('') || '<div class="empty">EMPTY</div>'}</div>
+    </div>
+    ${isHost ? `<div style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" data-room="start"><svg><use href="#i-play"/></svg> START MATCH</button>
+      <button class="btn ghost" data-room="apply">APPLY SETTINGS</button>
+      <button class="btn ghost" data-room="lock">${S.room.locked ? 'UNLOCK' : 'LOCK'}</button>
+    </div>` : ''}`;
 }
 
-function renderRoomSettings(room) {
-  const s = room.settings || {};
-  const maps = (S.boot && S.boot.maps) || [];
-  const modes = (S.boot && S.boot.allModes) || [];
-  const numField = (key, label, value) =>
-    `<div class="field"><label>${label}</label>
-      <input class="input" type="number" data-setting="${key}" value="${value}" /></div>`;
-  const boolField = (key, label, value) =>
-    `<label class="switch"><input type="checkbox" data-setting="${key}" ${value ? 'checked' : ''}/><i></i>${label}</label>`;
-
-  return `
-    <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line-soft)">
-      <span class="panel-tag">ROOM SETTINGS</span>
-      <div class="formgrid">
-        <div class="field"><label>MODE</label>
-          <select class="input" data-setting-mode>
-            ${modes.map((m) => `<option value="${m.id}" ${m.id === room.mode ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}
-          </select></div>
-        <div class="field"><label>MAP</label>
-          <select class="input" data-setting-map>
-            ${maps.map((m) => `<option value="${m.id}" ${m.id === room.map ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
-          </select></div>
-        ${numField('rounds', 'ROUNDS', s.rounds)}
-        ${numField('roundTime', 'ROUND TIME (S)', s.roundTime)}
-        ${numField('matchTime', 'MATCH TIME (S)', s.matchTime)}
-        ${numField('killLimit', 'KILL LIMIT', s.killLimit)}
-        ${numField('health', 'HEALTH', s.health)}
-        ${numField('armor', 'ARMOR', s.armor)}
-        ${numField('lives', 'LIVES', s.lives)}
-        ${numField('respawnTime', 'RESPAWN (S)', s.respawnTime)}
-      </div>
-      <div class="formgrid" style="margin-top:10px">
-        ${boolField('friendlyFire', 'FRIENDLY FIRE', s.friendlyFire)}
-        ${boolField('headshotOneShot', 'HEADSHOT ONE SHOT', s.headshotOneShot)}
-        ${boolField('respawn', 'RESPAWN', s.respawn)}
-        ${boolField('jump', 'JUMP', s.jump)}
-        ${boolField('minimap', 'MINIMAP', s.minimap)}
-        ${boolField('vehicles', 'VEHICLES', s.vehicles)}
-        ${boolField('killcam', 'KILLCAM', s.killcam)}
-        ${boolField('overtime', 'OVERTIME', s.overtime)}
-        ${boolField('suddenDeath', 'SUDDEN DEATH', s.suddenDeath)}
-        ${boolField('spectators', 'SPECTATORS', s.spectators)}
-        ${boolField('teamBalance', 'TEAM BALANCE', s.teamBalance)}
-        ${boolField('autoStart', 'AUTO START', s.autoStart)}
-      </div>
-      <button class="btn btn-sm" style="margin-top:14px" data-room-act="apply">APPLY SETTINGS</button>
-    </div>`;
-}
-
-function renderCreateBox() {
-  const box = $('createbox');
-  const maps = (S.boot && S.boot.maps) || [];
-  const modes = (S.boot && S.boot.allModes) || [];
-  box.classList.remove('hidden');
-  $('rooms-panel').classList.add('hidden');
-  box.innerHTML = `
-    <span class="panel-tag">CREATE CUSTOM GAME</span>
-    <div class="formgrid">
-      <div class="field"><label>ROOM NAME</label><input class="input" id="cg-name" placeholder="My Room"/></div>
-      <div class="field"><label>PASSWORD (OPTIONAL)</label><input class="input" id="cg-pass" placeholder="—"/></div>
-      <div class="field"><label>MODE</label><select class="input" id="cg-mode">
-        ${modes.map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('')}</select></div>
-      <div class="field"><label>MAP</label><select class="input" id="cg-map">
-        ${maps.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>ROUNDS</label><input class="input" id="cg-rounds" type="number" value="13"/></div>
-      <div class="field"><label>ROUND TIME (S)</label><input class="input" id="cg-roundtime" type="number" value="120"/></div>
-    </div>
-    <div class="formgrid" style="margin-top:10px">
-      <label class="switch"><input type="checkbox" id="cg-ff"/><i></i>FRIENDLY FIRE</label>
-      <label class="switch"><input type="checkbox" id="cg-hs" checked/><i></i>HEADSHOT ONE SHOT</label>
-      <label class="switch"><input type="checkbox" id="cg-respawn"/><i></i>RESPAWN</label>
-      <label class="switch"><input type="checkbox" id="cg-auto" checked/><i></i>AUTO START</label>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn btn-sm" data-action="custom-create">CREATE</button>
-      <button class="btn btn-sm btn-ghost" data-action="custom-cancel">CANCEL</button>
-    </div>`;
+function customPayload() {
+  return {
+    mode: S.cm.mode, map: S.cm.map, rounds: S.cm.rounds,
+    matchType: S.cm.matchType, weapons: S.cm.weapons,
+    armorEnabled: S.cm.armor, headshotOnly: S.cm.hsOnly
+  };
 }
 
 /* =========================================================== LEADERBOARD */
 function fetchBoard() {
-  post('fetch', { what: 'leaderboard', board: S.lb.board, page: S.lb.page });
+  post('fetch', { what: 'leaderboard', board: 'mode', mode: S.lb.mode, page: S.lb.page });
+}
+
+function crestInline(tier, color) {
+  return `<svg viewBox="0 0 100 100" style="color:${color || '#5A616D'}"><use href="${crestSymbol(tier)}"/></svg>`;
 }
 
 function renderBoard(d) {
-  S.lb.rows = d.rows || [];
   $('lb-page').textContent = `PAGE ${d.page || 1}`;
-
-  const podium = $('podium');
-  podium.innerHTML = '';
-  const body = $('board-body');
-  body.innerHTML = '';
-
-  if (!S.lb.rows.length) {
-    body.appendChild(el('div', 'room-empty', 'NO RANKED PLAYERS YET'));
-    return;
-  }
-
+  const rows = d.rows || [];
   const me = S.boot && S.boot.player.userId;
+  const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.lb.mode);
+  const p = S.boot && S.boot.player;
 
-  // Top 3 podium, only on the first page
-  if ((d.page || 1) === 1) {
-    const top = S.lb.rows.slice(0, 3);
-    const order = [1, 0, 2]; // 2nd, 1st, 3rd
-    order.forEach((idx) => {
-      const r = top[idx];
-      if (!r) { podium.appendChild(el('div')); return; }
-      const place = idx + 1;
-      const node = el('div', `pod pod-${place}`,
-        `<div class="pod-place">#${place}</div>
-         <div class="pod-crest">${crest(r.tier, r.rankColor)}</div>
-         <div class="pod-name">${esc(r.name)}</div>
-         <div class="pod-rank" style="color:${r.rankColor}">${esc((r.rank || '').toUpperCase())}</div>
-         <div class="pod-rp">${num(r.rp)} <span style="font-size:12px;color:var(--dim)">RP</span></div>
-         <div class="pod-sub">${r.wins}W · ${r.losses}L · ${r.kd} KD</div>`);
-      podium.appendChild(node);
-    });
-  }
+  $('lb-me').innerHTML = p ? `
+    <div class="av">${esc(initial(p.name))}</div>
+    <div class="who">
+      <b>${esc(p.name)} [${p.userId}]</b>
+      <span>${crestInline(p.tier, p.rankColor)} ${esc(p.rank)} · ${esc((modeCfg && modeCfg.label) || S.lb.mode)}</span>
+    </div>` : '';
 
-  S.lb.rows.forEach((r) => {
-    const row = el('div', 'brow' + (r.userId === me ? ' you' : ''),
-      `<span class="pos">#${r.position}</span>
-       <span class="pname">${esc(r.name)}${r.mmr ? ` <span class="chip">MMR ${r.mmr}</span>` : ''}</span>
-       <span class="prank" style="color:${r.rankColor}">${esc((r.rank || '').toUpperCase())}</span>
-       <span>${num(r.gained !== undefined ? r.gained : r.rp)}</span>
-       <span>${r.wins} / ${r.losses}</span>
-       <span>${r.kd}</span>
-       <span>${r.hsPercent}%</span>`);
+  const st = d.stats;
+  const cells = st ? [
+    ['WIN GAME', num(st.wins)], ['TOTAL GAME', num(st.matches)],
+    ['KILL SCORE', num(st.kills)], ['DEATH SCORE', num(st.deaths)],
+    ['K/D RATIO', st.kd], ['POINTS', num(st.points)]
+  ] : [];
+  $('lb-stats').innerHTML = cells.map(([l, v]) =>
+    `<div class="lb-stat"><label>${l}</label><b>${esc(v)}</b></div>`).join('');
+
+  const body = $('lb-body');
+  body.innerHTML = '';
+  if (!rows.length) { body.appendChild(el('div', 'empty', 'NO RANKED MATCHES IN THIS MODE YET')); return; }
+
+  rows.forEach((r) => {
+    const row = el('div', 'brow' + (r.position === 1 ? ' top1' : '') + (r.userId === me ? ' you' : ''), `
+      <span class="pos">${r.position}</span>
+      <span class="who">
+        <span class="tier" style="color:${r.rankColor}">${crestInline(r.tier, r.rankColor)}${esc(r.rank)}</span>
+        <span class="av">${esc(initial(r.name))}</span>
+        <b>${esc(r.name)}</b>
+      </span>
+      <span>${num(r.points !== undefined ? r.points : r.rp)}</span>
+      <span>${num(r.wins)}</span>
+      <span>${num(r.kills)}</span>
+      <span>${num(r.deaths)}</span>
+      <span>${r.kd}</span>`);
     row.onclick = () => { post('fetch', { what: 'profile', userId: r.userId }); showPage('profile'); };
     body.appendChild(row);
   });
@@ -788,105 +624,58 @@ function renderBoard(d) {
 function renderProfile() {
   const p = S.profile;
   const host = $('profile-root');
-  if (!p) { host.innerHTML = '<div class="room-empty">NO PROFILE DATA</div>'; return; }
-
+  if (!p) { host.innerHTML = '<div class="empty">NO PROFILE DATA</div>'; return; }
   const s = p.stats;
-  const stat = (label, value, cls) =>
-    `<div class="stat ${cls || ''}"><b>${esc(value)}</b><span>${label}</span></div>`;
-  const bar = (label, value, pct, colour) =>
-    `<div class="barrow"><span><em style="font-style:normal">${label}</em><em style="font-style:normal">${value}</em></span>
-      <div class="barline"><i style="width:${Math.min(100, pct)}%;${colour ? `background:${colour}` : ''}"></i></div></div>`;
+  const stat = (l, v, c) => `<div class="stat ${c || ''}"><b>${esc(v)}</b><span>${l}</span></div>`;
 
   host.innerHTML = `
     <div class="pbanner">
-      <div class="pav">${esc((p.name || '?').charAt(0).toUpperCase())}</div>
-      <div class="pinfo">
+      <div class="pav">${esc(initial(p.name))}</div>
+      <div style="flex:1">
         <div class="pname">${esc(p.name)}</div>
         <div class="ptitle">${esc(p.activeTitle || '')}</div>
         <div class="pmeta">
-          <span class="chip chip-rank" style="color:${p.rankColor}">${esc((p.rank || '').toUpperCase())}</span>
-          <span class="chip">${num(p.rp)} RP</span>
-          <span class="chip">LEVEL ${p.level}</span>
-          <span class="chip">GLOBAL #${p.position || '—'}</span>
-          <span class="chip">PEAK ${esc(p.highestRank)}</span>
-          ${p.mmr ? `<span class="chip">MMR ${p.mmr}</span>` : ''}
-          <span class="chip">${p.commendations} COMMENDS</span>
+          <span class="tagchip" style="color:${p.rankColor}">${esc(String(p.rank || '').toUpperCase())}</span>
+          <span class="tagchip">${num(p.rp)} RP</span>
+          <span class="tagchip">LEVEL ${p.level}</span>
+          <span class="tagchip">GLOBAL #${p.position || '—'}</span>
+          <span class="tagchip">PEAK ${esc(p.highestRank)}</span>
+          ${p.mmr ? `<span class="tagchip">MMR ${p.mmr}</span>` : ''}
         </div>
       </div>
       <div class="pcrest">${crest(p.tier, p.rankColor)}</div>
     </div>
 
-    <div class="panel">
-      <span class="panel-tag">CAREER STATISTICS</span>
-      <div class="pgrid">
-        ${stat('MATCHES', num(s.matches))}
-        ${stat('WINS', num(s.wins), 'good')}
-        ${stat('LOSSES', num(s.losses), 'bad')}
+    <div class="card">
+      <span class="card-tag">CAREER STATISTICS</span>
+      <div class="grid">
+        ${stat('MATCHES', num(s.matches))}${stat('WINS', num(s.wins), 'good')}${stat('LOSSES', num(s.losses), 'bad')}
         ${stat('WIN RATE', s.winRate + '%', s.winRate >= 50 ? 'good' : 'bad')}
-        ${stat('KILLS', num(s.kills))}
-        ${stat('DEATHS', num(s.deaths))}
-        ${stat('ASSISTS', num(s.assists))}
+        ${stat('KILLS', num(s.kills))}${stat('DEATHS', num(s.deaths))}${stat('ASSISTS', num(s.assists))}
         ${stat('K / D', s.kd, s.kd >= 1 ? 'good' : 'bad')}
-        ${stat('HEADSHOTS', num(s.headshots))}
-        ${stat('HEADSHOT %', s.hsPercent + '%')}
-        ${stat('DAMAGE', num(s.damage))}
-        ${stat('MVP', num(s.mvp))}
-        ${stat('WIN STREAK', num(s.winStreak))}
-        ${stat('BEST STREAK', num(s.bestStreak))}
-        ${stat('CLUTCHES', num(s.clutches))}
-        ${stat('ACES', num(s.aces))}
-        ${stat('FIRST BLOODS', num(s.firstBloods))}
-        ${stat('PLAYTIME', Math.floor((s.playtime || 0) / 3600) + 'h')}
+        ${stat('HEADSHOTS', num(s.headshots))}${stat('HEADSHOT %', s.hsPercent + '%')}
+        ${stat('DAMAGE', num(s.damage))}${stat('MVP', num(s.mvp))}
+        ${stat('WIN STREAK', num(s.winStreak))}${stat('BEST STREAK', num(s.bestStreak))}
+        ${stat('CLUTCHES', num(s.clutches))}${stat('ACES', num(s.aces))}
+        ${stat('FIRST BLOODS', num(s.firstBloods))}${stat('PLAYTIME', Math.floor((s.playtime || 0) / 3600) + 'h')}
       </div>
     </div>
 
-    <div class="settings">
-      <div class="panel">
-        <span class="panel-tag">PERFORMANCE</span>
-        <div class="bars">
-          ${bar('WIN RATE', s.winRate + '%', s.winRate)}
-          ${bar('HEADSHOT RATE', s.hsPercent + '%', s.hsPercent, 'linear-gradient(90deg,#FF2E4D,#FF6B80)')}
-          ${bar('K/D RATIO', s.kd, Math.min(100, s.kd * 50), 'linear-gradient(90deg,#28E0A0,#7CF3C8)')}
-          ${bar('RANK PROGRESS', (p.progress && p.progress.percent || 0) + '%', p.progress && p.progress.percent || 0)}
-        </div>
-        <div style="margin-top:16px">
-          <span class="panel-tag">FAVOURITES</span>
-          <div class="chips">
-            <span class="badge on">${esc((s.favWeapon || '—').replace('WEAPON_', ''))}</span>
-            <span class="badge on">${esc((s.favMap || '—').toUpperCase())}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <span class="panel-tag">TITLES &amp; BADGES</span>
-        <div class="chips">
-          ${(p.titles || []).length ? p.titles.map((t) =>
-            `<span class="badge ${t === p.activeTitle ? 'on' : ''}" data-title="${esc(t)}">${esc(t)}</span>`).join('')
-            : '<span class="party-empty">NO TITLES YET</span>'}
-        </div>
-        <div class="chips" style="margin-top:12px">
-          ${(p.badges || []).map((b) => `<span class="badge on">${esc(b)}</span>`).join('')
-            || '<span class="party-empty">NO BADGES YET</span>'}
-        </div>
-        <div style="margin-top:18px">
-          <span class="panel-tag">SEASON HISTORY</span>
-          ${(p.seasons || []).length ? p.seasons.map((sn) =>
-            `<div class="arow"><b>${esc(sn.name)}</b><span class="grow"></span>
-              <span>${esc(sn.rank_name || '')}</span><span>${num(sn.final_rp)} RP</span></div>`).join('')
-            : '<div class="party-empty">NO ARCHIVED SEASONS</div>'}
-        </div>
+    <div class="card">
+      <span class="card-tag">TITLES</span>
+      <div class="chips">
+        ${(p.titles || []).length ? p.titles.map((t) =>
+          `<span class="chip ${t === p.activeTitle ? 'on' : ''}" data-title="${esc(t)}">${esc(t)}</span>`).join('')
+          : '<span class="empty">NO TITLES YET</span>'}
       </div>
     </div>
 
-    <div class="panel">
-      <span class="panel-tag">ACHIEVEMENTS</span>
-      ${(p.achievements || []).map((a) =>
-        `<div class="ach ${a.unlocked ? 'on' : ''}">
-          <span class="tick">${a.unlocked ? '✓' : ''}</span>
-          <div><b>${esc(a.label)}</b><div style="font-size:11px;color:var(--dim)">${esc(a.desc)}</div></div>
-          <span>${a.unlocked ? 'UNLOCKED' : 'LOCKED'}</span>
-        </div>`).join('')}
+    <div class="card">
+      <span class="card-tag">ACHIEVEMENTS</span>
+      ${(p.achievements || []).map((a) => `
+        <div class="arow"><b>${a.unlocked ? '✓' : '·'}</b><b>${esc(a.label)}</b>
+          <span class="grow">${esc(a.desc)}</span>
+          <span>${a.unlocked ? 'UNLOCKED' : 'LOCKED'}</span></div>`).join('')}
     </div>`;
 
   host.querySelectorAll('[data-title]').forEach((n) => {
@@ -896,144 +685,92 @@ function renderProfile() {
 
 /* =============================================================== HISTORY */
 function renderHistory(rows, page) {
-  S.hist.rows = rows || [];
   $('hist-page').textContent = `PAGE ${page || 1}`;
   const host = $('history-list');
   host.innerHTML = '';
+  if (!rows || !rows.length) { host.appendChild(el('div', 'empty', 'NO MATCHES PLAYED YET')); return; }
 
-  if (!S.hist.rows.length) {
-    host.appendChild(el('div', 'room-empty', 'NO MATCHES PLAYED YET'));
-    return;
-  }
-
-  S.hist.rows.forEach((r) => {
+  rows.forEach((r) => {
     const cls = r.result === 'LOSS' ? 'loss' : (r.result === 'DRAW' ? 'draw' : '');
-    const row = el('div', 'hrow ' + cls,
-      `<i class="bar"></i>
-       <div><div class="hres">${r.result === 'WIN' ? 'VICTORY' : (r.result === 'LOSS' ? 'DEFEAT' : 'DRAW')}</div>
-            <div class="mh-map">${esc(r.mode)} · ${esc(r.map)}</div></div>
-       <div class="hscore">${r.score.mine} - ${r.score.other}</div>
-       <div class="hstats">
-         <span><b>${r.kills}</b> K</span><span><b>${r.deaths}</b> D</span>
-         <span><b>${r.assists}</b> A</span><span><b>${r.headshots}</b> HS</span>
-         <span><b>${num(r.damage)}</b> DMG</span>
-       </div>
-       <div class="hrp ${r.rpChange < 0 ? 'neg' : ''}">${r.rpChange > 0 ? '+' : ''}${r.rpChange} RP</div>
-       ${r.mvp ? '<span class="hmvp">MVP</span>' : '<span></span>'}`);
+    const row = el('div', 'hrow ' + cls, `
+      <i class="bar"></i>
+      <div><div class="hres">${r.result === 'WIN' ? 'VICTORY' : (r.result === 'LOSS' ? 'DEFEAT' : 'DRAW')}</div>
+           <div class="hsub">${esc(r.mode)} · ${esc(r.map)}</div></div>
+      <div class="hscore">${r.score.mine} - ${r.score.other}</div>
+      <div class="hstats">
+        <span><b>${r.kills}</b> K</span><span><b>${r.deaths}</b> D</span>
+        <span><b>${r.assists}</b> A</span><span><b>${r.headshots}</b> HS</span>
+        <span><b>${num(r.damage)}</b> DMG</span>
+      </div>
+      <div class="hrp ${r.rpChange < 0 ? 'neg' : ''}">${r.rpChange > 0 ? '+' : ''}${r.rpChange} RP</div>
+      ${r.mvp ? '<span class="hmvp">MVP</span>' : '<span></span>'}`);
     row.onclick = () => post('fetch', { what: 'matchDetail', matchId: r.matchId });
     host.appendChild(row);
   });
-
-  renderMiniHistory(S.hist.rows);
 }
 
 function renderMatchDetail(d) {
   const host = $('matchdetail');
   if (!d) { host.classList.add('hidden'); return; }
   host.classList.remove('hidden');
-
-  const team = (t) => (d.roster || []).filter((p) => p.team === t);
-  const rows = (list) => list.map((p) =>
-    `<div class="brow">
-      <span class="pos">${p.mvp ? '★' : ''}</span>
-      <span class="pname">${esc(p.name)}</span>
-      <span class="prank">${esc(p.rank)}</span>
-      <span>${p.kills}/${p.deaths}/${p.assists}</span>
-      <span>${p.kd}</span>
-      <span>${num(p.damage)}</span>
-      <span class="${p.rpChange < 0 ? 'mh-rp neg' : 'mh-rp'}">${p.rpChange > 0 ? '+' : ''}${p.rpChange}</span>
+  const rows = (t) => (d.roster || []).filter((p) => p.team === t).map((p) => `
+    <div class="arow"><b>${p.mvp ? '★' : ''}</b><b>${esc(p.name)}</b>
+      <span class="grow">${p.kills}/${p.deaths}/${p.assists} · ${num(p.damage)} DMG</span>
+      <span class="hrp ${p.rpChange < 0 ? 'neg' : ''}" style="font-size:13px">${p.rpChange > 0 ? '+' : ''}${p.rpChange}</span>
     </div>`).join('');
-
   host.innerHTML = `
-    <div class="section-head" style="margin-bottom:12px">
-      <h2 style="font-size:20px">${esc(d.mode)} · ${esc(d.map)}</h2>
-      <div class="section-actions">
-        <span class="chip">${d.scores.a} - ${d.scores.b}</span>
-        <span class="chip">${Math.floor((d.duration || 0) / 60)} MIN</span>
-        <span class="chip">${d.overtime ? 'OVERTIME' : 'REGULATION'}</span>
-        <button class="btn btn-sm btn-ghost" data-action="detail-close">CLOSE</button>
-      </div>
-    </div>
-    <div class="board-head"><span></span><span>PLAYER</span><span>RANK</span><span>K/D/A</span><span>KD</span><span>DMG</span><span>RP</span></div>
-    <div class="teamcol a" style="margin-top:8px"><h4>TEAM A</h4>${rows(team(1))}</div>
-    <div class="teamcol b" style="margin-top:10px"><h4>TEAM B</h4>${rows(team(2))}</div>`;
+    <div class="cm-panel-head"><svg><use href="#i-clock"/></svg>${esc(d.mode)} · ${esc(d.map)} · ${d.scores.a}-${d.scores.b}
+      <button class="mini" style="margin-left:auto" data-action="detail-close">CLOSE</button></div>
+    <div style="padding:14px">
+      <div class="card-tag" style="color:var(--team-a)">TEAM A</div>${rows(1)}
+      <div class="card-tag" style="color:var(--team-b);margin-top:12px">TEAM B</div>${rows(2)}
+    </div>`;
 }
 
 /* =============================================================== REWARDS */
 function renderRewards(d) {
-  S.rewards = d;
   const host = $('rewards-root');
   const p = S.boot && S.boot.player;
-
   const missions = (kind) => {
     const list = (d.missions && d.missions[kind]) || [];
-    if (!list.length) return '<div class="party-empty">NONE ACTIVE</div>';
+    if (!list.length) return '<div class="empty">NONE ACTIVE</div>';
     return list.map((m) => {
       const pct = Math.min(100, (m.progress / Math.max(1, m.target)) * 100);
-      return `<div class="mission ${m.completed ? 'done' : ''}">
-        <div class="mission-top"><span>${esc(m.label)}</span><s>${m.progress}/${m.target}</s></div>
-        <div class="mission-bar"><i style="width:${pct}%"></i></div>
-        <div style="font-size:10px;color:var(--dim);margin-top:5px;letter-spacing:.14em">
-          +${m.xp} XP${m.money ? ` · $${num(m.money)}` : ''}</div>
+      return `<div class="stat" style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>${esc(m.label)}</span><span style="color:var(--dim)">${m.progress}/${m.target}</span></div>
+        <div class="slot-track" style="margin-top:7px"><i style="width:${pct}%"></i></div>
+        <div style="font-size:10px;color:var(--dim);margin-top:5px">+${m.xp} XP${m.money ? ` · $${num(m.money)}` : ''}</div>
       </div>`;
     }).join('');
   };
 
   host.innerHTML = `
-    <div class="panel">
-      <span class="panel-tag">LEVEL PROGRESSION</span>
-      <div style="display:flex;align-items:center;gap:20px">
-        <div class="stat" style="min-width:120px"><b>${p ? p.level : 1}</b><span>LEVEL</span></div>
+    <div class="card">
+      <span class="card-tag">LEVEL PROGRESSION</span>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="stat" style="min-width:110px"><b>${p ? p.level : 1}</b><span>LEVEL</span></div>
         <div style="flex:1">
-          <div class="progress"><i style="width:${p ? Math.min(100, (p.xp / Math.max(1, p.xpNeeded)) * 100) : 0}%"></i></div>
-          <div style="font-size:11px;color:var(--dim);margin-top:6px;letter-spacing:.16em">
-            ${p ? num(p.xp) : 0} / ${p ? num(p.xpNeeded) : 0} XP</div>
+          <div class="slot-track"><i style="width:${p ? Math.min(100, (p.xp / Math.max(1, p.xpNeeded)) * 100) : 0}%"></i></div>
+          <div style="font-size:11px;color:var(--dim);margin-top:6px">${p ? num(p.xp) : 0} / ${p ? num(p.xpNeeded) : 0} XP</div>
         </div>
       </div>
     </div>
-
     <div class="settings">
-      <div class="panel"><span class="panel-tag">DAILY MISSIONS</span><div class="missions">${missions('daily')}</div></div>
-      <div class="panel"><span class="panel-tag">WEEKLY MISSIONS</span><div class="missions">${missions('weekly')}</div></div>
+      <div class="card"><span class="card-tag">DAILY MISSIONS</span>${missions('daily')}</div>
+      <div class="card"><span class="card-tag">WEEKLY MISSIONS</span>${missions('weekly')}</div>
     </div>
-
-    <div class="panel">
-      <span class="panel-tag">YOUR REWARDS</span>
-      <div class="rgrid">
-        ${(d.rows || []).length ? (d.rows || []).map((r) => {
-          let value = r.value;
-          try { value = JSON.parse(r.value); } catch (e) { value = {}; }
-          return `<div class="rcard ${r.claimed ? 'claimed' : ''}">
-            <b>${esc((r.type || '').toUpperCase())}</b>
-            <span>${esc(value && value.value !== undefined ? value.value : r.reward_key)}</span>
-            <div style="margin-top:10px">
-              ${r.claimed ? '<span class="chip">CLAIMED</span>'
-                : `<button class="btn sm" data-claim="${esc(r.reward_key)}">CLAIM</button>`}
-            </div>
-          </div>`;
-        }).join('') : '<div class="party-empty">NO REWARDS YET</div>'}
+    <div class="card">
+      <span class="card-tag">YOUR REWARDS</span>
+      <div class="grid">
+        ${(d.rows || []).length ? d.rows.map((r) => {
+          let v = {}; try { v = JSON.parse(r.value); } catch (err) {}
+          return `<div class="stat"><b style="font-size:14px">${esc(String(r.type || '').toUpperCase())}</b>
+            <span>${esc(v && v.value !== undefined ? v.value : r.reward_key)}</span>
+            <div style="margin-top:9px">${r.claimed ? '<span class="tagchip">CLAIMED</span>'
+              : `<button class="mini" data-claim="${esc(r.reward_key)}">CLAIM</button>`}</div></div>`;
+        }).join('') : '<div class="empty">NO REWARDS YET</div>'}
       </div>
-    </div>
-
-    <div class="panel">
-      <span class="panel-tag">SEASON REWARD TIERS</span>
-      <div class="rgrid">
-        ${Object.keys(d.season || {}).map((tier) => `
-          <div class="rcard">
-            <b style="color:var(--gold)">${esc(tier)}</b>
-            <span>${(d.season[tier] || []).map((r) => `${r.type}: ${r.value}`).join(' · ')}</span>
-          </div>`).join('')}
-      </div>
-    </div>
-
-    <div class="panel">
-      <span class="panel-tag">ACHIEVEMENTS</span>
-      ${(d.achievements || []).map((a) =>
-        `<div class="ach ${a.unlocked ? 'on' : ''}">
-          <span class="tick">${a.unlocked ? '✓' : ''}</span>
-          <div><b>${esc(a.label)}</b><div style="font-size:11px;color:var(--dim)">${esc(a.desc)}</div></div>
-          <span>${a.unlocked ? 'UNLOCKED' : 'LOCKED'}</span>
-        </div>`).join('')}
     </div>`;
 
   host.querySelectorAll('[data-claim]').forEach((b) => {
@@ -1045,108 +782,92 @@ function renderRewards(d) {
 function renderTraining() {
   const host = $('traingrid');
   const modes = [
-    { kind: 'aim', label: 'AIM TRAINING', desc: 'Static targets at mixed ranges. Warm up your tracking and flicks.' },
+    { kind: 'aim', label: 'AIM TRAINING', desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
     { kind: 'headshot', label: 'HEADSHOT TRAINING', desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
     { kind: 'range', label: 'FREE RANGE', desc: 'Open range with a full loadout. No targets, no timer.' }
   ];
   host.innerHTML = '';
   modes.forEach((m) => {
-    const card = el('div', 'traincard',
-      `<div><b>${m.label}</b><p>${m.desc}</p></div>
-       <button class="btn btn-sm">ENTER</button>`);
-    card.onclick = () => post('action', { action: 'training', enable: true, kind: m.kind });
-    card.onmouseenter = () => Audio_.play('hover');
-    host.appendChild(card);
+    const c = el('div', 'traincard', `<div><b>${m.label}</b><p>${m.desc}</p></div><button class="btn">ENTER</button>`);
+    c.onclick = () => post('action', { action: 'training', enable: true, kind: m.kind });
+    host.appendChild(c);
   });
 }
 
 /* ============================================================== SETTINGS */
 const SETTING_DEFS = [
-  { key: 'uiVolume',      label: 'UI VOLUME',        type: 'range', min: 0, max: 100 },
-  { key: 'musicVolume',   label: 'MUSIC VOLUME',     type: 'range', min: 0, max: 100 },
-  { key: 'hudSize',       label: 'HUD SIZE',         type: 'range', min: 70, max: 130 },
-  { key: 'killSounds',    label: 'KILL SOUNDS',      type: 'bool' },
-  { key: 'showPing',      label: 'SHOW PING',        type: 'bool' },
-  { key: 'showMinimap',   label: 'MINIMAP IN MATCH', type: 'bool' },
-  { key: 'visualEffects', label: 'VISUAL EFFECTS',   type: 'bool' },
-  { key: 'lowSpecMode',   label: 'LOW SPEC MODE',    type: 'bool' },
-  { key: 'spectatorAuto', label: 'AUTO SPECTATE',    type: 'bool' },
-  { key: 'killFeedPos',   label: 'KILL FEED SIDE',   type: 'select', options: ['right', 'left'] },
-  { key: 'language',      label: 'LANGUAGE',         type: 'select', options: ['en', 'ar'] },
-  { key: 'teamColorA',    label: 'TEAM A COLOUR',    type: 'color' },
-  { key: 'teamColorB',    label: 'TEAM B COLOUR',    type: 'color' }
+  { key: 'uiVolume', label: 'UI VOLUME', type: 'range', min: 0, max: 100 },
+  { key: 'musicVolume', label: 'MUSIC VOLUME', type: 'range', min: 0, max: 100 },
+  { key: 'hudSize', label: 'HUD SIZE', type: 'range', min: 70, max: 130 },
+  { key: 'killSounds', label: 'KILL SOUNDS', type: 'bool' },
+  { key: 'showPing', label: 'SHOW PING', type: 'bool' },
+  { key: 'showMinimap', label: 'MINIMAP IN MATCH', type: 'bool' },
+  { key: 'visualEffects', label: 'VISUAL EFFECTS', type: 'bool' },
+  { key: 'lowSpecMode', label: 'LOW SPEC MODE', type: 'bool' },
+  { key: 'spectatorAuto', label: 'AUTO SPECTATE', type: 'bool' },
+  { key: 'killFeedPos', label: 'KILL FEED SIDE', type: 'select', options: ['right', 'left'] },
+  { key: 'language', label: 'LANGUAGE', type: 'select', options: ['en', 'ar'] },
+  { key: 'teamColorA', label: 'TEAM A COLOUR', type: 'color' },
+  { key: 'teamColorB', label: 'TEAM B COLOUR', type: 'color' }
 ];
 
 function renderSettings() {
   const host = $('settings-root');
   const rows = SETTING_DEFS.map((d) => {
     const v = S.settings[d.key];
-    if (d.type === 'range') {
-      return `<div class="srow"><label>${d.label}</label>
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="range" min="${d.min}" max="${d.max}" value="${v}" data-set="${d.key}"/>
-          <span class="val" data-val="${d.key}">${v}</span></div></div>`;
-    }
-    if (d.type === 'bool') {
-      return `<div class="srow"><label>${d.label}</label>
-        <label class="switch"><input type="checkbox" data-set="${d.key}" ${v ? 'checked' : ''}/><i></i></label></div>`;
-    }
-    if (d.type === 'select') {
-      return `<div class="srow"><label>${d.label}</label>
-        <select class="input" style="width:auto" data-set="${d.key}">
-          ${d.options.map((o) => `<option value="${o}" ${o === v ? 'selected' : ''}>${o.toUpperCase()}</option>`).join('')}
-        </select></div>`;
-    }
+    if (d.type === 'range') return `<div class="srow"><label>${d.label}</label>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input type="range" min="${d.min}" max="${d.max}" value="${v}" data-set="${d.key}"/>
+        <span class="val" data-val="${d.key}">${v}</span></div></div>`;
+    if (d.type === 'bool') return `<div class="srow"><label>${d.label}</label>
+      <label class="sw"><input type="checkbox" data-set="${d.key}" ${v ? 'checked' : ''}/><i></i></label></div>`;
+    if (d.type === 'select') return `<div class="srow"><label>${d.label}</label>
+      <select class="sel" data-set="${d.key}">${d.options.map((o) =>
+        `<option value="${o}" ${o === v ? 'selected' : ''}>${o.toUpperCase()}</option>`).join('')}</select></div>`;
     return `<div class="srow"><label>${d.label}</label>
       <input class="swatch" type="color" value="${v}" data-set="${d.key}"/></div>`;
   });
-
   const half = Math.ceil(rows.length / 2);
   host.innerHTML = `
-    <div class="panel"><span class="panel-tag">INTERFACE</span>${rows.slice(0, half).join('')}</div>
-    <div class="panel"><span class="panel-tag">GAMEPLAY</span>${rows.slice(half).join('')}
-      <button class="btn btn-sm btn-ghost" style="margin-top:16px" data-action="settings-reset">RESET TO DEFAULTS</button>
-    </div>`;
+    <div class="card"><span class="card-tag">INTERFACE</span>${rows.slice(0, half).join('')}</div>
+    <div class="card"><span class="card-tag">GAMEPLAY</span>${rows.slice(half).join('')}
+      <button class="btn ghost" style="margin-top:14px" data-action="settings-reset">RESET TO DEFAULTS</button></div>`;
 
   host.querySelectorAll('[data-set]').forEach((input) => {
     const key = input.dataset.set;
-    const handler = () => {
+    const h = () => {
       let value;
       if (input.type === 'checkbox') value = input.checked;
       else if (input.type === 'range') {
         value = parseInt(input.value, 10);
-        const label = host.querySelector(`[data-val="${key}"]`);
-        if (label) label.textContent = value;
+        const lbl = host.querySelector(`[data-val="${key}"]`);
+        if (lbl) lbl.textContent = value;
       } else value = input.value;
       S.settings[key] = value;
       saveSettings();
     };
-    input.oninput = handler;
-    input.onchange = handler;
+    input.oninput = h; input.onchange = h;
   });
 }
 
 function loadSettings() {
   let stored = {};
-  try { stored = JSON.parse(localStorage.getItem('m5rp_settings') || '{}'); } catch (e) { stored = {}; }
-  S.settings = Object.assign({}, DEFAULTS, S.defaults || {}, stored);
+  try { stored = JSON.parse(localStorage.getItem('m5rp_settings') || '{}'); } catch (e) {}
+  S.settings = Object.assign({}, DEFAULTS, stored);
   applySettings();
 }
-
 function saveSettings() {
   try { localStorage.setItem('m5rp_settings', JSON.stringify(S.settings)); } catch (e) {}
   applySettings();
   post('settings', { settings: S.settings });
 }
-
 function applySettings() {
-  const root = document.documentElement;
-  if (S.settings.teamColorA) root.style.setProperty('--team-a', S.settings.teamColorA);
-  if (S.settings.teamColorB) root.style.setProperty('--team-b', S.settings.teamColorB);
+  const r = document.documentElement;
+  if (S.settings.teamColorA) r.style.setProperty('--team-a', S.settings.teamColorA);
+  if (S.settings.teamColorB) r.style.setProperty('--team-b', S.settings.teamColorB);
   $('killfeed').classList.toggle('left', S.settings.killFeedPos === 'left');
   $('hud').style.transform = `scale(${(S.settings.hudSize || 100) / 100})`;
   $('hud-ping').style.display = S.settings.showPing === false ? 'none' : '';
-  document.body.classList.toggle('lowspec', !!S.settings.lowSpecMode);
 }
 
 /* ================================================================= ADMIN */
@@ -1154,84 +875,47 @@ function renderAdmin(d) {
   if (!d) return;
   S.admin = d;
   const host = $('admin-root');
-
-  const list = (rows, render, empty) =>
-    rows && rows.length ? rows.map(render).join('') : `<div class="party-empty">${empty}</div>`;
+  const list = (rows, fn, empty) => (rows && rows.length) ? rows.map(fn).join('') : `<div class="empty">${empty}</div>`;
 
   host.innerHTML = `
-    <div class="panel">
-      <span class="panel-tag">LIVE MATCHES · ${(d.matches || []).length}</span>
-      <div class="alist">${list(d.matches, (m) => `
-        <div class="arow">
-          <b>${esc(m.mode)}</b><span>${esc(m.map)}</span>
-          <span class="grow">${esc(m.state)} · R${m.round} · ${m.scores.a}-${m.scores.b} · ${m.players}P</span>
-          <button data-admin="spectate" data-match="${esc(m.id)}">SPECTATE</button>
-          <button data-admin="restartRound" data-match="${esc(m.id)}">RESTART</button>
-          <button data-admin="endMatch" data-match="${esc(m.id)}">END</button>
-        </div>`, 'NO LIVE MATCHES')}</div>
-    </div>
+    <div class="card"><span class="card-tag">LIVE MATCHES · ${(d.matches || []).length}</span>
+      <div class="alist">${list(d.matches, (m) => `<div class="arow"><b>${esc(m.mode)}</b>
+        <span class="grow">${esc(m.map)} · ${esc(m.state)} · R${m.round} · ${m.scores.a}-${m.scores.b}</span>
+        <button class="mini" data-admin="spectate" data-match="${esc(m.id)}">SPECTATE</button>
+        <button class="mini" data-admin="endMatch" data-match="${esc(m.id)}">END</button></div>`, 'NO LIVE MATCHES')}</div></div>
 
-    <div class="panel">
-      <span class="panel-tag">SEARCHING · ${(d.searching || []).length}</span>
-      <div class="alist">${list(d.searching, (p) => `
-        <div class="arow"><b>${esc(p.name)}</b><span class="grow">${esc(p.mode)} · ${esc(p.rank)} · MMR ${p.mmr}</span>
-        <span>${p.waited}s</span></div>`, 'QUEUE EMPTY')}</div>
-    </div>
+    <div class="card"><span class="card-tag">SEARCHING · ${(d.searching || []).length}</span>
+      <div class="alist">${list(d.searching, (p) => `<div class="arow"><b>${esc(p.name)}</b>
+        <span class="grow">${esc(p.mode)} · ${esc(p.rank)} · MMR ${p.mmr}</span><span>${p.waited}s</span></div>`, 'QUEUE EMPTY')}</div></div>
 
-    <div class="panel">
-      <span class="panel-tag">SUSPICIOUS PLAYERS</span>
-      <div class="alist">${list(d.suspicious, (f) => `
-        <div class="arow"><b>${esc(f.name || f.user_id)}</b>
-          <span class="grow">${f.flags} flags</span>
-          <span class="sev">SEV ${f.score}</span>
-          <button data-admin="lookup" data-target="${f.user_id}">INSPECT</button>
-        </div>`, 'NOTHING FLAGGED')}</div>
-    </div>
+    <div class="card"><span class="card-tag">SUSPICIOUS PLAYERS</span>
+      <div class="alist">${list(d.suspicious, (f) => `<div class="arow"><b>${esc(f.name || f.user_id)}</b>
+        <span class="grow">${f.flags} flags</span><span class="sev">SEV ${f.score}</span>
+        <button class="mini" data-admin="lookup" data-target="${f.user_id}">INSPECT</button></div>`, 'NOTHING FLAGGED')}</div></div>
 
-    <div class="panel">
-      <span class="panel-tag">ACTIVE RANKED BANS</span>
-      <div class="alist">${list(d.bans, (b) => `
-        <div class="arow"><b>${esc(b.name || b.user_id)}</b>
-          <span>${esc(b.type)}</span>
-          <span class="grow">${esc(b.reason)}</span>
-          <button data-admin="unban" data-target="${b.user_id}" data-ban="${b.id}">UNBAN</button>
-        </div>`, 'NO ACTIVE BANS')}</div>
-    </div>
+    <div class="card"><span class="card-tag">ACTIVE RANKED BANS</span>
+      <div class="alist">${list(d.bans, (b) => `<div class="arow"><b>${esc(b.name || b.user_id)}</b>
+        <span class="grow">${esc(b.type)} · ${esc(b.reason)}</span>
+        <button class="mini" data-admin="unban" data-target="${b.user_id}" data-ban="${b.id}">UNBAN</button></div>`, 'NO ACTIVE BANS')}</div></div>
 
-    <div class="panel">
-      <span class="panel-tag">CUSTOM ROOMS · ${(d.rooms || []).length}</span>
-      <div class="alist">${list(d.rooms, (r) => `
-        <div class="arow"><b>${esc(r.name)}</b><span class="grow">${esc(r.host)} · ${r.players}P · ${esc(r.state)}</span>
-        <button data-admin="closeRoom" data-room="${esc(r.id)}">CLOSE</button></div>`, 'NO ROOMS')}</div>
-    </div>
-
-    <div class="panel">
-      <span class="panel-tag">PLAYER TOOLS</span>
-      <div class="field"><label>TARGET (ID OR NAME)</label><input class="input" id="adm-target" placeholder="e.g. 42"/></div>
-      <div class="admin-tools" style="margin-top:12px">
-        <div class="field"><label>SET RP</label><input class="input" id="adm-rp" type="number" placeholder="1500"/></div>
-        <div class="field"><label>SET RANK ID</label><input class="input" id="adm-rank" type="number" placeholder="0-23"/></div>
-        <div class="field"><label>BAN MINUTES (0 = PERM)</label><input class="input" id="adm-dur" type="number" value="60"/></div>
-        <div class="field"><label>REASON</label><input class="input" id="adm-reason" placeholder="Reason"/></div>
+    <div class="card"><span class="card-tag">PLAYER TOOLS</span>
+      <div class="fld"><label>TARGET (ID OR NAME)</label><input class="inp" id="adm-target" placeholder="42"/></div>
+      <div class="grid" style="margin-top:10px">
+        <div class="fld"><label>SET RP</label><input class="inp" id="adm-rp" type="number"/></div>
+        <div class="fld"><label>RANK ID (0-23)</label><input class="inp" id="adm-rank" type="number"/></div>
+        <div class="fld"><label>BAN MINUTES</label><input class="inp" id="adm-dur" type="number" value="60"/></div>
+        <div class="fld"><label>REASON</label><input class="inp" id="adm-reason"/></div>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px">
-        <button class="btn btn-sm" data-admin="setRP">SET RP</button>
-        <button class="btn btn-sm" data-admin="setRank">SET RANK</button>
-        <button class="btn btn-sm btn-ghost" data-admin="lookupInput">LOOKUP</button>
-        <button class="btn btn-sm btn-ghost" data-admin="resetStats">RESET STATS</button>
-        <button class="btn btn-sm btn-danger" data-admin="ban">RANK BAN</button>
-        <button class="btn btn-sm btn-ghost" data-admin="unbanInput">UNBAN</button>
-        <button class="btn btn-sm btn-ghost" data-admin="newSeason">NEW SEASON</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <span class="panel-tag">SEASONS</span>
-      <div class="alist">${list(d.seasons, (s) => `
-        <div class="arow"><b>#${s.number} ${esc(s.name)}</b>
-          <span class="grow">${esc(String(s.start_at || '').slice(0, 10))} → ${esc(String(s.end_at || '').slice(0, 10))}</span>
-          <span>${s.active ? 'ACTIVE' : 'ARCHIVED'}</span></div>`, 'NO SEASONS')}</div>
-    </div>`;
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:12px">
+        <button class="mini" data-admin="setRP">SET RP</button>
+        <button class="mini" data-admin="setRank">SET RANK</button>
+        <button class="mini" data-admin="lookupInput">LOOKUP</button>
+        <button class="mini" data-admin="resetStats">RESET STATS</button>
+        <button class="mini" data-admin="ban">RANK BAN</button>
+        <button class="mini" data-admin="unbanInput">UNBAN</button>
+        <button class="mini" data-admin="freeze">FREEZE RANKED</button>
+        <button class="mini" data-admin="newSeason">NEW SEASON</button>
+      </div></div>`;
 
   host.querySelectorAll('[data-admin]').forEach((b) => { b.onclick = () => adminAction(b); });
 }
@@ -1239,34 +923,28 @@ function renderAdmin(d) {
 function adminAction(btn) {
   const a = btn.dataset.admin;
   const target = ($('adm-target') && $('adm-target').value) || btn.dataset.target;
-
   const map = {
-    spectate:     () => post('admin', { action: 'spectate', matchId: btn.dataset.match }),
-    restartRound: () => post('admin', { action: 'restartRound', matchId: btn.dataset.match }),
-    endMatch:     () => post('admin', { action: 'endMatch', matchId: btn.dataset.match }),
-    closeRoom:    () => post('admin', { action: 'closeRoom', roomId: btn.dataset.room }),
-    lookup:       () => post('admin', { action: 'playerLookup', target: btn.dataset.target }),
-    lookupInput:  () => post('admin', { action: 'playerLookup', target }),
-    unban:        () => post('admin', { action: 'unban', target: btn.dataset.target, banId: btn.dataset.ban }),
-    unbanInput:   () => post('admin', { action: 'unban', target }),
-    resetStats:   () => post('admin', { action: 'resetStats', target }),
-    newSeason:    () => post('admin', { action: 'newSeason' }),
-    setRP:        () => post('admin', { action: 'setRP', target, value: parseInt($('adm-rp').value, 10) }),
-    setRank:      () => post('admin', { action: 'setRank', target, rankId: parseInt($('adm-rank').value, 10) }),
-    ban:          () => post('admin', {
-      action: 'ban', target,
-      duration: (parseInt($('adm-dur').value, 10) || 0) * 60,
-      reason: $('adm-reason').value, type: 'RANKED'
-    })
+    spectate: () => post('admin', { action: 'spectate', matchId: btn.dataset.match }),
+    endMatch: () => post('admin', { action: 'endMatch', matchId: btn.dataset.match }),
+    lookup: () => post('admin', { action: 'playerLookup', target: btn.dataset.target }),
+    lookupInput: () => post('admin', { action: 'playerLookup', target }),
+    unban: () => post('admin', { action: 'unban', target: btn.dataset.target, banId: btn.dataset.ban }),
+    unbanInput: () => post('admin', { action: 'unban', target }),
+    resetStats: () => post('admin', { action: 'resetStats', target }),
+    newSeason: () => post('admin', { action: 'newSeason' }),
+    freeze: () => post('admin', { action: 'freeze', value: !(S.admin && S.admin.frozen) }),
+    setRP: () => post('admin', { action: 'setRP', target, value: parseInt($('adm-rp').value, 10) }),
+    setRank: () => post('admin', { action: 'setRank', target, rankId: parseInt($('adm-rank').value, 10) }),
+    ban: () => post('admin', { action: 'ban', target, duration: (parseInt($('adm-dur').value, 10) || 0) * 60,
+      reason: $('adm-reason').value, type: 'RANKED' })
   };
-  if (map[a]) { Audio_.play('click'); map[a](); }
+  if (map[a]) { Sfx.play('click'); map[a](); }
 }
 
 /* =============================================================== IN MATCH */
 function renderHud(d) {
   if (!d) return;
   S.hud = d;
-
   $('hud-score-a').textContent = d.scores.a;
   $('hud-score-b').textContent = d.scores.b;
   $('hud-alive-a').textContent = d.aliveA;
@@ -1274,54 +952,37 @@ function renderHud(d) {
   $('hud-round').textContent = d.ffa ? 'FREE FOR ALL'
     : (d.overtime ? `OVERTIME · ROUND ${d.round}` : `ROUND ${d.round}`);
   $('hud-ping').textContent = `${d.ping || 0} ms`;
-
   S.hudTime = d.time || 0;
   updateTimer();
-
-  // the local player's own side is always shown on the left
-  const flip = d.team === 2;
-  $('hud-score-a').style.color = flip ? 'var(--team-b)' : 'var(--team-a)';
-  $('hud-score-b').style.color = flip ? 'var(--team-a)' : 'var(--team-b)';
 }
-
 function updateTimer() {
-  const node = $('hud-timer');
-  node.textContent = clock(S.hudTime);
-  node.classList.toggle('low', S.hudTime <= 15 && S.hudTime > 0);
+  const n = $('hud-timer');
+  n.textContent = clock(S.hudTime);
+  n.classList.toggle('low', S.hudTime <= 15 && S.hudTime > 0);
 }
-
 function renderLocalHud(d) {
   if (!d) return;
   const hp = Math.max(0, Math.min(100, d.health));
-  $('hud-hp').textContent = hp;
-  $('hud-hp-bar').style.width = hp + '%';
-  $('hud-ar').textContent = d.armor;
-  $('hud-ar-bar').style.width = Math.max(0, Math.min(100, d.armor)) + '%';
-  $('hud-weapon-name').textContent = (d.weapon || '').replace('WEAPON_', '');
-  $('hud-clip').textContent = d.clip;
-  $('hud-ammo').textContent = d.ammo;
+  $('hud-hp').textContent = hp; $('hud-hp-bar').style.width = hp + '%';
+  $('hud-ar').textContent = d.armor; $('hud-ar-bar').style.width = Math.max(0, Math.min(100, d.armor)) + '%';
+  $('hud-weapon-name').textContent = String(d.weapon || '').replace('WEAPON_', '');
+  $('hud-clip').textContent = d.clip; $('hud-ammo').textContent = d.ammo;
 }
 
 function addKillFeed(d) {
   const host = $('killfeed');
   const meName = S.boot && S.boot.player && S.boot.player.name;
   const mine = d.killer === meName || d.victim === meName;
-
-  const teamCls = (t) => (t === 1 ? 'n-a' : 'n-b');
-  const node = el('div', 'kf' + (mine ? ' mine' : ''),
-    `${d.killer ? `<span class="${teamCls(d.killerTeam)}">${esc(d.killer)}</span>` : ''}
-     <span class="kf-w">${esc((d.weapon || '').replace('WEAPON_', ''))}</span>
-     ${d.headshot ? '<span class="kf-hs"><svg><use href="#ico-head"/></svg>HS</span>' : ''}
-     <span class="${teamCls(d.victimTeam)}">${esc(d.victim)}</span>`);
-
+  const tc = (t) => (t === 1 ? 'n-a' : 'n-b');
+  const node = el('div', 'kf' + (mine ? ' mine' : ''), `
+    ${d.killer ? `<span class="${tc(d.killerTeam)}">${esc(d.killer)}</span>` : ''}
+    <span class="kf-w">${esc(String(d.weapon || '').replace('WEAPON_', ''))}</span>
+    ${d.headshot ? '<span class="kf-hs"><svg><use href="#i-head"/></svg>HS</span>' : ''}
+    <span class="${tc(d.victimTeam)}">${esc(d.victim)}</span>`);
   host.appendChild(node);
   while (host.children.length > 6) host.removeChild(host.firstChild);
-
   setTimeout(() => { if (node.parentNode) node.remove(); }, 6000);
-
-  if (S.settings.killSounds !== false && d.killer === meName) {
-    Audio_.play(d.headshot ? 'headshot' : 'kill');
-  }
+  if (S.settings.killSounds !== false && d.killer === meName) Sfx.play(d.headshot ? 'headshot' : 'kill');
 }
 
 const EVENT_TEXT = {
@@ -1333,66 +994,52 @@ const EVENT_TEXT = {
 
 function showEvent(d) {
   if (!d || !d.type) return;
-
   if (d.type === 'SURRENDER_VOTE') {
     toast('warning', `Surrender vote: ${d.extra.yes}/${d.extra.total}`, 'SURRENDER');
     return;
   }
-
   const banner = $('combat-banner');
-  const key = d.type.replace('_', '');
-  let text = EVENT_TEXT[d.type] || EVENT_TEXT[key] || d.type.replace(/_/g, ' ');
-  if (d.extra && typeof d.extra === 'number') text += ` ${d.extra}`;
-  if (d.player) text = `${d.player.toUpperCase()} · ${text}`;
-
+  let text = EVENT_TEXT[d.type] || d.type.replace(/_/g, ' ');
+  if (typeof d.extra === 'number') text += ` ${d.extra}`;
+  if (d.player) text = `${String(d.player).toUpperCase()} · ${text}`;
   $('combat-banner-text').textContent = text;
   banner.classList.remove('hidden');
   clearTimeout(showEvent._t);
   showEvent._t = setTimeout(() => banner.classList.add('hidden'), 2600);
-
-  if (d.type === 'ACE' || d.type === 'CLUTCH') Audio_.play('rankup');
-  else if (d.type === 'AFK_WARNING') Audio_.play('warning');
+  if (d.type === 'ACE' || d.type === 'CLUTCH') Sfx.play('rankup');
+  else if (d.type === 'AFK_WARNING') Sfx.play('warning');
 }
 
 function renderRound(d) {
   if (!d) return;
   const phase = $('phase');
-
   if (d.phase === 'countdown') {
     let n = d.seconds || 3;
     phase.classList.remove('hidden');
     $('phase-label').textContent = `ROUND ${d.round}`;
     const step = () => {
       const node = $('phase-count');
-      if (n > 0) {
-        node.textContent = n;
-        node.classList.remove('go');
-        Audio_.play('tick');
-      } else {
-        node.textContent = 'GO';
-        node.classList.add('go');
-        Audio_.play('go');
+      if (n > 0) { node.textContent = n; node.classList.remove('go'); Sfx.play('tick'); }
+      else {
+        node.textContent = 'GO'; node.classList.add('go'); Sfx.play('go');
         setTimeout(() => phase.classList.add('hidden'), 900);
         clearInterval(renderRound._t);
       }
       n -= 1;
     };
-    clearInterval(renderRound._t);
-    step();
+    clearInterval(renderRound._t); step();
     renderRound._t = setInterval(step, 1000);
 
   } else if (d.phase === 'end') {
     phase.classList.remove('hidden');
     const won = d.winner === d.myTeam;
-    $('phase-count').textContent = d.winner === 0 ? 'DRAW' : (won ? 'ROUND WON' : 'ROUND LOST');
-    $('phase-count').style.fontSize = '58px';
-    $('phase-count').classList.toggle('go', won);
+    const node = $('phase-count');
+    node.textContent = d.winner === 0 ? 'DRAW' : (won ? 'ROUND WON' : 'ROUND LOST');
+    node.style.fontSize = '54px';
+    node.classList.toggle('go', won);
     $('phase-label').textContent = `${d.scores.a} — ${d.scores.b}`;
-    Audio_.play(won ? 'roundwin' : 'roundloss');
-    setTimeout(() => {
-      phase.classList.add('hidden');
-      $('phase-count').style.fontSize = '';
-    }, 4200);
+    Sfx.play(won ? 'roundwin' : 'roundloss');
+    setTimeout(() => { phase.classList.add('hidden'); node.style.fontSize = ''; }, 4200);
 
   } else if (d.phase === 'live') {
     phase.classList.add('hidden');
@@ -1401,22 +1048,18 @@ function renderRound(d) {
 
 function renderMatchEnd(d) {
   if (!d) return;
-  const modal = $('modal-result');
-  const root = $('result-root');
+  const modal = $('modal-result'), root = $('result-root');
   modal.classList.remove('hidden');
-
-  const lost = d.result === 'DEFEAT';
-  root.classList.toggle('defeat', lost);
+  root.classList.toggle('defeat', d.result === 'DEFEAT');
   root.classList.toggle('draw', d.result === 'DRAW');
 
   $('result-tag').textContent = d.result;
   $('result-a').textContent = d.yourTeam === 2 ? d.scores.b : d.scores.a;
   $('result-b').textContent = d.yourTeam === 2 ? d.scores.a : d.scores.b;
 
-  // RP block
-  const rpBlock = $('result-rp');
+  const rp = $('result-rp');
   if (d.rp && d.ranked) {
-    rpBlock.classList.remove('hidden');
+    rp.classList.remove('hidden');
     if (d.rp.placement) {
       $('rp-rank').textContent = 'PLACEMENT MATCHES';
       $('rp-before').textContent = d.rp.played;
@@ -1426,99 +1069,70 @@ function renderMatchEnd(d) {
       $('rp-bar-fill').style.width = (d.rp.played / Math.max(1, d.rp.total)) * 100 + '%';
       $('rp-breakdown').innerHTML = '';
     } else {
-      $('rp-rank').textContent = (d.rank && d.rank.after || '').toUpperCase();
+      $('rp-rank').textContent = String((d.rank && d.rank.after) || '').toUpperCase();
       $('rp-rank').style.color = (d.rank && d.rank.color) || '';
-      countUp($('rp-before'), d.rp.before, d.rp.before, 0);
+      $('rp-before').textContent = num(d.rp.before);
       countUp($('rp-after'), d.rp.before, d.rp.after, 900);
       $('rp-delta').textContent = `${d.rp.delta > 0 ? '+' : ''}${d.rp.delta} RP`;
       $('rp-delta').classList.toggle('neg', d.rp.delta < 0);
       $('rp-bar-fill').style.width = ((d.rank && d.rank.progress && d.rank.progress.percent) || 0) + '%';
-
       const b = d.rp.breakdown || {};
       $('rp-breakdown').innerHTML = Object.keys(b).map((k) =>
         `<span>${k.toUpperCase()} ${b[k] > 0 ? '+' : ''}${b[k]}</span>`).join('');
     }
-  } else {
-    rpBlock.classList.add('hidden');
-  }
+  } else rp.classList.add('hidden');
 
-  // personal stats
   const s = d.stats || {};
   $('result-stats').innerHTML = `
     <div><b>${s.kills || 0}</b><span>KILLS</span></div>
     <div><b>${s.deaths || 0}</b><span>DEATHS</span></div>
     <div><b>${s.assists || 0}</b><span>ASSISTS</span></div>
     <div><b>${s.headshots || 0}</b><span>HEADSHOTS</span></div>
-    <div><b>${num(s.damage || 0)}</b><span>DAMAGE</span></div>
-    <div><b>${s.clutches || 0}</b><span>CLUTCHES</span></div>`;
+    <div><b>${num(s.damage || 0)}</b><span>DAMAGE</span></div>`;
 
-  // scoreboard
   const board = d.scoreboard || [];
-  const rows = (team) => board.filter((p) => p.team === team).map((p) => `
-    <div class="brow">
-      <span class="pos"></span>
-      <span class="pname">${esc(p.name)}</span>
-      <span class="prank">${esc(p.rank || '')}</span>
-      <span>${p.kills}/${p.deaths}/${p.assists}</span>
-      <span>${p.headshots}</span>
-      <span>${num(p.damage)}</span>
-      <span>${p.score}</span>
-    </div>`).join('');
-
+  const rows = (t) => board.filter((p) => p.team === t).map((p) => `
+    <div class="arow"><b>${esc(p.name)}</b>
+      <span class="grow">${p.kills}/${p.deaths}/${p.assists} · ${p.headshots} HS · ${num(p.damage)} DMG</span>
+      <span>${p.score}</span></div>`).join('');
   $('result-scoreboard').innerHTML = `
-    <div class="board-head"><span></span><span>PLAYER</span><span>RANK</span><span>K/D/A</span><span>HS</span><span>DMG</span><span>SCORE</span></div>
-    <div class="teamcol a"><h4>TEAM A</h4>${rows(1)}</div>
-    <div class="teamcol b" style="margin-top:10px"><h4>TEAM B</h4>${rows(2)}</div>`;
+    <div class="card-tag" style="color:var(--team-a)">TEAM A</div>${rows(1)}
+    <div class="card-tag" style="color:var(--team-b);margin-top:10px">TEAM B</div>${rows(2)}`;
 
-  Audio_.play(lost ? 'defeat' : 'victory');
-
-  // MVP → then rank change
-  const afterResult = () => {
-    if (d.mvp) {
-      showMVP(d.mvp, () => maybeRankChange(d));
-    } else {
-      maybeRankChange(d);
-    }
-  };
-  setTimeout(afterResult, 2600);
+  Sfx.play(d.result === 'DEFEAT' ? 'defeat' : 'victory');
+  setTimeout(() => { if (d.mvp) showMVP(d.mvp, () => maybeRankChange(d)); else maybeRankChange(d); }, 2600);
 }
 
 function maybeRankChange(d) {
   if (!d.rank || (!d.rank.up && !d.rank.down)) return;
   const modal = $('modal-rank');
-  const root = $('rankup-root');
   modal.classList.remove('hidden');
-  root.classList.toggle('down', !!d.rank.down);
+  $('rankup-root').classList.toggle('down', !!d.rank.down);
   $('rankup-tag').textContent = d.rank.up ? 'RANK UP' : 'RANK DOWN';
-  $('rankup-name').textContent = (d.rank.after || '').toUpperCase();
+  $('rankup-name').textContent = String(d.rank.after || '').toUpperCase();
   $('rankup-sub').textContent = d.rank.up ? 'NEW RANK' : 'DEMOTED';
-  $('rankup-crest').innerHTML = crest(
-    (S.boot && S.boot.ranks || []).find((r) => r.id === d.rank.id)?.tier || 'IRON',
-    d.rank.color);
-  Audio_.play(d.rank.up ? 'rankup' : 'rankdown');
+  $('rankup-crest').innerHTML = crest(tierOf(d.rank.id), d.rank.color);
+  Sfx.play(d.rank.up ? 'rankup' : 'rankdown');
   setTimeout(() => modal.classList.add('hidden'), 5200);
 }
 
 function showMVP(mvp, done) {
   const modal = $('modal-mvp');
   modal.classList.remove('hidden');
-  $('mvp-name').textContent = (mvp.name || '').toUpperCase();
+  $('mvp-name').textContent = String(mvp.name || '').toUpperCase();
   $('mvp-kills').textContent = mvp.kills;
   $('mvp-deaths').textContent = mvp.deaths;
   $('mvp-hs').textContent = mvp.headshots;
   $('mvp-dmg').textContent = num(mvp.damage);
-  Audio_.play('rankup');
+  Sfx.play('rankup');
   setTimeout(() => { modal.classList.add('hidden'); if (done) done(); }, 4600);
 }
 
 function countUp(node, from, to, duration) {
-  if (!duration) { node.textContent = num(to); return; }
-  const start = performance.now();
-  const diff = to - from;
+  const start = performance.now(), diff = to - from;
   const step = (now) => {
     const t = Math.min(1, (now - start) / duration);
-    const eased = 1 - Math.pow(1 - t, 3);
-    node.textContent = num(Math.round(from + diff * eased));
+    node.textContent = num(Math.round(from + diff * (1 - Math.pow(1 - t, 3))));
     if (t < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -1530,42 +1144,42 @@ function toast(kind, message, title, ttl) {
     `${title ? `<b>${esc(title)}</b>` : ''}<span>${esc(message)}</span>`);
   $('toasts').appendChild(node);
   setTimeout(() => { if (node.parentNode) node.remove(); }, ttl || 5200);
-  if (kind === 'error') Audio_.play('error');
-  else if (kind === 'warning') Audio_.play('warning');
+  if (kind === 'error') Sfx.play('error');
+  else if (kind === 'warning') Sfx.play('warning');
   return node;
 }
 
 /* ============================================================ NUI EVENTS */
-window.addEventListener('message', (event) => {
-  const d = event.data || {};
-
+window.addEventListener('message', (e) => {
+  const d = e.data || {};
   switch (d.action) {
     case 'open':
-      S.theme = d.theme; S.text = d.text || {};
-      if (d.defaults) S.defaults = Object.assign({}, DEFAULTS, d.defaults);
+      if (!Object.keys(S.settings).length) loadSettings();
       $('app').classList.remove('hidden');
-      if (!d.silent) Audio_.play('open');
-      if (d.page) showPage(d.page === 'matchEnd' ? S.page : d.page);
+      if (!d.silent) Sfx.play('open');
+      showPage(d.page && $('pg-' + d.page) ? d.page : (S.page || 'ranked'));
       break;
 
     case 'close':
       $('app').classList.add('hidden');
-      $('modal-found').classList.add('hidden');
-      $('modal-mapvote').classList.add('hidden');
-      $('modal-result').classList.add('hidden');
-      Audio_.play('close');
+      $('modal-invite').classList.add('hidden');
+      Sfx.play('close');
       break;
 
-    case 'boot':        renderBoot(d.data); break;
-    case 'toast':       toast(d.kind, d.message, d.title); break;
-    case 'queue':       renderQueue(d.data); break;
-    case 'matchFound':  renderFound(d.data); break;
-    case 'mapVote':     renderMapVote(d.data); break;
-    case 'party':       renderParty(d.data); break;
+    case 'boot': renderBoot(d.data); break;
+    case 'toast': toast(d.kind, d.message, d.title); break;
+    case 'queue': renderQueue(d.data); break;
+    case 'matchFound': renderFound(d.data); break;
+    case 'mapVote': renderMapVote(d.data); break;
+    case 'party': renderParty(d.data); break;
 
     case 'custom':
-      if (d.data && d.data.list) renderRooms(d.data.list);
-      if (d.data && d.data.room !== undefined) renderRoom(d.data.room || null);
+      if (d.data && d.data.list) S.rooms = d.data.list;
+      if (d.data && d.data.room !== undefined) {
+        S.room = d.data.room || null;
+        renderCustomParty(); renderCustomRoom(); updateSteps();
+        $('btn-back').classList.toggle('hidden', !(S.page === 'custom' && S.room));
+      }
       break;
 
     case 'data': {
@@ -1577,53 +1191,44 @@ window.addEventListener('message', (event) => {
       else if (p.what === 'rewards') renderRewards(p);
       else if (p.what === 'admin') {
         if (p.action === 'dashboard') renderAdmin(p.result);
-        else if (p.action === 'playerLookup') showLookup(p.result);
+        else if (p.action === 'playerLookup') { S.profile = p.result; showPage('profile'); }
         else { toast('success', 'Action applied.', 'ADMIN'); post('admin', { action: 'dashboard' }); }
       }
       break;
     }
 
-    case 'matchSetup':
-      S.match = d.data;
-      $('hud').classList.remove('hidden');
-      $('killfeed').innerHTML = '';
-      break;
-
-    case 'hud':         renderHud(d.data); break;
-    case 'localHud':    renderLocalHud(d.data); break;
-    case 'killfeed':    addKillFeed(d.data); break;
-    case 'event':       showEvent(d.data); break;
-    case 'round':       renderRound(d.data); break;
-    case 'matchEnd':    renderMatchEnd(d.data); break;
+    case 'matchSetup': $('hud').classList.remove('hidden'); $('killfeed').innerHTML = ''; break;
+    case 'hud': renderHud(d.data); break;
+    case 'localHud': renderLocalHud(d.data); break;
+    case 'killfeed': addKillFeed(d.data); break;
+    case 'event': showEvent(d.data); break;
+    case 'round': renderRound(d.data); break;
+    case 'matchEnd': renderMatchEnd(d.data); break;
 
     case 'matchCleanup':
-      $('hud').classList.add('hidden');
+      ['hud', 'killfeed', 'phase', 'boundary', 'spectate', 'combat-banner'].forEach((id) => {
+        const n = $(id); if (n) n.classList.add('hidden');
+      });
       $('killfeed').innerHTML = '';
-      $('phase').classList.add('hidden');
-      $('boundary').classList.add('hidden');
-      $('spectate').classList.add('hidden');
-      $('combat-banner').classList.add('hidden');
-      S.match = null; S.hud = null;
+      S.hud = null;
       break;
 
-    case 'hudVisible':
-      $('hud').classList.toggle('hidden', !d.value);
-      break;
+    case 'hudVisible': $('hud').classList.toggle('hidden', !d.value); break;
 
     case 'boundary': {
-      const node = $('boundary');
-      node.classList.toggle('hidden', !d.active);
+      const n = $('boundary');
+      n.classList.toggle('hidden', !d.active);
       if (d.active) {
         $('boundary-count').textContent = d.seconds;
         $('boundary-dist').textContent = `${d.distance}m OUTSIDE THE ZONE`;
-        if (d.seconds <= 3) Audio_.play('tick');
+        if (d.seconds <= 3) Sfx.play('tick');
       }
       break;
     }
 
     case 'spectate': {
-      const node = $('spectate');
-      node.classList.toggle('hidden', !(d.data && d.data.active));
+      const n = $('spectate');
+      n.classList.toggle('hidden', !(d.data && d.data.active));
       if (d.data && d.data.active) {
         $('spectate-name').textContent = d.data.overview ? 'OVERVIEW CAMERA'
           : `${d.data.name} (${d.data.index || 1}/${d.data.total || 1})`;
@@ -1632,9 +1237,8 @@ window.addEventListener('message', (event) => {
     }
 
     case 'training': {
-      const node = $('training');
-      const t = d.data || {};
-      node.classList.toggle('hidden', !t.active);
+      const n = $('training'), t = d.data || {};
+      n.classList.toggle('hidden', !t.active);
       if (t.active) {
         if (t.label) $('training-title').textContent = t.label;
         if (t.hits !== undefined) {
@@ -1649,9 +1253,7 @@ window.addEventListener('message', (event) => {
 
     case 'death':
       if (d.data && d.data.killer) {
-        toast('error',
-          `${d.data.killer}${d.data.headshot ? ' · HEADSHOT' : ''}`,
-          'ELIMINATED', 3600);
+        toast('error', `${d.data.killer}${d.data.headshot ? ' · HEADSHOT' : ''}`, 'ELIMINATED', 3600);
       }
       break;
 
@@ -1663,153 +1265,144 @@ window.addEventListener('message', (event) => {
       hm._t = setTimeout(() => hm.classList.add('hidden'), 150);
       break;
     }
-
-    case 'damaged':
-      document.body.animate(
-        [{ filter: 'none' }, { filter: 'saturate(.6) brightness(1.12)' }, { filter: 'none' }],
-        { duration: 180 });
-      break;
   }
 });
 
-function showLookup(p) {
-  if (!p) { toast('error', 'Player not found.', 'ADMIN'); return; }
-  S.profile = p;
-  showPage('profile');
-  toast('info', `Inspecting ${p.name}`, 'ADMIN');
-}
-
 /* ============================================================== BINDINGS */
-document.addEventListener('click', (e) => {
-  const rail = e.target.closest('.rail-btn');
-  if (rail) { Audio_.play('click'); showPage(rail.dataset.page); return; }
+$('btn-start').onclick = () => { Sfx.play('click'); toggleQueue(); };
+$('sd-cancel').onclick = () => post('queue', { action: 'leave' });
+$('btn-accept').onclick = () => {
+  if (!S.found) return;
+  Sfx.play('accept');
+  post('ready', { id: S.found.id, accept: true });
+  $('found-waiting').classList.remove('hidden');
+  document.querySelector('.found-actions').classList.add('hidden');
+};
+$('btn-decline').onclick = () => {
+  if (S.found) { post('ready', { id: S.found.id, accept: false }); renderFound(null); }
+};
+$('cm-armor').onchange = (e) => { S.cm.armor = e.target.checked; };
+$('cm-hsonly').onchange = (e) => { S.cm.hsOnly = e.target.checked; };
 
-  const tab = e.target.closest('#lb-tabs .tab');
-  if (tab) {
-    document.querySelectorAll('#lb-tabs .tab').forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
-    S.lb.board = tab.dataset.board;
-    S.lb.page = 1;
-    Audio_.play('click');
-    fetchBoard();
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('.ft .tab[data-page]');
+  if (tab) { Sfx.play('click'); showPage(tab.dataset.page); return; }
+
+  const step = e.target.closest('[data-step]');
+  if (step) {
+    const parts = step.dataset.step.split(':');
+    const what = parts[0], delta = parseInt(parts[1], 10);
+    Sfx.play('click');
+    if (what === 'mode') {
+      const modes = (S.boot && S.boot.allModes) || [];
+      if (modes.length) {
+        const i = Math.max(0, modes.findIndex((m) => m.id === S.cm.mode));
+        const next = modes[(i + delta + modes.length) % modes.length];
+        if (next) { S.cm.mode = next.id; S.cm.mapPage = 1; }
+      }
+    } else if (what === 'rounds') {
+      const lim = (S.boot && S.boot.customLimits && S.boot.customLimits.rounds) || { min: 1, max: 31 };
+      S.cm.rounds = Math.max(lim.min, Math.min(lim.max, S.cm.rounds + delta));
+    }
+    renderCustom();
     return;
   }
 
-  const roomBtn = e.target.closest('[data-room-act]');
-  if (roomBtn) {
-    const act = roomBtn.dataset.roomAct;
-    Audio_.play('click');
-    if (act === 'leave') post('custom', { action: 'leave' });
-    else if (act === 'start') post('custom', { action: 'start' });
-    else if (act === 'stop') post('custom', { action: 'stop' });
-    else if (act === 'lock') post('custom', { action: 'lock', value: !(S.room && S.room.locked) });
-    else if (act === 'kick') post('custom', { action: 'kick', userId: parseInt(roomBtn.dataset.user, 10) });
-    else if (act === 'ban') post('custom', { action: 'ban', userId: parseInt(roomBtn.dataset.user, 10) });
-    else if (act === 'move') post('custom', {
-      action: 'move', userId: parseInt(roomBtn.dataset.user, 10),
-      team: parseInt(roomBtn.dataset.team, 10)
-    });
-    else if (act === 'apply') applyRoomSettings();
+  const room = e.target.closest('[data-room]');
+  if (room) {
+    const a = room.dataset.room;
+    Sfx.play('click');
+    if (a === 'start') post('custom', { action: 'start' });
+    else if (a === 'lock') post('custom', { action: 'lock', value: !(S.room && S.room.locked) });
+    else if (a === 'apply') post('custom', { action: 'settings', settings: customPayload() });
+    else if (a === 'kick') post('custom', { action: 'kick', userId: parseInt(room.dataset.user, 10) });
+    else if (a === 'move') post('custom', { action: 'move', userId: parseInt(room.dataset.user, 10), team: parseInt(room.dataset.team, 10) });
     return;
   }
 
   const act = e.target.closest('[data-action]');
   if (!act) return;
   const a = act.dataset.action;
-  Audio_.play('click');
+  Sfx.play('click');
 
   switch (a) {
     case 'close': post('close'); break;
-    case 'queue-cancel': post('queue', { action: 'leave' }); break;
-    case 'party-invite': {
-      const t = $('party-target').value.trim();
-      if (t) { post('party', { action: 'invite', target: t }); $('party-target').value = ''; }
+    case 'back':
+      S.room = null; renderCustomRoom(); renderCustomParty(); updateSteps();
+      $('btn-back').classList.add('hidden');
+      break;
+
+    case 'invite-cancel': $('modal-invite').classList.add('hidden'); break;
+    case 'invite-send': {
+      const v = $('invite-id').value.trim();
+      if (v) post('party', { action: 'invite', target: v });
+      $('modal-invite').classList.add('hidden');
       break;
     }
-    case 'party-ready': post('party', { action: 'ready', value: true }); break;
-    case 'party-leave': post('party', { action: 'leave' }); break;
-    case 'custom-refresh': post('custom', { action: 'list' }); break;
-    case 'custom-create-open': renderCreateBox(); break;
-    case 'custom-cancel':
-      $('createbox').classList.add('hidden');
-      $('rooms-panel').classList.remove('hidden');
+
+    case 'cm-all': {
+      const all = ((S.boot && S.boot.weaponPresets) || []).map((w) => w.id);
+      S.cm.weapons = (S.cm.weapons.length === all.length) ? all.slice(0, 1) : all;
+      renderCustomWeapons();
       break;
-    case 'custom-create':
-      post('custom', {
-        action: 'create',
-        name: $('cg-name').value,
-        password: $('cg-pass').value,
-        mode: $('cg-mode').value,
-        map: $('cg-map').value,
-        rounds: parseInt($('cg-rounds').value, 10),
-        roundTime: parseInt($('cg-roundtime').value, 10),
-        friendlyFire: $('cg-ff').checked,
-        headshotOneShot: $('cg-hs').checked,
-        respawn: $('cg-respawn').checked,
-        autoStart: $('cg-auto').checked
-      });
-      $('createbox').classList.add('hidden');
+    }
+    case 'cm-invite': {
+      const v = $('cm-invite').value.trim();
+      if (v) { post('party', { action: 'invite', target: v }); $('cm-invite').value = ''; }
       break;
+    }
+    case 'cm-copy':
+      if (S.room && S.room.code) {
+        try { navigator.clipboard.writeText(S.room.code); } catch (err) {}
+        toast('success', `Code ${S.room.code} copied`, 'ROOM CODE');
+      }
+      break;
+    case 'cm-chat': toast('info', 'Share the room code with your friends.', 'ROOM CODE'); break;
+    case 'cm-create': post('custom', Object.assign({ action: 'create' }, customPayload())); break;
+    case 'cm-leave': post('custom', { action: 'leave' }); break;
+    case 'cm-joincode': {
+      const code = (prompt('Room code:') || '').trim();
+      if (code) post('custom', { action: 'joinCode', code });
+      break;
+    }
+
     case 'lb-prev': if (S.lb.page > 1) { S.lb.page -= 1; fetchBoard(); } break;
     case 'lb-next': S.lb.page += 1; fetchBoard(); break;
     case 'hist-prev':
       if (S.hist.page > 1) { S.hist.page -= 1; post('fetch', { what: 'history', page: S.hist.page }); }
       break;
-    case 'hist-next':
-      S.hist.page += 1; post('fetch', { what: 'history', page: S.hist.page });
-      break;
+    case 'hist-next': S.hist.page += 1; post('fetch', { what: 'history', page: S.hist.page }); break;
     case 'detail-close': $('matchdetail').classList.add('hidden'); break;
     case 'result-close': $('modal-result').classList.add('hidden'); post('close'); break;
-    case 'stop-training': post('action', { action: 'training', enable: false }); break;
-    case 'admin-refresh': post('admin', { action: 'dashboard' }); break;
-    case 'admin-freeze':
-      post('admin', { action: 'freeze', value: !(S.admin && S.admin.frozen) });
-      break;
-    case 'settings-reset':
-      S.settings = Object.assign({}, DEFAULTS, S.defaults);
-      saveSettings();
-      renderSettings();
-      break;
+    case 'settings-reset': S.settings = Object.assign({}, DEFAULTS); saveSettings(); renderSettings(); break;
   }
 });
-
-function applyRoomSettings() {
-  const settings = {};
-  document.querySelectorAll('[data-setting]').forEach((input) => {
-    settings[input.dataset.setting] =
-      input.type === 'checkbox' ? input.checked : parseFloat(input.value);
-  });
-  post('custom', { action: 'settings', settings });
-
-  const mode = document.querySelector('[data-setting-mode]');
-  const map = document.querySelector('[data-setting-map]');
-  if (mode && S.room && mode.value !== S.room.mode) post('custom', { action: 'mode', mode: mode.value });
-  if (map && S.room && map.value !== S.room.map) post('custom', { action: 'map', map: map.value });
-}
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (!$('modal-result').classList.contains('hidden')) {
-      $('modal-result').classList.add('hidden');
-    }
+    if (!$('modal-invite').classList.contains('hidden')) { $('modal-invite').classList.add('hidden'); return; }
+    if (!$('modal-result').classList.contains('hidden')) $('modal-result').classList.add('hidden');
     post('close');
   }
-  if (e.key === 'Enter' && S.found) $('btn-accept').click();
-});
+  if (e.key === 'Enter') {
+    if (!$('modal-invite').classList.contains('hidden')) {
+      const v = $('invite-id').value.trim();
+      if (v) post('party', { action: 'invite', target: v });
+      $('modal-invite').classList.add('hidden');
+      return;
+    }
+    if (S.found) $('btn-accept').click();
+  }
+}, true);
 
 document.addEventListener('mouseover', (e) => {
-  if (e.target.closest('.btn') || e.target.closest('.tab')) Audio_.play('hover');
+  if (e.target.closest('.btn,.tab,.mtab,.chip,.pill,.mini,.slot')) Sfx.play('hover');
 }, { passive: true });
 
-/* One shared 1 Hz timer drives every in-match countdown. */
+/* One shared 1 Hz timer drives every countdown on screen. */
 setInterval(() => {
   if (S.hudTime > 0) { S.hudTime -= 1; updateTimer(); }
-  if (S.queue.state === 'SEARCHING') {
-    const node = $('search-elapsed');
-    const parts = node.textContent.split(':');
-    const secs = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + 1;
-    node.textContent = clockLong(secs);
-  }
+  if (S.queue.searching) { S.queue.elapsed += 1; $('sd-time').textContent = clock(S.queue.elapsed); }
 }, 1000);
 
 loadSettings();

@@ -399,6 +399,15 @@ if Config.OpenMenu.keybind and Config.OpenMenu.keybind.enabled then
         'keyboard', Config.OpenMenu.keybind.key or 'F6')
 end
 
+if Config.OpenMenu.cancelKeybind and Config.OpenMenu.cancelKeybind.enabled then
+    RegisterCommand('m5rp_cancelsearch', function()
+        TriggerServerEvent('m5rp:sv:queue', 'leave')
+    end, false)
+    RegisterKeyMapping('m5rp_cancelsearch',
+        Config.OpenMenu.cancelKeybind.label or 'M5 Ranked PvP — Cancel Search',
+        'keyboard', Config.OpenMenu.cancelKeybind.key or 'F7')
+end
+
 if Config.ClientCommands.toggleHud and Config.ClientCommands.toggleHud.enabled then
     RegisterCommand(Config.ClientCommands.toggleHud.name, function()
         Config.HUD.enabled = not Config.HUD.enabled
@@ -591,6 +600,20 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         State.frozen    = false
         FreezeEntityPosition(playerPed(), false)
         nui({ action = 'round', data = { phase = 'live', round = data.round, time = data.time } })
+
+    elseif data.phase == 'loadout' then
+        -- gun game promotion
+        if data.loadout then applyLoadout(data.loadout) end
+        nui({ action = 'event', data = {
+            type = 'KILLSTREAK', extra = data.gunLevel
+        } })
+
+    elseif data.phase == 'revive' then
+        -- headshot only rooms: body damage never kills
+        local ped = playerPed()
+        local maxH = (data.health or 100) + 100
+        SetEntityHealth(ped, maxH)
+        State.lastHealth = maxH
 
     elseif data.phase == 'end' then
         State.roundLive = false
@@ -820,6 +843,20 @@ local function combatScan()
             })
         end
         nui({ action = 'damaged', amount = math.floor(lost) })
+    end
+
+    -- HEADSHOT ONLY: body damage is reported for statistics, then undone. Only
+    -- a validated head hit can kill, and that kill comes from the server.
+    if State.settings.headshotOnly and State.alive then
+        local maxH = (State.settings.health or 100) + 100
+        if health < maxH then
+            SetEntityHealth(ped, maxH)
+            health = maxH
+        end
+        if armor < (State.settings.armor or 0) then
+            SetPedArmour(ped, State.settings.armor or 0)
+            armor = State.settings.armor or 0
+        end
     end
 
     State.lastHealth = health
