@@ -184,35 +184,61 @@ Config.Timing = {
 -- ============================================================================
 
 Config.UI = {
-    -- Base colour identity of the interface (also used by native drawings)
+
+    -- ------------------------------------------------------------------
+    -- COLOURS
+    -- Every colour the interface uses lives here. They are pushed into the
+    -- NUI as CSS variables the moment the hub opens, so changing a value
+    -- here restyles the whole script — menu, HUD, kill feed, overlays and
+    -- native drawings alike. Accepts any CSS colour (#hex, rgb(), hsl()).
+    -- ------------------------------------------------------------------
     colors = {
-        accent      = '#FF2E4D',
-        accentSoft  = '#FF6B80',
-        background  = '#07080A',
-        surface     = '#101216',
-        surfaceAlt  = '#171A20',
-        line        = '#23272F',
-        text        = '#F4F6F8',
-        textDim     = '#8A929E',
-        win         = '#28E0A0',
+        -- brand accent
+        accent      = '#FF2E45',   -- primary red
+        accentDark  = '#C81028',   -- gradient end / pressed state
+        accentSoft  = 'rgba(255,46,69,.16)', -- tinted fills
+        accentGlow  = 'rgba(255,46,69,.42)', -- glows and shadows
+
+        -- surfaces
+        background  = '#0A0A0D',   -- page ground
+        panel       = '#0E0E12',   -- cards, modals
+        panelAlt    = '#121218',   -- raised rows
+        panelDeep   = '#08080B',   -- inputs, wells
+
+        -- lines
+        edge        = 'rgba(255,60,74,.22)',   -- accented borders
+        edgeSoft    = 'rgba(255,255,255,.07)', -- neutral borders
+
+        -- type
+        text        = '#F2F3F5',
+        textDim     = '#8B8F98',
+        textFaint   = '#5A5E67',
+
+        -- states
+        win         = '#2FDD9B',
         lose        = '#FF3B4E',
+        gold        = '#FFC24A',
+
+        -- teams (players may override these in Settings)
         teamA       = '#2ED9C3',
         teamB       = '#FF4757',
-        gold        = '#FFC94A'
+
+        -- avatar tile gradient
+        avatarFrom  = '#5865F2',
+        avatarTo    = '#3C45C4',
+
+        -- light tips of gradients and small accents
+        accentLight = '#FF7A88',   -- bright end of accent bars
+        winLight    = '#8CF5CE',   -- bright end of the health bar
+        levelBadge  = '#7B4BFF',   -- level pill on the avatar
+        leaderMark  = '#2FBF4E'    -- party leader star
     },
 
-    animations = {
-        enabled        = true,
-        pageFade       = 180,
-        cardStagger    = 40,
-        counterSpeed   = 900,   -- RP counter roll duration (ms)
-        rankUpDuration = 5200
-    },
+    -- Corner rounding used across the interface (px)
+    radius = 10,
 
-    scale = 1.0,          -- global UI scale multiplier
-    blurBackground = true, -- apply a screen blur behind the menu
-
-    -- Fallback rank colours (server sends the authoritative list on boot)
+    -- Rank colours. The server sends the authoritative list on boot; these
+    -- are the fallback used before the payload arrives.
     rankColors = {
         UNRANKED  = '#5A616D',
         IRON      = '#7C7C80',
@@ -224,6 +250,23 @@ Config.UI = {
         ASCENDANT = '#22C97C',
         IMMORTAL  = '#E0304E',
         RADIANT   = '#FFE9A8'
+    },
+
+    animations = {
+        enabled        = true,
+        pageFade       = 180,
+        counterSpeed   = 900,   -- RP counter roll duration (ms)
+        rankUpDuration = 5200
+    },
+
+    scale = 1.0,           -- global UI scale multiplier
+    blurBackground = true, -- blur the game behind the hub
+
+    -- Decorative layers behind the hub
+    decor = {
+        grain     = true,  -- fine film grain
+        vignette  = true,  -- darkened corners
+        glow      = true   -- accent glow bloom
     }
 }
 

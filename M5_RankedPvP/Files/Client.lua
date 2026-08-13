@@ -323,7 +323,9 @@ end)
 RegisterNetEvent('m5rp:cl:boot', function(payload)
     State.booted  = true
     State.profile = payload
-    nui({ action = 'boot', data = payload })
+    -- the theme rides along so the HUD and overlays are styled from the config
+    -- even when the player never opens the hub
+    nui({ action = 'boot', data = payload, theme = Config.UI })
 end)
 
 RegisterNetEvent('m5rp:cl:data', function(payload)

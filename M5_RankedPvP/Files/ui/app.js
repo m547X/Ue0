@@ -43,6 +43,7 @@ const DEFAULTS = {
 /* ------------------------------------------------------------------ state */
 const S = {
   boot: null,
+  theme: null,
   settings: {},
   page: 'ranked',
 
@@ -870,6 +871,49 @@ function renderSettings() {
   });
 }
 
+/* ----------------------------------------------------------------- theme */
+/** Maps Config.UI (client config) onto the stylesheet's CSS variables. */
+const COLOR_VARS = {
+  accent: '--red', accentDark: '--red-2', accentSoft: '--red-soft', accentGlow: '--red-glow',
+  background: '--bg', panel: '--panel', panelAlt: '--panel-2', panelDeep: '--panel-deep',
+  edge: '--edge', edgeSoft: '--edge-soft',
+  text: '--text', textDim: '--dim', textFaint: '--dim-2',
+  win: '--win', lose: '--lose', gold: '--gold',
+  teamA: '--team-a', teamB: '--team-b',
+  avatarFrom: '--avatar-from', avatarTo: '--avatar-to',
+  accentLight: '--red-3', winLight: '--win-2',
+  levelBadge: '--level', leaderMark: '--ok'
+};
+
+function applyTheme(theme) {
+  if (!theme) return;
+  S.theme = theme;
+  const root = document.documentElement;
+
+  if (theme.colors) {
+    Object.keys(COLOR_VARS).forEach((key) => {
+      const value = theme.colors[key];
+      if (value) root.style.setProperty(COLOR_VARS[key], value);
+    });
+  }
+
+  if (theme.radius !== undefined) root.style.setProperty('--r', theme.radius + 'px');
+  if (theme.scale) root.style.setProperty('--scale', theme.scale);
+
+  const decor = theme.decor || {};
+  document.body.classList.toggle('no-decor', decor.grain === false && decor.vignette === false);
+  const grain = document.querySelector('.ab-grain');
+  const vig = document.querySelector('.ab-vignette');
+  if (grain) grain.style.display = decor.grain === false ? 'none' : '';
+  if (vig) vig.style.display = decor.vignette === false ? 'none' : '';
+  document.querySelectorAll('.ab-glow').forEach((g) => {
+    g.style.display = decor.glow === false ? 'none' : '';
+  });
+
+  // player colour overrides win over the config
+  applySettings();
+}
+
 function loadSettings() {
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem('m5rp_settings') || '{}'); } catch (e) {}
@@ -1175,6 +1219,7 @@ window.addEventListener('message', (e) => {
   switch (d.action) {
     case 'open':
       if (!Object.keys(S.settings).length) loadSettings();
+      if (d.theme) applyTheme(d.theme);
       $('app').classList.remove('hidden');
       if (!d.silent) Sfx.play('open');
       showPage(d.page && $('pg-' + d.page) ? d.page : (S.page || 'ranked'));
@@ -1186,7 +1231,10 @@ window.addEventListener('message', (e) => {
       Sfx.play('close');
       break;
 
-    case 'boot': renderBoot(d.data); break;
+    case 'boot':
+      if (d.theme) applyTheme(d.theme);
+      renderBoot(d.data);
+      break;
     case 'toast': toast(d.kind, d.message, d.title); break;
     case 'queue': renderQueue(d.data); break;
     case 'matchFound': renderFound(d.data); break;
@@ -1258,17 +1306,18 @@ window.addEventListener('message', (e) => {
 
     case 'training': {
       const n = $('training'), t = d.data || {};
-      const hint = $('training-exit');
+      const hint = $('train-prompt');
 
       // a press-again-to-confirm prompt from the exit key
       if (t.confirm) {
         hint.classList.remove('hidden');
         hint.classList.add('confirm');
-        $('training-exit-text').textContent = 'PRESS AGAIN TO EXIT';
+        $('train-prompt-text').textContent = 'PRESS AGAIN TO EXIT';
         clearTimeout(hint._t);
         hint._t = setTimeout(() => {
           hint.classList.remove('confirm');
-          $('training-exit-text').textContent = (S.training && S.training.exit && S.training.exit.text) || 'EXIT TRAINING';
+          $('train-prompt-text').textContent =
+            (S.training && S.training.exit && S.training.exit.text) || 'EXIT TRAINING';
         }, (t.seconds || 2) * 1000);
         break;
       }
@@ -1285,8 +1334,8 @@ window.addEventListener('message', (e) => {
         if (t.label) $('training-title').textContent = t.label;
         if (t.exit) {
           hint.classList.remove('hidden');
-          $('training-exit-key').textContent = t.exit.key || 'BACKSPACE';
-          $('training-exit-text').textContent = t.exit.text || 'EXIT TRAINING';
+          $('train-prompt-key').textContent = t.exit.key || 'BACKSPACE';
+          $('train-prompt-text').textContent = t.exit.text || 'EXIT TRAINING';
         }
         if (t.hits !== undefined) {
           $('training-hits').textContent = t.hits;

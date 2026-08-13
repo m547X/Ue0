@@ -130,10 +130,12 @@
       <div><b id="training-acc">0%</b><span>HS RATE</span></div>
       <div><b id="training-time">0s</b><span>TIME</span></div>
     </div>
-    <div class="tb-exit hidden" id="training-exit">
-      <span class="key" id="training-exit-key">BACKSPACE</span>
-      <span id="training-exit-text">EXIT TRAINING</span>
-    </div>
+  </div>
+
+  <!-- Training exit prompt — top centre of the HUD, key comes from the config -->
+  <div id="train-prompt" class="train-prompt hidden">
+    <span class="keycap" id="train-prompt-key">BACKSPACE</span>
+    <span class="train-prompt-text" id="train-prompt-text">EXIT TRAINING</span>
   </div>
 
   <div id="hitmarker" class="hitmarker hidden"><i></i><i></i><i></i><i></i></div>
@@ -238,6 +240,12 @@
 <!-- HUB — centered window, never full bleed                               -->
 <!-- ==================================================================== -->
 <div id="app" class="hidden">
+  <div class="app-bg">
+    <div class="ab-glow ab-glow-a"></div>
+    <div class="ab-glow ab-glow-b"></div>
+    <div class="ab-grain"></div>
+    <div class="ab-vignette"></div>
+  </div>
   <div class="shell">
 
     <!-- ---------- header ---------- -->
