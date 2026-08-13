@@ -57,17 +57,94 @@ Config.Database = {
 -- ============================================================================
 
 Config.Permissions = {
+    -- ------------------------------------------------------------------
+    -- SUPER PERMISSION
+    -- A player holding this can perform EVERY admin action below without
+    -- needing any of the individual permissions. Give it to owners only.
+    -- ------------------------------------------------------------------
+    superAdmin = 'pvp.all',
+
+    -- Holding the generic admin permission also unlocks every action.
+    -- Set to false if you want strict per action control even for admins.
+    adminGrantsAll = true,
+
+    -- ---- gameplay -----------------------------------------------------
     openMenu      = 'pvp.menu',
     createCustom  = 'pvp.custom.create',
+    spectate      = 'pvp.spectate',
+    viewMMR       = 'pvp.mmr',
+
+    -- ---- staff tiers ---------------------------------------------------
+    -- moderator: opens the admin panel in read only unless given more
+    -- admin: full staff, subject to adminGrantsAll
     moderator     = 'pvp.moderator',
     admin         = 'pvp.admin',
-    spectate      = 'pvp.spectate',
+
+    -- ---- legacy aliases (kept so existing setups keep working) --------
     manageBans    = 'pvp.bans',
     manageSeasons = 'pvp.seasons',
     manageRewards = 'pvp.rewards',
     manageMaps    = 'pvp.maps',
-    viewMMR       = 'pvp.mmr',
     modifyRP      = 'pvp.rp.modify'
+}
+
+-- ============================================================================
+-- 3b. ADMIN ACTIONS — one permission per action
+-- ============================================================================
+-- Every entry in the admin panel is declared here. The server refuses any
+-- action whose permission the caller does not hold, and the panel only renders
+-- the controls the caller is allowed to use.
+--
+--   permission : vRP permission string required for the action
+--   label      : shown in the panel and in the audit log
+--   reason     : true = a reason is mandatory
+--   confirm    : true = the panel asks for confirmation first
+--   group      : which panel section the control belongs to
+
+Config.AdminActions = {
+    -- ---- monitoring ---------------------------------------------------
+    dashboard     = { permission = 'pvp.admin.view',         label = 'View Dashboard',      group = 'monitor' },
+    playerLookup  = { permission = 'pvp.admin.view',         label = 'Player Lookup',       group = 'monitor' },
+    spectate      = { permission = 'pvp.admin.spectate',     label = 'Spectate Match',      group = 'monitor' },
+    stopSpectate  = { permission = 'pvp.admin.spectate',     label = 'Stop Spectating',     group = 'monitor' },
+
+    -- ---- match control -------------------------------------------------
+    endMatch      = { permission = 'pvp.admin.match.end',    label = 'Force End Match',     group = 'match', confirm = true, reason = true },
+    restartRound  = { permission = 'pvp.admin.match.round',  label = 'Restart Round',       group = 'match' },
+    movePlayer    = { permission = 'pvp.admin.match.move',   label = 'Move Player Team',    group = 'match' },
+    kickFromMatch = { permission = 'pvp.admin.match.kick',   label = 'Kick From Match',     group = 'match', reason = true },
+    closeRoom     = { permission = 'pvp.admin.custom.close', label = 'Close Custom Room',   group = 'match', confirm = true },
+    freeze        = { permission = 'pvp.admin.freeze',       label = 'Freeze Ranked Queue', group = 'match', confirm = true },
+
+    -- ---- points ---------------------------------------------------------
+    addRP         = { permission = 'pvp.admin.rp.add',       label = 'Compensate RP',       group = 'points', reason = true },
+    removeRP      = { permission = 'pvp.admin.rp.remove',    label = 'Deduct RP',           group = 'points', reason = true },
+    setRP         = { permission = 'pvp.admin.rp.set',       label = 'Set RP',              group = 'points', reason = true },
+    setRank       = { permission = 'pvp.admin.rank.set',     label = 'Set Rank',            group = 'points', reason = true },
+    addXP         = { permission = 'pvp.admin.xp',           label = 'Grant XP',            group = 'points', reason = true },
+    resetStats    = { permission = 'pvp.admin.stats.reset',  label = 'Reset Season Stats',  group = 'points', confirm = true, reason = true },
+
+    -- ---- punishments ----------------------------------------------------
+    ban           = { permission = 'pvp.admin.ban',          label = 'Ranked Ban',          group = 'punish', reason = true },
+    unban         = { permission = 'pvp.admin.unban',        label = 'Remove Ranked Ban',   group = 'punish' },
+    clearCooldown = { permission = 'pvp.admin.cooldown',     label = 'Clear Queue Cooldown',group = 'punish' },
+    reviewFlag    = { permission = 'pvp.admin.antiboost',    label = 'Review Anti-Boost Flag', group = 'punish' },
+
+    -- ---- system ---------------------------------------------------------
+    newSeason     = { permission = 'pvp.admin.season',       label = 'Start New Season',    group = 'system', confirm = true },
+    toggleMode    = { permission = 'pvp.admin.mode',         label = 'Enable / Disable Mode', group = 'system' },
+    auditLog      = { permission = 'pvp.admin.audit',        label = 'View Audit Log',      group = 'system' }
+}
+
+-- Limits applied to point adjustments, so a typo cannot wreck a ladder.
+Config.AdminLimits = {
+    maxRPGrant   = 2000,   -- per single addRP
+    maxRPDeduct  = 2000,   -- per single removeRP
+    maxXPGrant   = 100000,
+    reasonMinLen = 3,
+    reasonMaxLen = 200,
+    -- Keep audit rows for this many days (0 = forever)
+    auditRetentionDays = 90
 }
 
 -- Anyone may open the menu when this is true (openMenu permission ignored)
@@ -1312,11 +1389,13 @@ Config.Commands = {
     leaderboard  = { enabled = true, name = 'leaderboard',  permission = nil },
     customgame   = { enabled = true, name = 'customgame',   permission = nil },
     reconnectpvp = { enabled = true, name = 'reconnectpvp', permission = nil },
-    pvpadmin     = { enabled = true, name = 'pvpadmint',    permission = 'pvp.admin' },
-    rankban      = { enabled = true, name = 'rankban',      permission = 'pvp.bans' },
-    rankunban    = { enabled = true, name = 'rankunban',    permission = 'pvp.bans' },
-    setrank      = { enabled = true, name = 'setrank',      permission = 'pvp.admin' },
-    setrp        = { enabled = true, name = 'setrp',        permission = 'pvp.rp.modify' },
+    -- These are gated by Config.AdminActions, not by the permission field.
+    pvpadmin     = { enabled = true, name = 'pvpadmint',    permission = nil },
+    rankban      = { enabled = true, name = 'rankban',      permission = nil },
+    rankunban    = { enabled = true, name = 'rankunban',    permission = nil },
+    setrank      = { enabled = true, name = 'setrank',      permission = nil },
+    setrp        = { enabled = true, name = 'setrp',        permission = nil },
+    givepvprp    = { enabled = true, name = 'givepvprp',    permission = nil },
     pvpstatus    = { enabled = true, name = 'pvpstatus',    permission = 'pvp.moderator' }
 }
 

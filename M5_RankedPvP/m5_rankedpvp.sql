@@ -380,6 +380,29 @@ CREATE TABLE IF NOT EXISTS `m5_player_achievements` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------------------------------------------------------
+-- Admin audit log — every staff action, who did it, to whom and why
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `m5_admin_logs` (
+  `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `admin_id`     INT UNSIGNED NOT NULL DEFAULT 0,
+  `admin_name`   VARCHAR(64) NOT NULL DEFAULT '',
+  `action`       VARCHAR(48) NOT NULL,
+  `target_id`    INT UNSIGNED NOT NULL DEFAULT 0,
+  `target_name`  VARCHAR(64) NOT NULL DEFAULT '',
+  `amount`       INT NOT NULL DEFAULT 0,
+  `before_value` INT NOT NULL DEFAULT 0,
+  `after_value`  INT NOT NULL DEFAULT 0,
+  `reason`       VARCHAR(255) NOT NULL DEFAULT '',
+  `details`      LONGTEXT NULL,
+  `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_audit_admin`   (`admin_id`),
+  KEY `idx_audit_target`  (`target_id`),
+  KEY `idx_audit_action`  (`action`),
+  KEY `idx_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
 -- Leave / penalty tracking
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `m5_player_penalties` (

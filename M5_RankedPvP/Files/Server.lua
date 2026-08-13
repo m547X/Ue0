@@ -530,6 +530,26 @@ local SCHEMA = {
   UNIQUE KEY `uk_achievement` (`user_id`,`achievement`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
 
+[[CREATE TABLE IF NOT EXISTS `m5_admin_logs` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `admin_id` INT UNSIGNED NOT NULL DEFAULT 0,
+  `admin_name` VARCHAR(64) NOT NULL DEFAULT '',
+  `action` VARCHAR(48) NOT NULL,
+  `target_id` INT UNSIGNED NOT NULL DEFAULT 0,
+  `target_name` VARCHAR(64) NOT NULL DEFAULT '',
+  `amount` INT NOT NULL DEFAULT 0,
+  `before_value` INT NOT NULL DEFAULT 0,
+  `after_value` INT NOT NULL DEFAULT 0,
+  `reason` VARCHAR(255) NOT NULL DEFAULT '',
+  `details` LONGTEXT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_audit_admin` (`admin_id`),
+  KEY `idx_audit_target` (`target_id`),
+  KEY `idx_audit_action` (`action`),
+  KEY `idx_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
 [[CREATE TABLE IF NOT EXISTS `m5_player_penalties` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` INT UNSIGNED NOT NULL,
@@ -5800,13 +5820,97 @@ end
 local Admin = {}
 
 function Admin.level(userId)
+    if vRP.hasPermission({ userId, Config.Permissions.superAdmin }) then return 'super' end
     if vRP.hasPermission({ userId, Config.Permissions.admin }) then return 'admin' end
     if vRP.hasPermission({ userId, Config.Permissions.moderator }) then return 'moderator' end
     return nil
 end
 
+--- Single gate for every admin action.
+-- superAdmin unlocks everything; the generic admin permission does too unless
+-- Config.Permissions.adminGrantsAll is turned off; otherwise the action's own
+-- permission is required.
+function Admin.can(userId, action)
+    if vRP.hasPermission({ userId, Config.Permissions.superAdmin }) then return true end
+
+    local def = Config.AdminActions[action]
+    if not def then return false end
+
+    if Config.Permissions.adminGrantsAll
+       and vRP.hasPermission({ userId, Config.Permissions.admin }) then
+        return true
+    end
+
+    return vRP.hasPermission({ userId, def.permission }) == true
+end
+
+--- The set of actions a given staff member may perform. Sent to the panel so
+--- it only renders controls the caller can actually use.
+function Admin.allowed(userId)
+    local out = {}
+    for action, def in pairs(Config.AdminActions) do
+        if Admin.can(userId, action) then
+            out[action] = {
+                label   = def.label,
+                group   = def.group,
+                reason  = def.reason == true,
+                confirm = def.confirm == true
+            }
+        end
+    end
+    return out
+end
+
+--- Writes one audit row and mirrors it to Discord.
+function Admin.audit(adminPd, action, target, data)
+    data = data or {}
+    local def = Config.AdminActions[action] or {}
+
+    DB.insert([[INSERT INTO m5_admin_logs
+        (admin_id, admin_name, action, target_id, target_name, amount,
+         before_value, after_value, reason, details)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]],
+        { adminPd.userId, adminPd.name, action,
+          target and target.userId or 0, target and target.name or '',
+          data.amount or 0, data.before or 0, data.after or 0,
+          safeName(data.reason or '', Config.AdminLimits.reasonMaxLen),
+          jsonEncode(data.details or {}) })
+
+    local fields = {
+        { name = 'Admin', value = ('%s (`%d`)'):format(adminPd.name, adminPd.userId), inline = true },
+        { name = 'Action', value = def.label or action, inline = true }
+    }
+    if target then
+        fields[#fields + 1] = { name = 'Target', value = ('%s (`%d`)'):format(target.name or '?', target.userId), inline = true }
+    end
+    if data.amount and data.amount ~= 0 then
+        fields[#fields + 1] = { name = 'Amount', value = tostring(data.amount), inline = true }
+    end
+    if data.before or data.after then
+        fields[#fields + 1] = { name = 'Change', value = ('%d → %d'):format(data.before or 0, data.after or 0), inline = true }
+    end
+    if data.reason and data.reason ~= '' then
+        fields[#fields + 1] = { name = 'Reason', value = data.reason, inline = false }
+    end
+
+    Logger.send('adminActions', def.label or action, nil, nil, fields)
+end
+
+--- Validates a reason when the action demands one.
+local function checkReason(action, reason)
+    local def = Config.AdminActions[action]
+    if not def or not def.reason then return true, safeName(reason or '', Config.AdminLimits.reasonMaxLen) end
+
+    reason = safeName(reason or '', Config.AdminLimits.reasonMaxLen)
+    if #reason < (Config.AdminLimits.reasonMinLen or 1) then
+        return false, nil, 'A reason is required for this action.'
+    end
+    return true, reason
+end
+
 function Admin.canSeeMMR(userId)
     if Config.MMR.visibleTo == 'none' then return false end
+    if vRP.hasPermission({ userId, Config.Permissions.superAdmin }) then return true end
     if Config.MMR.visibleTo == 'moderator' then return Admin.level(userId) ~= nil end
     return vRP.hasPermission({ userId, Config.Permissions.admin })
         or vRP.hasPermission({ userId, Config.Permissions.viewMMR })
@@ -5845,7 +5949,16 @@ function Admin.dashboard(userId)
                               enabled = cfg.enabled ~= false, ranked = cfg.ranked == true }
     end
 
+    local audit = {}
+    if Admin.can(userId, 'auditLog') then
+        audit = DB.query([[SELECT action, admin_name, target_name, amount, reason, created_at
+                           FROM m5_admin_logs ORDER BY id DESC LIMIT 30]]) or {}
+    end
+
     return {
+        allowed     = Admin.allowed(userId),
+        level       = Admin.level(userId),
+        audit       = audit,
         searching   = searching,
         matches     = Board.liveMatches(),
         rooms       = CustomGames.list(),
@@ -5895,165 +6008,127 @@ local function withPlayer(userId, fn)
 end
 
 function Admin.handle(adminPd, action, data)
-    local level = Admin.level(adminPd.userId)
-    if not level then return false, 'No permission.' end
-    data = type(data) == 'table' and data or {}
+    action = tostring(action or '')
+    data   = type(data) == 'table' and data or {}
 
-    local function requireAdmin(perm)
-        return vRP.hasPermission({ adminPd.userId, perm or Config.Permissions.admin })
+    local def = Config.AdminActions[action]
+    if not def then return false, 'Unknown admin action.' end
+    if not Admin.can(adminPd.userId, action) then
+        return false, ('No permission (%s).'):format(def.permission)
     end
 
-    -- ---------------- read only -------------------------------------------
+    local okReason, reason, reasonErr = checkReason(action, data.reason)
+    if not okReason then return false, reasonErr end
+
+    -- Resolves the target and returns a compact identity for the audit row.
+    local function target()
+        local id = resolveTarget(data.target)
+        if not id then return nil end
+        local pd = Players[id]
+        return id, { userId = id, name = pd and pd.name
+            or (DB.scalar('SELECT name FROM m5_players WHERE user_id = ?', { id }) or ('User ' .. id)) }
+    end
+
+    -- ================================================== monitoring
     if action == 'dashboard' then
         return true, Admin.dashboard(adminPd.userId)
 
     elseif action == 'playerLookup' then
-        local target = resolveTarget(data.target)
-        if not target then return false, 'Player not found.' end
-        local profile = buildProfile(target, Admin.canSeeMMR(adminPd.userId))
+        local id, who = target()
+        if not id then return false, 'Player not found.' end
+        local profile = buildProfile(id, Admin.canSeeMMR(adminPd.userId))
         if not profile then return false, 'No data for that player.' end
-        profile.bans = Bans.get(target)
-        profile.flags = DB.query('SELECT * FROM m5_anti_boost_flags WHERE user_id = ? ORDER BY id DESC LIMIT 25',
-            { target }) or {}
+        profile.bans  = Bans.get(id)
+        profile.flags = DB.query('SELECT * FROM m5_anti_boost_flags WHERE user_id = ? ORDER BY id DESC LIMIT 25', { id }) or {}
+        profile.cooldown = Penalty.cooldownLeft(id)
+        profile.online = srcOf(id) ~= nil
+        profile.audit = DB.query([[SELECT action, admin_name, amount, reason, created_at
+                                   FROM m5_admin_logs WHERE target_id = ?
+                                   ORDER BY id DESC LIMIT 15]], { id }) or {}
         return true, profile
-    end
 
-    -- ---------------- moderation ------------------------------------------
-    if action == 'setRP' then
-        if not requireAdmin(Config.Permissions.modifyRP) then return false, 'No permission.' end
-        local target = resolveTarget(data.target)
-        local value  = tonumber(data.value)
-        if not target or not value then return false, 'Invalid target or value.' end
+    elseif action == 'auditLog' then
+        local rows = DB.query([[SELECT * FROM m5_admin_logs
+                                ORDER BY id DESC LIMIT 100]]) or {}
+        return true, { rows = rows }
 
-        return true, withPlayer(target, function(pd)
-            local before = pd.rp
-            pd.rp = clamp(math.floor(value), Config.RankSettings.minRP, Config.RankSettings.maxRP)
-            local rank = Rank.fromRP(pd.rp)
-            pd.rankId, pd.division = rank.id, rank.division
-            pd.placementDone = true
-            pd.dirtyRank = true
-            Logger.send('rpModify', 'RP Modified',
-                ('`%d` → `%d` RP'):format(before, pd.rp), pd, {
-                    { name = 'Admin', value = adminPd.name, inline = true } })
-            notifyUser(target, 'info', ('An administrator set your RP to %d.'):format(pd.rp), 'RANKED')
-            return { rp = pd.rp, rank = rank.name }
-        end)
-
-    elseif action == 'setRank' then
-        if not requireAdmin() then return false, 'No permission.' end
-        local target = resolveTarget(data.target)
-        local rankId = tonumber(data.rankId)
-        if not target or not RankById[rankId] then return false, 'Invalid target or rank.' end
-
-        return true, withPlayer(target, function(pd)
-            local rank = Rank.get(rankId)
-            local before = Rank.get(pd.rankId).name
-            pd.rankId   = rank.id
-            pd.division = rank.division
-            pd.rp       = rank.rpRequired
-            pd.placementDone = true
-            pd.highestRankId = math.max(pd.highestRankId, rank.id)
-            pd.dirtyRank = true
-            Logger.send('rpModify', 'Rank Modified',
-                ('**%s** → **%s**'):format(before, rank.name), pd, {
-                    { name = 'Admin', value = adminPd.name, inline = true } })
-            notifyUser(target, 'info', ('An administrator set your rank to %s.'):format(rank.name), 'RANKED')
-            return { rank = rank.name, rp = pd.rp }
-        end)
-
-    elseif action == 'resetStats' then
-        if not requireAdmin() then return false, 'No permission.' end
-        local target = resolveTarget(data.target)
-        if not target then return false, 'Player not found.' end
-        local seasonId = Season.id()
-        DB.update('DELETE FROM m5_player_stats WHERE user_id = ? AND season_id = ?', { target, seasonId })
-        DB.update('DELETE FROM m5_player_ranks WHERE user_id = ? AND season_id = ?', { target, seasonId })
-        DB.update('DELETE FROM m5_player_mmr WHERE user_id = ? AND season_id = ?', { target, seasonId })
-        Players[target] = nil
-        local s = srcOf(target)
-        if s then Player.load(target, s) end
-        Logger.send('adminActions', 'Stats Reset',
-            ('User `%d` season stats reset by **%s**'):format(target, adminPd.name))
-        return true, { ok = true }
-
-    elseif action == 'ban' then
-        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.manageBans }) then
-            return false, 'No permission.'
-        end
-        local target = resolveTarget(data.target)
-        if not target then return false, 'Player not found.' end
-        if Config.RankBan.requireReason and (not data.reason or data.reason == '') then
-            return false, 'A reason is required.'
-        end
-        Bans.add(target, {
-            type = inList(Config.RankBan.types, data.type) and data.type or 'RANKED',
-            mode = data.mode or '',
-            duration = tonumber(data.duration) or 0,
-            reason = data.reason, evidence = data.evidence, notes = data.notes,
-            admin = adminPd.name, adminId = adminPd.userId,
-            name = Players[target] and Players[target].name or nil
-        })
-        -- pull them out of anything ranked immediately
-        Matchmaker.leave(target)
-        local tpd = Players[target]
-        if tpd and tpd.matchId and Matches[tpd.matchId] then
-            Match.removePlayer(Matches[tpd.matchId], target, 'ADMIN')
-        end
-        return true, { ok = true }
-
-    elseif action == 'unban' then
-        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.manageBans }) then
-            return false, 'No permission.'
-        end
-        local target = resolveTarget(data.target)
-        if not target then return false, 'Player not found.' end
-        Bans.remove(target, tonumber(data.banId), adminPd.name)
-        return true, { ok = true }
-
-    elseif action == 'endMatch' then
-        if not requireAdmin() then return false, 'No permission.' end
+    elseif action == 'spectate' then
         local m = Matches[data.matchId]
         if not m then return false, 'Match not found.' end
-        Match.endMatch(m, m.scores[1] == m.scores[2] and 0 or (m.scores[1] > m.scores[2] and 1 or 2), 'ADMIN')
-        Logger.send('adminActions', 'Match Ended',
-            ('`%s` ended by **%s**'):format(m.id, adminPd.name))
+        local src = adminPd.source
+        if not src then return false end
+
+        SetPlayerRoutingBucket(src, m.bucket)
+        local targets = {}
+        for uidv, mp in pairs(m.players) do
+            local ts = srcOf(uidv)
+            if ts then targets[#targets + 1] = { serverId = ts, name = mp.name, team = mp.team } end
+        end
+        TriggerClientEvent('m5rp:cl:spectate', src, {
+            matchId = m.id, enable = true, staff = true, targets = targets,
+            map = m.map and { center = { x = m.map.center.x, y = m.map.center.y, z = m.map.center.z } } or nil
+        })
+        adminPd.spectatingMatch = m.id
+        Admin.audit(adminPd, action, nil, { details = { match = m.id } })
+        return true, { ok = true }
+
+    elseif action == 'stopSpectate' then
+        local src = adminPd.source
+        if src then
+            SetPlayerRoutingBucket(src, 0)
+            TriggerClientEvent('m5rp:cl:spectate', src, { enable = false })
+        end
+        adminPd.spectatingMatch = nil
+        return true, { ok = true }
+
+    -- ================================================== match control
+    elseif action == 'endMatch' then
+        local m = Matches[data.matchId]
+        if not m then return false, 'Match not found.' end
+        local winner = m.scores[1] == m.scores[2] and 0 or (m.scores[1] > m.scores[2] and 1 or 2)
+        Match.endMatch(m, winner, 'ADMIN')
+        Admin.audit(adminPd, action, nil, { reason = reason, details = { match = m.id } })
         return true, { ok = true }
 
     elseif action == 'restartRound' then
-        if not requireAdmin() then return false, 'No permission.' end
         local m = Matches[data.matchId]
         if not m then return false, 'Match not found.' end
         m.round = math.max(0, m.round - 1)
         Match.startRound(m)
+        Admin.audit(adminPd, action, nil, { details = { match = m.id } })
         return true, { ok = true }
 
     elseif action == 'movePlayer' then
-        if not requireAdmin() then return false, 'No permission.' end
-        local target = resolveTarget(data.target)
+        local id, who = target()
         local m = Matches[data.matchId]
-        if not target or not m or not m.players[target] then return false, 'Invalid target.' end
+        if not id or not m or not m.players[id] then return false, 'Invalid target.' end
         local team = tonumber(data.team)
         if team ~= 1 and team ~= 2 then return false, 'Invalid team.' end
-        m.players[target].team = team
-        local tpd = Players[target]
-        if tpd then tpd.team = team end
+        m.players[id].team = team
+        if Players[id] then Players[id].team = team end
         Match.pushHud(m, true)
+        Admin.audit(adminPd, action, who, { details = { match = m.id, team = team } })
         return true, { ok = true }
 
     elseif action == 'kickFromMatch' then
-        if not requireAdmin() then return false, 'No permission.' end
-        local target = resolveTarget(data.target)
-        local tpd = target and Players[target]
+        local id, who = target()
+        local tpd = id and Players[id]
         if not tpd or not tpd.matchId then return false, 'That player is not in a match.' end
-        Match.removePlayer(Matches[tpd.matchId], target, 'ADMIN')
+        Match.removePlayer(Matches[tpd.matchId], id, 'ADMIN')
+        Admin.audit(adminPd, action, who, { reason = reason })
+        notifyUser(id, 'error', ('You were removed from the match: %s'):format(reason), 'ADMIN')
+        return true, { ok = true }
+
+    elseif action == 'closeRoom' then
+        local room = CustomGames.rooms[data.roomId]
+        if not room then return false, 'Room not found.' end
+        local name = room.name
+        CustomGames.destroy(room, 'ADMIN')
+        Admin.audit(adminPd, action, nil, { reason = reason, details = { room = name } })
         return true, { ok = true }
 
     elseif action == 'freeze' then
-        if not requireAdmin() then return false, 'No permission.' end
         Config.Global.rankedFrozen = data.value == true
-        Logger.send('adminActions', 'Ranked Freeze',
-            ('Ranked queue **%s** by **%s**'):format(
-                Config.Global.rankedFrozen and 'FROZEN' or 'UNFROZEN', adminPd.name))
         if Config.Global.rankedFrozen then
             for mode in pairs(Queue) do
                 local list = queueList(mode)
@@ -6062,63 +6137,167 @@ function Admin.handle(adminPd, action, data)
                 end
             end
         end
+        Admin.audit(adminPd, action, nil, {
+            details = { frozen = Config.Global.rankedFrozen }, reason = reason })
         return true, { frozen = Config.Global.rankedFrozen }
 
-    elseif action == 'spectate' then
-        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.spectate }) then
-            return false, 'No permission.'
-        end
-        local m = Matches[data.matchId]
-        if not m then return false, 'Match not found.' end
-        local s = adminPd.source
-        if not s then return false end
-        SetPlayerRoutingBucket(s, m.bucket)
-        local targets = {}
-        for uidv, mp in pairs(m.players) do
-            local ts = srcOf(uidv)
-            if ts then targets[#targets + 1] = { serverId = ts, name = mp.name, team = mp.team } end
-        end
-        TriggerClientEvent('m5rp:cl:spectate', s, {
-            matchId = m.id, enable = true, staff = true, targets = targets,
-            map = m.map and { center = { x = m.map.center.x, y = m.map.center.y, z = m.map.center.z } } or nil
-        })
-        adminPd.spectatingMatch = m.id
-        return true, { ok = true }
+    -- ================================================== points
+    elseif action == 'addRP' or action == 'removeRP' then
+        local id, who = target()
+        if not id then return false, 'Player not found.' end
 
-    elseif action == 'stopSpectate' then
-        local s = adminPd.source
+        local amount = math.abs(math.floor(tonumber(data.amount) or 0))
+        if amount <= 0 then return false, 'Enter an amount.' end
+        local cap = (action == 'addRP') and Config.AdminLimits.maxRPGrant or Config.AdminLimits.maxRPDeduct
+        if amount > cap then return false, ('Maximum is %d RP per action.'):format(cap) end
+
+        local delta = (action == 'addRP') and amount or -amount
+
+        return true, withPlayer(id, function(pd)
+            local inPlacement = not pd.placementDone
+            local result = RP.apply(pd, delta, action == 'addRP' and 'ADMIN_GRANT' or 'ADMIN_DEDUCT')
+            -- a player still in placement keeps no visible rank
+            if inPlacement then pd.rankId, pd.division = 0, 0 end
+            pd.dirtyRank = true
+
+            Admin.audit(adminPd, action, who, {
+                amount = delta, before = result.before, after = result.after, reason = reason })
+            notifyUser(id, delta > 0 and 'success' or 'warning',
+                ('%s%d RP — %s'):format(delta > 0 and '+' or '', delta, reason), 'RANKED')
+
+            return { rp = pd.rp, delta = delta, rank = Rank.get(pd.rankId).name,
+                     before = result.before, after = result.after }
+        end)
+
+    elseif action == 'setRP' then
+        local id, who = target()
+        local value = tonumber(data.value)
+        if not id or not value then return false, 'Invalid target or value.' end
+
+        return true, withPlayer(id, function(pd)
+            local before = pd.rp
+            pd.rp = clamp(math.floor(value), Config.RankSettings.minRP, Config.RankSettings.maxRP)
+            local rank = Rank.fromRP(pd.rp)
+            pd.rankId, pd.division = rank.id, rank.division
+            pd.placementDone = true
+            pd.dirtyRank = true
+
+            Admin.audit(adminPd, action, who,
+                { before = before, after = pd.rp, amount = pd.rp - before, reason = reason })
+            notifyUser(id, 'info', ('Your RP was set to %d — %s'):format(pd.rp, reason), 'RANKED')
+            return { rp = pd.rp, rank = rank.name }
+        end)
+
+    elseif action == 'setRank' then
+        local id, who = target()
+        local rankId = tonumber(data.rankId)
+        if not id or not RankById[rankId] then return false, 'Invalid target or rank.' end
+
+        return true, withPlayer(id, function(pd)
+            local rank = Rank.get(rankId)
+            local before = pd.rp
+            pd.rankId, pd.division = rank.id, rank.division
+            pd.rp = rank.rpRequired
+            pd.placementDone = true
+            pd.highestRankId = math.max(pd.highestRankId, rank.id)
+            pd.dirtyRank = true
+
+            Admin.audit(adminPd, action, who,
+                { before = before, after = pd.rp, reason = reason, details = { rank = rank.name } })
+            notifyUser(id, 'info', ('Your rank was set to %s — %s'):format(rank.name, reason), 'RANKED')
+            return { rank = rank.name, rp = pd.rp }
+        end)
+
+    elseif action == 'addXP' then
+        local id, who = target()
+        local amount = math.floor(tonumber(data.amount) or 0)
+        if not id then return false, 'Player not found.' end
+        if amount <= 0 then return false, 'Enter an amount.' end
+        if amount > Config.AdminLimits.maxXPGrant then
+            return false, ('Maximum is %d XP per action.'):format(Config.AdminLimits.maxXPGrant)
+        end
+
+        return true, withPlayer(id, function(pd)
+            local before = pd.level
+            Rewards.addXP(pd, amount)
+            Admin.audit(adminPd, action, who,
+                { amount = amount, before = before, after = pd.level, reason = reason })
+            notifyUser(id, 'success', ('+%d XP — %s'):format(amount, reason), 'PROGRESSION')
+            return { level = pd.level, xp = pd.xp }
+        end)
+
+    elseif action == 'resetStats' then
+        local id, who = target()
+        if not id then return false, 'Player not found.' end
+        local seasonId = Season.id()
+        DB.update('DELETE FROM m5_player_stats WHERE user_id = ? AND season_id = ?', { id, seasonId })
+        DB.update('DELETE FROM m5_player_ranks WHERE user_id = ? AND season_id = ?', { id, seasonId })
+        DB.update('DELETE FROM m5_player_mmr WHERE user_id = ? AND season_id = ?', { id, seasonId })
+        Players[id] = nil
+        local s = srcOf(id)
         if s then
-            SetPlayerRoutingBucket(s, 0)
-            TriggerClientEvent('m5rp:cl:spectate', s, { enable = false })
+            local fresh = Player.load(id, s)
+            TriggerClientEvent('m5rp:cl:boot', s, Server_BootPayload(fresh))
         end
-        adminPd.spectatingMatch = nil
+        Admin.audit(adminPd, action, who, { reason = reason })
+        notifyUser(id, 'warning', ('Your season stats were reset — %s'):format(reason), 'RANKED')
         return true, { ok = true }
 
-    elseif action == 'newSeason' then
-        if not vRP.hasPermission({ adminPd.userId, Config.Permissions.manageSeasons }) then
-            return false, 'No permission.'
+    -- ================================================== punishments
+    elseif action == 'ban' then
+        local id, who = target()
+        if not id then return false, 'Player not found.' end
+
+        local duration = math.max(0, math.floor(tonumber(data.duration) or 0))
+        Bans.add(id, {
+            type = inList(Config.RankBan.types, data.type) and data.type or 'RANKED',
+            mode = data.mode or '',
+            duration = duration,
+            reason = reason, evidence = data.evidence, notes = data.notes,
+            admin = adminPd.name, adminId = adminPd.userId,
+            name = who and who.name or nil
+        })
+        Matchmaker.leave(id)
+        local tpd = Players[id]
+        if tpd and tpd.matchId and Matches[tpd.matchId] then
+            Match.removePlayer(Matches[tpd.matchId], id, 'ADMIN')
         end
-        Seasons.rollover(adminPd.name)
+        Admin.audit(adminPd, action, who,
+            { amount = duration, reason = reason, details = { type = data.type or 'RANKED' } })
+        return true, { ok = true }
+
+    elseif action == 'unban' then
+        local id, who = target()
+        if not id then return false, 'Player not found.' end
+        Bans.remove(id, tonumber(data.banId), adminPd.name)
+        Admin.audit(adminPd, action, who, { reason = reason })
+        return true, { ok = true }
+
+    elseif action == 'clearCooldown' then
+        local id, who = target()
+        if not id then return false, 'Player not found.' end
+        Penalty.cooldowns[id] = nil
+        Admin.audit(adminPd, action, who, { reason = reason })
+        notifyUser(id, 'success', 'Your queue cooldown was cleared.', 'RANKED')
         return true, { ok = true }
 
     elseif action == 'reviewFlag' then
-        if not requireAdmin() then return false, 'No permission.' end
         DB.update('UPDATE m5_anti_boost_flags SET reviewed = 1, admin = ? WHERE id = ?',
             { adminPd.name, tonumber(data.flagId) or 0 })
+        Admin.audit(adminPd, action, nil, { details = { flag = data.flagId } })
         return true, { ok = true }
 
-    elseif action == 'closeRoom' then
-        if not requireAdmin() then return false, 'No permission.' end
-        local room = CustomGames.rooms[data.roomId]
-        if not room then return false, 'Room not found.' end
-        CustomGames.destroy(room, 'ADMIN')
+    -- ================================================== system
+    elseif action == 'newSeason' then
+        Seasons.rollover(adminPd.name)
+        Admin.audit(adminPd, action, nil, { reason = reason })
         return true, { ok = true }
 
     elseif action == 'toggleMode' then
-        if not requireAdmin() then return false, 'No permission.' end
         local cfg = Config.Modes[data.mode]
         if not cfg then return false, 'Unknown mode.' end
         cfg.enabled = data.value == true
+        Admin.audit(adminPd, action, nil, { details = { mode = data.mode, enabled = cfg.enabled } })
         return true, { ok = true }
     end
 
@@ -6345,8 +6524,12 @@ function Server_BootPayload(pd)
             id = Season.current.id, name = Season.current.name,
             number = Season.current.number, endsAt = Season.endsAt
         } or nil,
+        adminActions = Admin.level(pd.userId) and Admin.allowed(pd.userId) or nil,
+        rankBanTypes = Config.RankBan.types,
+        banDurations = Config.RankBan.presetDurations,
         permissions = {
             admin        = vRP.hasPermission({ pd.userId, Config.Permissions.admin }),
+            superAdmin   = vRP.hasPermission({ pd.userId, Config.Permissions.superAdmin }),
             moderator    = Admin.level(pd.userId) ~= nil,
             spectate     = vRP.hasPermission({ pd.userId, Config.Permissions.spectate }),
             createCustom = not Config.CustomGames.requirePermission
@@ -6576,13 +6759,8 @@ RegisterNetEvent('m5rp:sv:admin', function(action, data)
     if not pd then return end
     local ok, result = Admin.handle(pd, tostring(action or ''), data)
     if ok then
+        -- Admin.audit already wrote the row and the webhook
         TriggerClientEvent('m5rp:cl:data', src, { what = 'admin', action = action, result = result })
-        if action ~= 'dashboard' and action ~= 'playerLookup' then
-            Logger.send('adminActions', 'Admin Action',
-                ('**%s** performed `%s`'):format(pd.name, tostring(action)), pd, {
-                    { name = 'Data', value = ('```%s```'):format(jsonEncode(data or {}):sub(1, 500)), inline = false }
-                })
-        end
     else
         notify(src, 'error', result or 'Action failed.', 'ADMIN')
     end
@@ -6767,36 +6945,27 @@ registerCommand(Config.Commands.reconnectpvp, function(pd, src)
 end)
 
 registerCommand(Config.Commands.pvpadmin, function(pd, src)
+    if not Admin.level(pd.userId) then
+        notify(src, 'error', 'You do not have access to the admin panel.', 'ADMIN')
+        return
+    end
     TriggerClientEvent('m5rp:cl:openMenu', src, 'admin')
 end)
 
 registerCommand(Config.Commands.rankban, function(pd, src, args)
     -- /rankban <userId|name> <minutes> <reason...>
-    if #args < 2 then
+    if #args < 3 then
         notify(src, 'warning', 'Usage: /' .. Config.Commands.rankban.name .. ' <id|name> <minutes> <reason>', 'RANK BAN')
         return
     end
-    local target = resolveTarget(args[1])
-    if not target then notify(src, 'error', 'Player not found.', 'RANK BAN') return end
-
-    local minutes = tonumber(args[2]) or 0
-    local reason = table.concat(args, ' ', 3)
-    if Config.RankBan.requireReason and reason == '' then
-        notify(src, 'error', 'A reason is required.', 'RANK BAN')
-        return
-    end
-
-    Bans.add(target, {
-        type = 'RANKED', duration = math.max(0, math.floor(minutes * 60)),
-        reason = reason ~= '' and reason or 'No reason given',
-        admin = pd.name, adminId = pd.userId
+    local ok, result = Admin.handle(pd, 'ban', {
+        target   = args[1],
+        duration = math.max(0, math.floor((tonumber(args[2]) or 0) * 60)),
+        reason   = table.concat(args, ' ', 3),
+        type     = 'RANKED'
     })
-    Matchmaker.leave(target)
-    local tpd = Players[target]
-    if tpd and tpd.matchId and Matches[tpd.matchId] then
-        Match.removePlayer(Matches[tpd.matchId], target, 'ADMIN')
-    end
-    notify(src, 'success', ('Ranked ban applied to %d.'):format(target), 'RANK BAN')
+    notify(src, ok and 'success' or 'error',
+        ok and 'Ranked ban applied.' or tostring(result), 'RANK BAN')
 end)
 
 registerCommand(Config.Commands.rankunban, function(pd, src, args)
@@ -6804,30 +6973,45 @@ registerCommand(Config.Commands.rankunban, function(pd, src, args)
         notify(src, 'warning', 'Usage: /' .. Config.Commands.rankunban.name .. ' <id|name>', 'RANK UNBAN')
         return
     end
-    local target = resolveTarget(args[1])
-    if not target then notify(src, 'error', 'Player not found.', 'RANK UNBAN') return end
-    Bans.remove(target, nil, pd.name)
-    notify(src, 'success', ('All ranked bans removed for %d.'):format(target), 'RANK UNBAN')
+    local ok, result = Admin.handle(pd, 'unban', { target = args[1] })
+    notify(src, ok and 'success' or 'error',
+        ok and 'Ranked bans removed.' or tostring(result), 'RANK UNBAN')
 end)
 
 registerCommand(Config.Commands.setrank, function(pd, src, args)
-    if #args < 2 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrank.name .. ' <id|name> <rankId 0-23>', 'SET RANK')
+    if #args < 3 then
+        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrank.name .. ' <id|name> <rankId 0-23> <reason>', 'SET RANK')
         return
     end
-    local ok, result = Admin.handle(pd, 'setRank', { target = args[1], rankId = tonumber(args[2]) })
+    local ok, result = Admin.handle(pd, 'setRank', {
+        target = args[1], rankId = tonumber(args[2]), reason = table.concat(args, ' ', 3) })
     notify(src, ok and 'success' or 'error',
         ok and ('Rank set to %s.'):format(result.rank) or tostring(result), 'SET RANK')
 end)
 
 registerCommand(Config.Commands.setrp, function(pd, src, args)
-    if #args < 2 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrp.name .. ' <id|name> <rp>', 'SET RP')
+    if #args < 3 then
+        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrp.name .. ' <id|name> <rp> <reason>', 'SET RP')
         return
     end
-    local ok, result = Admin.handle(pd, 'setRP', { target = args[1], value = tonumber(args[2]) })
+    local ok, result = Admin.handle(pd, 'setRP', {
+        target = args[1], value = tonumber(args[2]), reason = table.concat(args, ' ', 3) })
     notify(src, ok and 'success' or 'error',
         ok and ('RP set to %d (%s).'):format(result.rp, result.rank) or tostring(result), 'SET RP')
+end)
+
+-- Compensate or deduct RP straight from chat.
+registerCommand(Config.Commands.givepvprp, function(pd, src, args)
+    if #args < 3 then
+        notify(src, 'warning', 'Usage: /givepvprp <id|name> <amount> <reason>', 'RP')
+        return
+    end
+    local amount = tonumber(args[2]) or 0
+    local ok, result = Admin.handle(pd, amount >= 0 and 'addRP' or 'removeRP', {
+        target = args[1], amount = math.abs(amount), reason = table.concat(args, ' ', 3) })
+    notify(src, ok and 'success' or 'error',
+        ok and ('%s%d RP → %d total.'):format(result.delta > 0 and '+' or '', result.delta, result.rp)
+             or tostring(result), 'RP')
 end)
 
 registerCommand(Config.Commands.pvpstatus, function(pd, src)
@@ -6979,6 +7163,13 @@ Citizen.CreateThread(function()
                         Penalty.apply(userId, 'LEAVE', m.dbId, false)
                     end
                 end
+            end
+
+            -- audit log retention
+            local keepDays = Config.AdminLimits.auditRetentionDays or 0
+            if keepDays > 0 then
+                DB.update('DELETE FROM m5_admin_logs WHERE created_at < ?',
+                    { sqlDate(now() - keepDays * 86400) })
             end
 
             -- expired avoid entries

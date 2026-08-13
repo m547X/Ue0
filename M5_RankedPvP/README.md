@@ -219,11 +219,71 @@ and visible to staff (`Config.MMR.visibleTo`).
 | `/setrp <id> <rp>` | `pvp.rp.modify` | set RP |
 | `/pvpstatus` | `pvp.moderator` | live system status |
 
-Each command can be renamed or disabled in `Config.Commands`.
+Plus `/givepvprp <id> <amount> <reason>` — a positive amount compensates, a
+negative one deducts. Each command can be renamed or disabled in
+`Config.Commands`.
 
-Permissions (`Config.Permissions`): `pvp.menu`, `pvp.custom.create`,
-`pvp.moderator`, `pvp.admin`, `pvp.spectate`, `pvp.bans`, `pvp.seasons`,
-`pvp.rewards`, `pvp.maps`, `pvp.mmr`, `pvp.rp.modify`.
+---
+
+## 7b. Admin panel and permissions
+
+Open it with `/pvpadmint` or the ADMIN tab. The panel has five sections —
+Monitor, Matches, Points, Punish, System — and **renders only the controls the
+caller is allowed to use**; everything else is absent, not greyed out.
+
+### Two layers of permission
+
+```lua
+Config.Permissions.superAdmin     = 'pvp.all'   -- unlocks every action
+Config.Permissions.adminGrantsAll = true        -- 'pvp.admin' also unlocks everything
+```
+
+Set `adminGrantsAll = false` for strict per-action control even for admins.
+
+### One permission per action
+
+Every entry in `Config.AdminActions` declares its own permission, label, and
+whether it needs a reason or a confirmation:
+
+| Action | Permission | What it does |
+|---|---|---|
+| `dashboard`, `playerLookup` | `pvp.admin.view` | read the panel, inspect a player |
+| `spectate` / `stopSpectate` | `pvp.admin.spectate` | watch any live match |
+| `endMatch` | `pvp.admin.match.end` | force a match to finish |
+| `restartRound` | `pvp.admin.match.round` | replay the current round |
+| `movePlayer` | `pvp.admin.match.move` | switch a player's team |
+| `kickFromMatch` | `pvp.admin.match.kick` | remove a player from a match |
+| `closeRoom` | `pvp.admin.custom.close` | stop a custom game |
+| `freeze` | `pvp.admin.freeze` | freeze / unfreeze the ranked queue |
+| `addRP` | `pvp.admin.rp.add` | **compensate** a player with points |
+| `removeRP` | `pvp.admin.rp.remove` | **deduct** points |
+| `setRP` | `pvp.admin.rp.set` | overwrite the RP total |
+| `setRank` | `pvp.admin.rank.set` | force a rank |
+| `addXP` | `pvp.admin.xp` | grant progression XP |
+| `resetStats` | `pvp.admin.stats.reset` | wipe this season for one player |
+| `ban` / `unban` | `pvp.admin.ban` / `.unban` | ranked bans |
+| `clearCooldown` | `pvp.admin.cooldown` | lift an abandon cooldown |
+| `reviewFlag` | `pvp.admin.antiboost` | mark an anti-boost flag reviewed |
+| `newSeason` | `pvp.admin.season` | archive and roll the season |
+| `toggleMode` | `pvp.admin.mode` | enable or disable a mode |
+| `auditLog` | `pvp.admin.audit` | read the audit log |
+
+Gameplay permissions stay separate: `pvp.menu`, `pvp.custom.create`,
+`pvp.spectate`, `pvp.mmr`, plus the staff tiers `pvp.moderator` and `pvp.admin`.
+
+### Guardrails
+
+Point changes are capped by `Config.AdminLimits` (`maxRPGrant`, `maxRPDeduct`,
+`maxXPGrant`) so a typo cannot wreck a ladder, and actions marked `reason = true`
+are refused without one.
+
+### Audit log
+
+Every staff action writes a row to `m5_admin_logs` — who did it, to whom, the
+amount, the before and after values, and the reason — and mirrors it to the
+`adminActions` webhook. A player's recent actions show inside their lookup, and
+the last 30 server-wide appear in the System tab. Rows older than
+`Config.AdminLimits.auditRetentionDays` are pruned automatically.
 
 ---
 

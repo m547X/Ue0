@@ -56,7 +56,7 @@ const S = {
   lb: { mode: '1v1', page: 1 },
   hist: { page: 1 },
   profile: null,
-  admin: null,
+  admin: null, admTab: null, admTargetValue: '',
 
   rooms: [], room: null,
   cm: {
@@ -182,6 +182,7 @@ function renderBoot(data) {
 
   document.querySelector('.admin-only')
     .classList.toggle('hidden', !(data.permissions && data.permissions.moderator));
+  if (data.adminActions) S.admin = Object.assign({ allowed: data.adminActions }, S.admin || {});
 
   if (data.modes && data.modes.length && !data.modes.find((m) => m.id === S.mode)) {
     S.mode = data.modes[0].id;
@@ -935,74 +936,282 @@ function applySettings() {
 }
 
 /* ================================================================= ADMIN */
+/* Every control is gated by d.allowed, which the server builds from
+   Config.AdminActions for the calling staff member. Nothing that the caller
+   cannot perform is rendered at all. */
+
+const ADM_GROUPS = [
+  { id: 'monitor', label: 'MONITOR', icon: '#i-target' },
+  { id: 'match',   label: 'MATCHES', icon: '#i-play' },
+  { id: 'points',  label: 'POINTS',  icon: '#i-ranked' },
+  { id: 'punish',  label: 'PUNISH',  icon: '#i-shield' },
+  { id: 'system',  label: 'SYSTEM',  icon: '#i-cog' }
+];
+
+function admCan(action) {
+  return !!(S.admin && S.admin.allowed && S.admin.allowed[action]);
+}
+function admDef(action) {
+  return (S.admin && S.admin.allowed && S.admin.allowed[action]) || {};
+}
+
+/** Shared target box: one player id/name feeds every player tool. */
+function admTarget() {
+  return ($('adm-target') && $('adm-target').value.trim()) || '';
+}
+function admReason() {
+  return ($('adm-reason') && $('adm-reason').value.trim()) || '';
+}
+
+/** Runs an action, enforcing the reason and confirm flags the server declared. */
+function admRun(action, extra) {
+  const def = admDef(action);
+  const payload = Object.assign({ action }, extra || {});
+
+  if (def.reason) {
+    const reason = admReason();
+    if (reason.length < 3) { toast('warning', 'A reason is required for this action.', 'ADMIN'); return; }
+    payload.reason = reason;
+  }
+  if (def.confirm && !confirm(`${def.label || action}\n\nConfirm this action?`)) return;
+
+  Sfx.play('click');
+  post('admin', payload);
+}
+
+function renderAdminTabs() {
+  const host = $('adm-tabs');
+  if (!host) return;
+  const groups = ADM_GROUPS.filter((g) =>
+    Object.keys((S.admin && S.admin.allowed) || {}).some((a) => admDef(a).group === g.id));
+
+  if (!S.admTab || !groups.find((g) => g.id === S.admTab)) {
+    S.admTab = groups.length ? groups[0].id : 'monitor';
+  }
+
+  host.innerHTML = '';
+  groups.forEach((g) => {
+    const b = el('button', 'adm-tab' + (g.id === S.admTab ? ' active' : ''),
+      `<svg><use href="${g.icon}"/></svg>${g.label}`);
+    b.onclick = () => { S.admTab = g.id; Sfx.play('click'); renderAdmin(S.admin); };
+    host.appendChild(b);
+  });
+
+  const refresh = el('button', 'adm-tab', '<svg><use href="#i-back"/></svg>REFRESH');
+  refresh.style.marginLeft = 'auto';
+  refresh.onclick = () => post('admin', { action: 'dashboard' });
+  host.appendChild(refresh);
+}
+
 function renderAdmin(d) {
   if (!d) return;
   S.admin = d;
+  renderAdminTabs();
+
   const host = $('admin-root');
   const list = (rows, fn, empty) => (rows && rows.length) ? rows.map(fn).join('') : `<div class="empty">${empty}</div>`;
+  const tab = S.admTab;
 
-  host.innerHTML = `
-    <div class="card"><span class="card-tag">LIVE MATCHES · ${(d.matches || []).length}</span>
-      <div class="alist">${list(d.matches, (m) => `<div class="arow"><b>${esc(m.mode)}</b>
-        <span class="grow">${esc(m.map)} · ${esc(m.state)} · R${m.round} · ${m.scores.a}-${m.scores.b}</span>
-        <button class="mini" data-admin="spectate" data-match="${esc(m.id)}">SPECTATE</button>
-        <button class="mini" data-admin="endMatch" data-match="${esc(m.id)}">END</button></div>`, 'NO LIVE MATCHES')}</div></div>
+  // shared target + reason box for every player facing tool
+  const targetBox = `
+    <div class="adm-target">
+      <div class="fld"><label>TARGET PLAYER (ID OR NAME)</label>
+        <input class="inp" id="adm-target" placeholder="42 or PlayerName" value="${esc(S.admTargetValue || '')}"/></div>
+      <div class="fld" style="min-width:240px"><label>REASON (required by some actions)</label>
+        <input class="inp" id="adm-reason" placeholder="Why are you doing this?"/></div>
+    </div>`;
 
-    <div class="card"><span class="card-tag">SEARCHING · ${(d.searching || []).length}</span>
-      <div class="alist">${list(d.searching, (p) => `<div class="arow"><b>${esc(p.name)}</b>
-        <span class="grow">${esc(p.mode)} · ${esc(p.rank)} · MMR ${p.mmr}</span><span>${p.waited}s</span></div>`, 'QUEUE EMPTY')}</div></div>
+  const tool = (action, body, danger) => {
+    if (!admCan(action)) return '';
+    const def = admDef(action);
+    return `<div class="tool ${danger ? 'danger' : ''}">
+      <div class="tool-head"><svg><use href="#i-shield"/></svg>${esc(def.label || action)}
+        <span class="tool-perm">${esc(action)}${def.reason ? ' · reason' : ''}</span></div>
+      ${body}</div>`;
+  };
 
-    <div class="card"><span class="card-tag">SUSPICIOUS PLAYERS</span>
+  let html = '';
+
+  /* ------------------------------------------------------- MONITOR */
+  if (tab === 'monitor') {
+    html = `
+      <div class="admin">
+        <div class="card"><span class="card-tag">LIVE MATCHES · ${(d.matches || []).length}</span>
+          <div class="alist">${list(d.matches, (m) => `<div class="arow">
+            <b>${esc(m.mode)}</b>
+            <span class="grow">${esc(m.map)} · ${esc(m.state)} · R${m.round} · ${m.scores.a}-${m.scores.b} · ${m.players}P${m.custom ? ' · CUSTOM' : ''}</span>
+            ${admCan('spectate') ? `<button class="mini" data-adm="spectate" data-match="${esc(m.id)}">WATCH</button>` : ''}
+            ${admCan('restartRound') ? `<button class="mini" data-adm="restartRound" data-match="${esc(m.id)}">RESTART</button>` : ''}
+            ${admCan('endMatch') ? `<button class="mini" data-adm="endMatch" data-match="${esc(m.id)}">STOP</button>` : ''}
+          </div>`, 'NO LIVE MATCHES')}</div>
+          ${admCan('stopSpectate') ? '<button class="btn ghost" style="margin-top:10px" data-adm="stopSpectate">STOP SPECTATING</button>' : ''}
+        </div>
+
+        <div class="card"><span class="card-tag">IN QUEUE · ${(d.searching || []).length}</span>
+          <div class="alist">${list(d.searching, (p) => `<div class="arow"><b>${esc(p.name)}</b>
+            <span class="grow">${esc(p.mode)} · ${esc(p.rank)}${p.mmr ? ` · MMR ${p.mmr}` : ''}</span>
+            <span>${p.waited}s</span></div>`, 'QUEUE EMPTY')}</div></div>
+
+        <div class="card"><span class="card-tag">CUSTOM ROOMS · ${(d.rooms || []).length}</span>
+          <div class="alist">${list(d.rooms, (r) => `<div class="arow"><b>${esc(r.name)}</b>
+            <span class="grow">${esc(r.host)} · ${r.players}/${r.maxPlayers} · ${esc(r.state)}${r.code ? ` · ${esc(r.code)}` : ''}</span>
+            ${admCan('closeRoom') ? `<button class="mini" data-adm="closeRoom" data-room="${esc(r.id)}">CLOSE</button>` : ''}
+          </div>`, 'NO ROOMS')}</div></div>
+
+        ${admCan('playerLookup') ? `<div class="card"><span class="card-tag">PLAYER LOOKUP</span>
+          <div class="tool-row"><input class="inp" id="adm-lookup" placeholder="Player id or name"/>
+          <button class="btn" data-adm="lookupInput">INSPECT</button></div>
+          <p style="font-size:11px;color:var(--dim);margin-top:9px">Opens the full profile: rank, stats, bans, anti-boost flags and the actions taken against them.</p></div>` : ''}
+      </div>`;
+  }
+
+  /* -------------------------------------------------------- MATCH */
+  if (tab === 'match') {
+    html = targetBox + `<div class="adm-tools">
+      ${tool('kickFromMatch', `<p>Removes the player from their current match. Counts as an admin removal, not an abandon.</p>
+        <button class="btn wide" data-adm="kickFromMatch">REMOVE FROM MATCH</button>`, true)}
+      ${tool('movePlayer', `<p>Move the target to the other team in a match id.</p>
+        <div class="tool-row"><input class="inp" id="adm-match" placeholder="Match id"/>
+        <input class="inp" id="adm-team" type="number" min="1" max="2" placeholder="Team 1/2" style="max-width:110px"/></div>
+        <button class="btn wide" style="margin-top:9px" data-adm="movePlayer">MOVE PLAYER</button>`)}
+      ${tool('freeze', `<p>Stops every ranked queue and empties the current one. Custom games keep running.</p>
+        <div class="tool-row">
+          <button class="btn wide" data-adm="freezeOn">FREEZE QUEUE</button>
+          <button class="btn ghost wide" data-adm="freezeOff">UNFREEZE</button></div>
+        <div style="margin-top:8px;font-size:11px;color:${d.frozen ? 'var(--lose)' : 'var(--win)'}">
+          STATUS: ${d.frozen ? 'FROZEN' : 'OPEN'}</div>`, true)}
+    </div>
+    <div class="card" style="margin-top:16px"><span class="card-tag">LIVE MATCHES</span>
+      <div class="alist">${list(d.matches, (m) => `<div class="arow"><b>${esc(m.id)}</b>
+        <span class="grow">${esc(m.mode)} · ${esc(m.map)} · ${esc(m.state)}</span>
+        ${admCan('spectate') ? `<button class="mini" data-adm="spectate" data-match="${esc(m.id)}">WATCH</button>` : ''}
+        ${admCan('endMatch') ? `<button class="mini" data-adm="endMatch" data-match="${esc(m.id)}">STOP</button>` : ''}
+      </div>`, 'NO LIVE MATCHES')}</div></div>`;
+  }
+
+  /* ------------------------------------------------------- POINTS */
+  if (tab === 'points') {
+    html = targetBox + `<div class="adm-tools">
+      ${tool('addRP', `<p>Compensate a player, for example after a server crash. Capped per action.</p>
+        <div class="tool-row"><input class="inp" id="adm-rp-add" type="number" placeholder="RP to grant"/>
+        <button class="btn" data-adm="addRP">GRANT</button></div>`)}
+      ${tool('removeRP', `<p>Deduct RP as a correction or a penalty.</p>
+        <div class="tool-row"><input class="inp" id="adm-rp-rem" type="number" placeholder="RP to deduct"/>
+        <button class="btn" data-adm="removeRP">DEDUCT</button></div>`, true)}
+      ${tool('setRP', `<p>Overwrite the RP total outright. The rank is recalculated from it.</p>
+        <div class="tool-row"><input class="inp" id="adm-rp-set" type="number" placeholder="Exact RP"/>
+        <button class="btn" data-adm="setRP">SET</button></div>`)}
+      ${tool('setRank', `<p>Force a rank. RP is moved to that rank's floor.</p>
+        <div class="tool-row"><select class="inp" id="adm-rank">${
+          ((S.boot && S.boot.ranks) || []).map((r) =>
+            `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+        <button class="btn" data-adm="setRank">APPLY</button></div>`)}
+      ${tool('addXP', `<p>Grant progression XP. Levels and level rewards apply automatically.</p>
+        <div class="tool-row"><input class="inp" id="adm-xp" type="number" placeholder="XP"/>
+        <button class="btn" data-adm="addXP">GRANT XP</button></div>`)}
+      ${tool('resetStats', `<p>Wipes the target's stats, rank and MMR for the current season only.</p>
+        <button class="btn wide" data-adm="resetStats">RESET SEASON STATS</button>`, true)}
+    </div>`;
+  }
+
+  /* ------------------------------------------------------- PUNISH */
+  if (tab === 'punish') {
+    html = targetBox + `<div class="adm-tools">
+      ${tool('ban', `<p>Ranked ban, separate from any server ban.</p>
+        <div class="tool-row">
+          <select class="inp" id="adm-bantype">${((S.boot && S.boot.rankBanTypes) || ['RANKED']).map((t) =>
+            `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select>
+          <select class="inp" id="adm-bandur">${((S.boot && S.boot.banDurations) || []).map((b) =>
+            `<option value="${b.seconds}">${esc(b.label)}</option>`).join('')}</select>
+        </div>
+        <button class="btn wide" style="margin-top:9px" data-adm="ban">APPLY BAN</button>`, true)}
+      ${tool('unban', `<p>Lifts every active ranked ban on the target.</p>
+        <button class="btn ghost wide" data-adm="unban">REMOVE BANS</button>`)}
+      ${tool('clearCooldown', `<p>Clears an abandon or decline cooldown so the player can queue again.</p>
+        <button class="btn ghost wide" data-adm="clearCooldown">CLEAR COOLDOWN</button>`)}
+    </div>
+    <div class="card" style="margin-top:16px"><span class="card-tag">ACTIVE RANKED BANS</span>
+      <div class="alist">${list(d.bans, (b) => `<div class="arow"><b>${esc(b.name || b.user_id)}</b>
+        <span class="grow">${esc(b.type)} · ${esc(b.reason)} · by ${esc(b.admin)}</span>
+        ${admCan('unban') ? `<button class="mini" data-adm="unbanRow" data-target="${b.user_id}" data-ban="${b.id}">UNBAN</button>` : ''}
+      </div>`, 'NO ACTIVE BANS')}</div></div>
+    <div class="card"><span class="card-tag">ANTI-BOOST FLAGS</span>
       <div class="alist">${list(d.suspicious, (f) => `<div class="arow"><b>${esc(f.name || f.user_id)}</b>
         <span class="grow">${f.flags} flags</span><span class="sev">SEV ${f.score}</span>
-        <button class="mini" data-admin="lookup" data-target="${f.user_id}">INSPECT</button></div>`, 'NOTHING FLAGGED')}</div></div>
+        ${admCan('playerLookup') ? `<button class="mini" data-adm="lookup" data-target="${f.user_id}">INSPECT</button>` : ''}
+      </div>`, 'NOTHING FLAGGED')}</div></div>`;
+  }
 
-    <div class="card"><span class="card-tag">ACTIVE RANKED BANS</span>
-      <div class="alist">${list(d.bans, (b) => `<div class="arow"><b>${esc(b.name || b.user_id)}</b>
-        <span class="grow">${esc(b.type)} · ${esc(b.reason)}</span>
-        <button class="mini" data-admin="unban" data-target="${b.user_id}" data-ban="${b.id}">UNBAN</button></div>`, 'NO ACTIVE BANS')}</div></div>
+  /* ------------------------------------------------------- SYSTEM */
+  if (tab === 'system') {
+    html = `<div class="adm-tools">
+      ${tool('newSeason', `<p>Archives the current season, hands out rewards and opens the next one.</p>
+        <button class="btn wide" data-adm="newSeason">START NEW SEASON</button>`, true)}
+      ${tool('toggleMode', `<p>Enable or disable a game mode server wide.</p>
+        <div class="tool-row"><select class="inp" id="adm-mode">${
+          ((S.boot && S.boot.allModes) || []).map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('')}</select>
+        <button class="btn" data-adm="modeOn">ON</button>
+        <button class="btn ghost" data-adm="modeOff">OFF</button></div>`)}
+    </div>
+    <div class="card" style="margin-top:16px"><span class="card-tag">SEASONS</span>
+      <div class="alist">${list(d.seasons, (x) => `<div class="arow"><b>#${x.number} ${esc(x.name)}</b>
+        <span class="grow">${esc(String(x.start_at || '').slice(0, 10))} → ${esc(String(x.end_at || '').slice(0, 10))}</span>
+        <span>${x.active ? 'ACTIVE' : 'ARCHIVED'}</span></div>`, 'NO SEASONS')}</div></div>
+    ${admCan('auditLog') ? `<div class="card"><span class="card-tag">AUDIT LOG · LAST 30</span>
+      ${list(d.audit, (a) => `<div class="audit-row">
+        <span class="act">${esc(a.action)}</span>
+        <span>${esc(a.admin_name)}${a.target_name ? ` → ${esc(a.target_name)}` : ''}${
+          a.amount ? ` · ${a.amount > 0 ? '+' : ''}${a.amount}` : ''}${a.reason ? ` · ${esc(a.reason)}` : ''}</span>
+        <span class="when">${esc(String(a.created_at || '').replace('T', ' ').slice(0, 16))}</span>
+      </div>`, 'NOTHING LOGGED YET')}</div>` : ''}`;
+  }
 
-    <div class="card"><span class="card-tag">PLAYER TOOLS</span>
-      <div class="fld"><label>TARGET (ID OR NAME)</label><input class="inp" id="adm-target" placeholder="42"/></div>
-      <div class="grid" style="margin-top:10px">
-        <div class="fld"><label>SET RP</label><input class="inp" id="adm-rp" type="number"/></div>
-        <div class="fld"><label>RANK ID (0-23)</label><input class="inp" id="adm-rank" type="number"/></div>
-        <div class="fld"><label>BAN MINUTES</label><input class="inp" id="adm-dur" type="number" value="60"/></div>
-        <div class="fld"><label>REASON</label><input class="inp" id="adm-reason"/></div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:12px">
-        <button class="mini" data-admin="setRP">SET RP</button>
-        <button class="mini" data-admin="setRank">SET RANK</button>
-        <button class="mini" data-admin="lookupInput">LOOKUP</button>
-        <button class="mini" data-admin="resetStats">RESET STATS</button>
-        <button class="mini" data-admin="ban">RANK BAN</button>
-        <button class="mini" data-admin="unbanInput">UNBAN</button>
-        <button class="mini" data-admin="freeze">FREEZE RANKED</button>
-        <button class="mini" data-admin="newSeason">NEW SEASON</button>
-      </div></div>`;
+  if (!html) html = '<div class="locked-note">YOU HAVE NO PERMISSIONS IN THIS SECTION</div>';
+  host.innerHTML = html;
 
-  host.querySelectorAll('[data-admin]').forEach((b) => { b.onclick = () => adminAction(b); });
+  // keep the typed target across re-renders
+  const t = $('adm-target');
+  if (t) t.oninput = () => { S.admTargetValue = t.value; };
+
+  host.querySelectorAll('[data-adm]').forEach((b) => { b.onclick = () => admAction(b); });
 }
 
-function adminAction(btn) {
-  const a = btn.dataset.admin;
-  const target = ($('adm-target') && $('adm-target').value) || btn.dataset.target;
-  const map = {
-    spectate: () => post('admin', { action: 'spectate', matchId: btn.dataset.match }),
-    endMatch: () => post('admin', { action: 'endMatch', matchId: btn.dataset.match }),
-    lookup: () => post('admin', { action: 'playerLookup', target: btn.dataset.target }),
-    lookupInput: () => post('admin', { action: 'playerLookup', target }),
-    unban: () => post('admin', { action: 'unban', target: btn.dataset.target, banId: btn.dataset.ban }),
-    unbanInput: () => post('admin', { action: 'unban', target }),
-    resetStats: () => post('admin', { action: 'resetStats', target }),
-    newSeason: () => post('admin', { action: 'newSeason' }),
-    freeze: () => post('admin', { action: 'freeze', value: !(S.admin && S.admin.frozen) }),
-    setRP: () => post('admin', { action: 'setRP', target, value: parseInt($('adm-rp').value, 10) }),
-    setRank: () => post('admin', { action: 'setRank', target, rankId: parseInt($('adm-rank').value, 10) }),
-    ban: () => post('admin', { action: 'ban', target, duration: (parseInt($('adm-dur').value, 10) || 0) * 60,
-      reason: $('adm-reason').value, type: 'RANKED' })
-  };
-  if (map[a]) { Sfx.play('click'); map[a](); }
+function admAction(btn) {
+  const a = btn.dataset.adm;
+  const target = admTarget();
+  const val = (id) => { const n = $(id); return n ? n.value : ''; };
+
+  switch (a) {
+    case 'spectate':      admRun('spectate', { matchId: btn.dataset.match }); break;
+    case 'stopSpectate':  admRun('stopSpectate', {}); break;
+    case 'restartRound':  admRun('restartRound', { matchId: btn.dataset.match }); break;
+    case 'endMatch':      admRun('endMatch', { matchId: btn.dataset.match }); break;
+    case 'closeRoom':     admRun('closeRoom', { roomId: btn.dataset.room }); break;
+
+    case 'lookup':        post('admin', { action: 'playerLookup', target: btn.dataset.target }); break;
+    case 'lookupInput':   post('admin', { action: 'playerLookup', target: val('adm-lookup') }); break;
+
+    case 'kickFromMatch': admRun('kickFromMatch', { target }); break;
+    case 'movePlayer':    admRun('movePlayer', { target, matchId: val('adm-match'), team: parseInt(val('adm-team'), 10) }); break;
+    case 'freezeOn':      admRun('freeze', { value: true }); break;
+    case 'freezeOff':     admRun('freeze', { value: false }); break;
+
+    case 'addRP':         admRun('addRP', { target, amount: parseInt(val('adm-rp-add'), 10) }); break;
+    case 'removeRP':      admRun('removeRP', { target, amount: parseInt(val('adm-rp-rem'), 10) }); break;
+    case 'setRP':         admRun('setRP', { target, value: parseInt(val('adm-rp-set'), 10) }); break;
+    case 'setRank':       admRun('setRank', { target, rankId: parseInt(val('adm-rank'), 10) }); break;
+    case 'addXP':         admRun('addXP', { target, amount: parseInt(val('adm-xp'), 10) }); break;
+    case 'resetStats':    admRun('resetStats', { target }); break;
+
+    case 'ban':           admRun('ban', { target, type: val('adm-bantype'), duration: parseInt(val('adm-bandur'), 10) }); break;
+    case 'unban':         admRun('unban', { target }); break;
+    case 'unbanRow':      admRun('unban', { target: btn.dataset.target, banId: btn.dataset.ban }); break;
+    case 'clearCooldown': admRun('clearCooldown', { target }); break;
+
+    case 'newSeason':     admRun('newSeason', {}); break;
+    case 'modeOn':        admRun('toggleMode', { mode: val('adm-mode'), value: true }); break;
+    case 'modeOff':       admRun('toggleMode', { mode: val('adm-mode'), value: false }); break;
+  }
 }
 
 /* =============================================================== IN MATCH */
