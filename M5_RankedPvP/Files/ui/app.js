@@ -302,14 +302,6 @@ function renderModeTabs() {
     host.appendChild(b);
   });
 
-  if (pq.random) {
-    const b = el('button', 'mtab random' + (S.mode === 'random' ? ' active' : ''),
-      `<svg><use href="#i-target"/></svg>${esc(pq.randomLabel || 'RANDOM')}`);
-    b.title = 'Searches several modes at once — the first lobby that fills wins';
-    b.onclick = () => { Sfx.play('click'); S.mode = 'random'; renderModeTabs(); renderSlots(); };
-    host.appendChild(b);
-  }
-
   // ---- leaderboard tabs stay a plain mode filter
   const lb = $('lb-tabs');
   lb.innerHTML = '';
@@ -324,7 +316,6 @@ function renderModeTabs() {
 function syncModeToParty() {
   const pq = (S.boot && S.boot.partyQueue) || {};
   if (!pq.autoMode) return;
-  if (S.mode === 'random') return;
 
   const suggested = (S.party && S.party.autoMode) || null;
   const size = partySize();
@@ -350,8 +341,7 @@ function renderSlots() {
   const p = S.boot && S.boot.player;
   const max = (S.boot && S.boot.maxParty) || 5;
   const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode);
-  // RANDOM can fill every slot; a fixed mode caps at its team size
-  const capacity = (S.mode === 'random') ? max : Math.min(max, modeCfg ? modeCfg.teamSize : max);
+  const capacity = Math.min(max, modeCfg ? modeCfg.teamSize : max);
 
   const members = (S.party && S.party.members && S.party.members.length)
     ? S.party.members
@@ -391,10 +381,7 @@ function renderSlots() {
         <div class="slot-track"><i style="width:${pct}%"></i></div>
         <div class="slot-nums">
           <span>${num(lo)}</span>
-          <span class="slot-rank">${esc(m.rank || 'Unranked')} (${esc(
-            S.mode === 'random'
-              ? (((S.boot && S.boot.partyQueue) || {}).randomLabel || 'RANDOM')
-              : ((modeCfg && modeCfg.label) || S.mode))})</span>
+          <span class="slot-rank">${esc(m.rank || 'Unranked')} (${esc((modeCfg && modeCfg.label) || S.mode)})</span>
           <span>${num(hi)}</span>
         </div>
       </div>`);
@@ -434,16 +421,11 @@ function renderQueue(q) {
   if (!searching) { S.queue.elapsed = 0; return; }
 
   if (q.elapsed !== undefined) S.queue.elapsed = q.elapsed;
-  if ((q.mode || S.mode) === 'random') {
-    const labels = (q.modes || []).map((id) => {
-      const c = ((S.boot && S.boot.modes) || []).find((m) => m.id === id);
-      return c ? c.label : id.toUpperCase();
-    });
-    $('sd-mode').textContent = labels.length ? labels.join(' · ') : 'RANDOM';
-  } else {
-    const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === (q.mode || S.mode));
-    $('sd-mode').textContent = (modeCfg && modeCfg.label) || String(q.mode || S.mode).toUpperCase();
-  }
+  const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === (q.mode || S.mode));
+  const label = (modeCfg && modeCfg.label) || String(q.mode || S.mode).toUpperCase();
+  const pq = (S.boot && S.boot.partyQueue) || {};
+  const full = pq.fullTeamOnly && partySize() > 1;
+  $('sd-mode').textContent = full ? `${label} · VS TEAM` : label;
   $('sd-time').textContent = clock(S.queue.elapsed);
 }
 

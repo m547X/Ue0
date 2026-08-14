@@ -1906,59 +1906,27 @@ function Matchmaker.modeForSize(size)
     return nil
 end
 
---- Expands the requested selection into the list of modes to search.
+--- Validates the requested mode against the party size.
 -- Returns list, errorMessage.
 function Matchmaker.resolveModes(request, size)
     local P = Config.PartyQueue
-    local random = P.randomSearch or {}
 
-    local function fits(cfg)
-        if not cfg or cfg.type == 'ffa' then return cfg ~= nil end
-        if size > cfg.teamSize then return false end          -- party too large
-        if P.lockToPartySize and size ~= cfg.teamSize then return false end
-        return true
-    end
-
-    -- ---- random search --------------------------------------------------
-    if request == 'random' then
-        if not random.enabled then return nil, 'Random search is disabled.' end
-
-        local out = {}
-        for i = 1, #(random.modes or {}) do
-            local key = random.modes[i]
-            local cfg = modeCfg(key)
-            if cfg and inList(Config.RankedQueueModes, key) then
-                local ok
-                if random.respectPartySize then
-                    ok = (cfg.type == 'ffa') or (cfg.teamSize == size)
-                else
-                    ok = (cfg.type == 'ffa') or (size <= cfg.teamSize)
-                end
-                if ok then out[#out + 1] = key end
-            end
-        end
-
-        if #out == 0 then
-            return nil, ('No random mode fits a party of %d.'):format(size)
-        end
-        return out
-    end
-
-    -- ---- explicit mode ---------------------------------------------------
     local cfg = modeCfg(request)
     if not cfg then return nil, 'Unknown game mode.' end
     if not inList(Config.RankedQueueModes, request) then
         return nil, 'This mode is not available in ranked.'
     end
 
-    if cfg.type ~= 'ffa' and size > cfg.teamSize then
-        return nil, ('Your party is too large for %s.'):format(cfg.label)
-    end
-    if not fits(cfg) then
-        local suggested = Matchmaker.modeForSize(size)
-        return nil, suggested
-            and ('A party of %d must search %s.'):format(size, (modeCfg(suggested) or {}).label or suggested)
-            or  ('No ranked mode fits a party of %d.'):format(size)
+    if cfg.type ~= 'ffa' then
+        if size > cfg.teamSize then
+            return nil, ('Your party is too large for %s.'):format(cfg.label)
+        end
+        if P.lockToPartySize and size ~= cfg.teamSize then
+            local suggested = Matchmaker.modeForSize(size)
+            return nil, suggested
+                and ('A party of %d must search %s.'):format(size, (modeCfg(suggested) or {}).label or suggested)
+                or  ('No ranked mode fits a party of %d.'):format(size)
+        end
     end
 
     return { request }
@@ -2034,9 +2002,7 @@ function Matchmaker.join(userId, mode)
         list[#list + 1] = entry
     end
 
-    local label = (mode == 'random')
-        and ((Config.PartyQueue.randomSearch or {}).label or 'RANDOM')
-        or (modeCfg(modes[1]) or {}).label or modes[1]
+    local label = (modeCfg(modes[1]) or {}).label or modes[1]
 
     for i = 1, #members do
         local mpd = Players[members[i]]
@@ -2139,13 +2105,15 @@ local function entriesCompatible(a, b)
     return true
 end
 
---- Attempts to build a full lobby around the oldest waiting entry.
+--- Attempts to build a full lobby. Entries are tried oldest first, and a seed
+--- that cannot be satisfied is skipped rather than blocking the whole queue.
 local function tryBuildLobby(mode, cfg)
     local list = queueList(mode)
     if #list == 0 then return nil end
 
     table.sort(list, function(x, y) return x.joinedMs < y.joinedMs end)
 
+    -- ---- free for all ---------------------------------------------------
     if cfg.type == 'ffa' then
         local minP = cfg.minPlayers or 4
         local maxP = cfg.maxPlayers or 12
@@ -2163,51 +2131,86 @@ local function tryBuildLobby(mode, cfg)
         return { entries = picked, teams = nil, ffa = true }
     end
 
+    -- ---- team matching rules --------------------------------------------
+    -- 'fullTeam': a complete party only ever faces another complete party, so
+    -- a duo searching 2V2 waits for a second duo instead of being handed two
+    -- solo players. A party that has waited past fallbackAfter is released
+    -- back into the normal pool so nobody waits forever.
     local need = cfg.teamSize
-    local seed = list[1]
+    local TM = (Config.PartyQueue or {}).teamMatching or {}
+    local fullTeamOnly = TM.mode == 'fullTeam'
 
-    local teamA, teamB = {}, {}
-    local sizeA, sizeB = 0, 0
-    local used = {}
-
-    local function place(entry)
-        local n = #entry.members
-        if sizeA <= sizeB and (sizeA + n) <= need then
-            teamA[#teamA + 1] = entry; sizeA = sizeA + n; return true
-        elseif (sizeB + n) <= need then
-            teamB[#teamB + 1] = entry; sizeB = sizeB + n; return true
-        elseif (sizeA + n) <= need then
-            teamA[#teamA + 1] = entry; sizeA = sizeA + n; return true
-        end
-        return false
+    local function isFullTeam(e) return #e.members == need end
+    local function relaxed(e)
+        local after = TM.fallbackAfter or 0
+        return after > 0 and ((ms() - e.joinedMs) / 1000) >= after
+    end
+    local function reserved(e)
+        return fullTeamOnly and isFullTeam(e) and not relaxed(e)
     end
 
-    place(seed)
-    used[seed.key] = true
+    -- Try every entry as a seed. A reserved party with no mirror yet simply
+    -- keeps waiting while the rest of the queue continues to match.
+    for si = 1, #list do
+        local seed = list[si]
 
-    for i = 2, #list do
-        if sizeA == need and sizeB == need then break end
-        local e = list[i]
-        if not used[e.key] and entriesCompatible(seed, e) then
-            local okWithAll = true
-            for _, other in ipairs(teamA) do
-                if not entriesCompatible(other, e) then okWithAll = false break end
-            end
-            if okWithAll then
-                for _, other in ipairs(teamB) do
-                    if not entriesCompatible(other, e) then okWithAll = false break end
+        if reserved(seed) then
+            -- complete party: look for its mirror only
+            for i = 1, #list do
+                local e = list[i]
+                if e.key ~= seed.key and isFullTeam(e) and entriesCompatible(seed, e) then
+                    return { entries = nil, teams = { { seed }, { e } }, ffa = false }
                 end
             end
-            if okWithAll and place(e) then used[e.key] = true end
+        else
+            local teamA, teamB = {}, {}
+            local sizeA, sizeB = 0, 0
+            local used = {}
+
+            local function place(entry)
+                local n = #entry.members
+                if sizeA <= sizeB and (sizeA + n) <= need then
+                    teamA[#teamA + 1] = entry; sizeA = sizeA + n; return true
+                elseif (sizeB + n) <= need then
+                    teamB[#teamB + 1] = entry; sizeB = sizeB + n; return true
+                elseif (sizeA + n) <= need then
+                    teamA[#teamA + 1] = entry; sizeA = sizeA + n; return true
+                end
+                return false
+            end
+
+            place(seed)
+            used[seed.key] = true
+
+            for i = 1, #list do
+                if sizeA == need and sizeB == need then break end
+                local e = list[i]
+
+                if not used[e.key] and not reserved(e) and entriesCompatible(seed, e) then
+                    local okWithAll = true
+                    for _, other in ipairs(teamA) do
+                        if not entriesCompatible(other, e) then okWithAll = false break end
+                    end
+                    if okWithAll then
+                        for _, other in ipairs(teamB) do
+                            if not entriesCompatible(other, e) then okWithAll = false break end
+                        end
+                    end
+                    if okWithAll and place(e) then used[e.key] = true end
+                end
+            end
+
+            if sizeA == need and sizeB == need then
+                return { entries = nil, teams = { teamA, teamB }, ffa = false }
+            end
         end
     end
 
-    if sizeA ~= need or sizeB ~= need then return nil end
-    return { entries = nil, teams = { teamA, teamB }, ffa = false }
+    return nil
 end
 
---- Removes the given entries — and every sibling of a random search — from
---- every queue they sit in.
+--- Removes the given entries — and every sibling entry of the same search —
+--- from every queue they sit in.
 local function removeEntries(mode, entries)
     local keys, groups = {}, {}
     for i = 1, #entries do
@@ -6683,8 +6686,7 @@ function Server_BootPayload(pd)
         partyQueue = {
             autoMode        = Config.PartyQueue.autoMode,
             lockToPartySize = Config.PartyQueue.lockToPartySize,
-            random          = (Config.PartyQueue.randomSearch or {}).enabled == true,
-            randomLabel     = (Config.PartyQueue.randomSearch or {}).label or 'RANDOM'
+            fullTeamOnly    = ((Config.PartyQueue.teamMatching or {}).mode == 'fullTeam')
         },
         maps    = maps,
         loadouts= loadouts,

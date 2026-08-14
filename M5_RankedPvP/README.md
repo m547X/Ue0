@@ -233,10 +233,9 @@ negative one deducts. Each command can be renamed or disabled in
 Config.PartyQueue = {
     autoMode        = true,   -- party size picks the mode: 1 = 1V1, 2 = 2V2 …
     lockToPartySize = true,   -- a party of 2 may ONLY search 2V2
-    randomSearch = {
-        enabled = true,
-        modes   = { '1v1', '2v2', '3v3', '4v4', '5v5' },
-        respectPartySize = false
+    teamMatching = {
+        mode          = 'fullTeam',  -- 'fullTeam' | 'any'
+        fallbackAfter = 60           -- seconds before falling back to 'any'
     }
 }
 ```
@@ -251,11 +250,19 @@ it off, a party may search any mode large enough to hold it and matchmaking
 fills the empty slots. A party can never search a mode smaller than itself
 either way.
 
-**randomSearch** — adds a RANDOM tab that queues the party into several modes
-at once. Each mode gets its own queue entry, all sharing a group key; the first
-lobby to fill wins and every sibling entry is removed. `respectPartySize`
-decides whether the random set is limited to the exact size or to everything
-that fits.
+**teamMatching** — decides how the *opposing* side is assembled.
+
+* `'fullTeam'` — a complete party only ever faces another complete party. A duo
+  searching 2V2 waits for a second duo searching 2V2 rather than being handed
+  two solo players, so a premade never gets a coordination advantage over
+  strangers. Solos and partial parties keep matching among themselves as usual,
+  and a waiting full team is reserved — the mixed pool cannot consume it.
+* `'any'` — the enemy team is built from whatever is waiting: another party,
+  two solos, a duo plus a solo.
+
+`fallbackAfter` is the escape hatch: if no mirror team appears within that many
+seconds the party is matched the normal way instead of waiting forever. Set it
+to 0 to wait indefinitely for a real team.
 
 Changing the party size while a search is running cancels it, since the searched
 mode depends on that size.

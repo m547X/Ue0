@@ -485,10 +485,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .mtab.locked{opacity:.35;cursor:not-allowed;position:relative}
 .mtab.locked::after{content:'';position:absolute;left:14%;right:14%;top:50%;height:1px;
   background:var(--dim-2);transform:rotate(-8deg)}
-.mtab.random{display:flex;align-items:center;justify-content:center;gap:8px;
-  border-color:var(--edge);color:var(--gold)}
-.mtab.random svg{width:14px;height:14px}
-.mtab.random.active{color:#fff}
+
 
 /* ==========================================================================
    LEADERBOARD

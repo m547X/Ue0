@@ -503,18 +503,20 @@ Config.PartyQueue = {
     -- Modes whose team size is smaller than the party can never be searched,
     -- regardless of the setting above (a party of 3 cannot play 1V1).
 
-    -- Search several modes at once. The first lobby that fills wins and the
-    -- remaining searches are cancelled automatically.
-    randomSearch = {
-        enabled = true,
-        label   = 'RANDOM',
+    -- How the opposing side is put together.
+    teamMatching = {
+        -- 'any'      : the enemy team is assembled from whatever is waiting —
+        --              another party, two solos, a duo plus a solo, and so on.
+        -- 'fullTeam' : a complete party only ever faces another complete party.
+        --              A duo searching 2V2 waits for a second duo searching
+        --              2V2 instead of being handed two solo players, and solos
+        --              keep matching among themselves as usual.
+        mode = 'fullTeam',
 
-        -- Candidate modes for a random search
-        modes = { '1v1', '2v2', '3v3', '4v4', '5v5' },
-
-        -- true  : only modes whose team size equals the party size
-        -- false : every candidate mode that can fit the party
-        respectPartySize = false
+        -- If no matching full team turns up within this many seconds, the
+        -- party is matched the normal way instead of waiting forever.
+        -- 0 = never fall back, keep waiting for a real team.
+        fallbackAfter = 60
     }
 }
 
