@@ -36,6 +36,7 @@
 
   --r:10px;
   --f:'Rajdhani','Bahnschrift','DIN Alternate','Segoe UI',system-ui,sans-serif;
+  --f-ar:'Segoe UI','Tahoma','Noto Naskh Arabic','Arial',sans-serif;
   --ease:cubic-bezier(.22,.61,.36,1);
 }
 
@@ -209,7 +210,9 @@ h1,h2,h3,h4{font-weight:700}
 .hitmarker i:nth-child(4){bottom:3px;right:0;transform:rotate(45deg)}
 .hitmarker.head i{background:var(--red);height:3px}
 
-.toasts{position:absolute;top:22px;right:22px;display:flex;flex-direction:column;gap:7px;align-items:flex-end}
+#toasts{position:fixed;top:22px;right:22px;z-index:90;display:flex;flex-direction:column;gap:7px;
+  align-items:flex-end;pointer-events:none}
+.toasts .toast{pointer-events:auto}
 .toast{min-width:240px;max-width:350px;padding:10px 15px;border-radius:9px;pointer-events:auto;
   background:rgba(14,14,18,.96);border:1px solid var(--edge-soft);border-left:3px solid var(--red);
   animation:tIn .2s var(--ease)}
@@ -242,6 +245,8 @@ h1,h2,h3,h4{font-weight:700}
 .dlg-input input{flex:1;background:none;border:0;outline:none;font-size:13px}
 .dlg-input input::placeholder{color:var(--dim-2)}
 .dlg-foot{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px 16px}
+.dlg-text{font-size:13px;line-height:1.55;color:var(--dim);margin-bottom:12px}
+.dlg-text b{color:var(--text)}
 
 /* match found */
 .found{position:relative;text-align:center;padding:44px 70px;border-radius:14px;
@@ -391,6 +396,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
   background:var(--panel-2);border:1px solid var(--edge);color:var(--text);transition:.15s}
 .sqbtn svg{width:15px;height:15px}
 .sqbtn:hover{border-color:var(--red);color:var(--red);background:var(--red-soft)}
+.sqbtn.on{border-color:var(--red);color:#fff;background:linear-gradient(180deg,var(--red),var(--red-2))}
 .sqbtn.sm{width:34px;height:34px}
 .sqbtn.sm svg{width:13px;height:13px}
 
@@ -832,3 +838,56 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
   body{font-size:18px}
   .shell{width:min(2000px,88vw)}
 }
+
+
+/* ==========================================================================
+   ARABIC / RTL
+   Latin letter-spacing ruins Arabic word shapes, so it is removed and the
+   layout is mirrored where direction actually matters.
+   ========================================================================== */
+html[dir="rtl"] body,
+html[dir="rtl"] input,
+html[dir="rtl"] button,
+html[dir="rtl"] select{font-family:var(--f-ar)}
+
+html[dir="rtl"] *{letter-spacing:normal !important}
+html[dir="rtl"] .hd-title{letter-spacing:.06em !important}
+
+html[dir="rtl"] .idcard{flex-direction:row-reverse;text-align:right}
+html[dir="rtl"] .id-rank{flex-direction:row-reverse}
+html[dir="rtl"] .id-xp-row{flex-direction:row-reverse}
+html[dir="rtl"] .hd-actions{flex-direction:row-reverse}
+
+html[dir="rtl"] .searchdock{left:26px;right:auto;flex-direction:row-reverse}
+html[dir="rtl"] .sd-text{align-items:flex-end}
+html[dir="rtl"] .killfeed{left:30px;right:auto;align-items:flex-start}
+html[dir="rtl"] .killfeed.left{right:30px;left:auto;align-items:flex-end}
+html[dir="rtl"] #toasts{left:22px;right:auto;align-items:flex-start}
+html[dir="rtl"] .toast{border-left:0;border-right:3px solid var(--red)}
+html[dir="rtl"] .toast.success{border-right-color:var(--win)}
+html[dir="rtl"] .toast.warning{border-right-color:var(--gold)}
+html[dir="rtl"] .toast.error{border-right-color:var(--lose)}
+
+html[dir="rtl"] .act{grid-template-columns:auto 1fr 210px}
+html[dir="rtl"] .adm-target{direction:rtl}
+html[dir="rtl"] .xsel-btn{flex-direction:row-reverse;text-align:right}
+html[dir="rtl"] .xsel-opt{flex-direction:row-reverse;text-align:right}
+html[dir="rtl"] .cm-title{flex-direction:row-reverse}
+html[dir="rtl"] .cm-title .count{margin-left:0;margin-right:auto}
+html[dir="rtl"] .fld label{flex-direction:row-reverse}
+html[dir="rtl"] .mini.right{margin-left:0;margin-right:auto}
+html[dir="rtl"] .slot-nums{flex-direction:row-reverse}
+html[dir="rtl"] .lb-head span:not(:nth-child(2)),
+html[dir="rtl"] .brow span:not(.who):not(.pos){text-align:center}
+html[dir="rtl"] .brow .who{flex-direction:row-reverse;text-align:right}
+html[dir="rtl"] .arow{flex-direction:row-reverse;text-align:right}
+html[dir="rtl"] .cm-slot{flex-direction:row-reverse;text-align:right}
+html[dir="rtl"] .hrow{direction:rtl}
+html[dir="rtl"] .train-prompt{flex-direction:row-reverse}
+html[dir="rtl"] .tb-stats{flex-direction:row-reverse}
+
+/* numbers stay left to right inside Arabic text */
+html[dir="rtl"] .sd-time,
+html[dir="rtl"] .hud-mid,
+html[dir="rtl"] .hscore,
+html[dir="rtl"] .code{direction:ltr}

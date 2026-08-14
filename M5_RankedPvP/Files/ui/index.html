@@ -65,7 +65,7 @@
   <div id="searchdock" class="searchdock hidden">
     <span class="sd-orb"></span>
     <div class="sd-text">
-      <b>SEARCHING</b>
+      <b data-i18n="SEARCHING">SEARCHING</b>
       <span id="sd-mode">1V1</span>
     </div>
     <div class="sd-time" id="sd-time">0:00</div>
@@ -142,8 +142,10 @@
   </div>
 
   <div id="hitmarker" class="hitmarker hidden"><i></i><i></i><i></i><i></i></div>
-  <div id="toasts" class="toasts"></div>
 </div>
+
+<!-- Toasts sit above the hub and every modal, never behind them -->
+<div id="toasts" class="toasts"></div>
 
 <!-- ==================================================================== -->
 <!-- MODALS                                                                -->
@@ -167,10 +169,28 @@
     </div>
   </div>
 
+  <!-- Generic prompt / confirm — CEF's window.prompt freezes the NUI -->
+  <div id="modal-prompt" class="modal hidden">
+    <div class="dlg">
+      <div class="dlg-head"><span class="dlg-dot"></span><span id="prompt-title">M5</span></div>
+      <div class="dlg-body">
+        <div class="dlg-text hidden" id="prompt-text"></div>
+        <div class="dlg-input hidden" id="prompt-wrap">
+          <svg class="dlg-ico"><use href="#i-login"/></svg>
+          <input id="prompt-input" autocomplete="off" />
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn ghost" id="prompt-cancel" data-i18n="Cancel">Cancel</button>
+        <button class="btn" id="prompt-ok" data-i18n="Confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Match found -->
   <div id="modal-found" class="modal hidden">
     <div class="found">
-      <div class="found-tag">MATCH FOUND</div>
+      <div class="found-tag" data-i18n="MATCH FOUND">MATCH FOUND</div>
       <div class="found-mode" id="found-mode">RANKED</div>
       <div class="found-ring">
         <svg viewBox="0 0 120 120"><circle class="rbg" cx="60" cy="60" r="52"/><circle class="rfg" id="found-ring" cx="60" cy="60" r="52"/></svg>
@@ -178,19 +198,19 @@
       </div>
       <div class="found-ready"><b id="found-accepted">0</b> / <span id="found-total">2</span> READY</div>
       <div class="found-actions">
-        <button class="btn big" id="btn-accept">ACCEPT</button>
-        <button class="btn ghost" id="btn-decline">DECLINE</button>
+        <button class="btn big" id="btn-accept" data-i18n="ACCEPT">ACCEPT</button>
+        <button class="btn ghost" id="btn-decline" data-i18n="DECLINE">DECLINE</button>
       </div>
-      <div class="found-wait hidden" id="found-waiting">WAITING FOR OTHER PLAYERS…</div>
+      <div class="found-wait hidden" id="found-waiting" data-i18n="WAITING FOR OTHER PLAYERS…">WAITING FOR OTHER PLAYERS…</div>
     </div>
   </div>
 
   <!-- Map vote -->
   <div id="modal-mapvote" class="modal hidden">
     <div class="mapvote">
-      <div class="mv-head"><span class="mv-tag">MAP VOTE</span><span class="mv-timer" id="mv-timer">20</span></div>
+      <div class="mv-head"><span class="mv-tag" data-i18n="MAP VOTE">MAP VOTE</span><span class="mv-timer" id="mv-timer">20</span></div>
       <div class="mv-grid" id="mv-grid"></div>
-      <div class="mv-foot" id="mv-foot">SELECT A MAP</div>
+      <div class="mv-foot" id="mv-foot" data-i18n="SELECT A MAP">SELECT A MAP</div>
     </div>
   </div>
 
@@ -266,8 +286,9 @@
       <h1 class="hd-title">MATCHMAKING</h1>
 
       <div class="hd-actions">
-        <button class="sqbtn hidden" id="btn-back" data-action="back"><svg><use href="#i-back"/></svg></button>
-        <button class="sqbtn" data-action="close"><svg><use href="#i-x"/></svg></button>
+        <button class="sqbtn hidden" id="btn-back" data-action="back" title="Back"><svg><use href="#i-back"/></svg></button>
+        <button class="sqbtn" id="btn-settings" data-page="settings" title="Settings"><svg><use href="#i-cog"/></svg></button>
+        <button class="sqbtn" data-action="close" title="Close"><svg><use href="#i-x"/></svg></button>
       </div>
     </header>
 
@@ -285,7 +306,7 @@
         <div class="modebar wide" id="lb-tabs"></div>
         <div class="lb">
           <aside class="lb-side">
-            <div class="lb-side-head">YOUR STATISTICS</div>
+            <div class="lb-side-head" data-i18n="YOUR STATISTICS">YOUR STATISTICS</div>
             <div class="lb-me" id="lb-me"></div>
             <div class="lb-stats" id="lb-stats"></div>
           </aside>
@@ -309,10 +330,10 @@
 
           <!-- left: settings -->
           <aside class="cm-left">
-            <div class="cm-title"><svg><use href="#i-sliders"/></svg>MATCH SETTINGS</div>
+            <div class="cm-title"><svg><use href="#i-sliders"/></svg><span data-i18n="MATCH SETTINGS">MATCH SETTINGS</span></div>
 
             <div class="fld">
-              <label>GAME MODE</label>
+              <label data-i18n="GAME MODE">GAME MODE</label>
               <div class="stepper">
                 <button data-step="mode:-1"><svg><use href="#i-minus"/></svg></button>
                 <b id="cm-mode">1v1</b>
@@ -321,7 +342,7 @@
             </div>
 
             <div class="fld">
-              <label>ROUNDS</label>
+              <label data-i18n="ROUNDS">ROUNDS</label>
               <div class="stepper">
                 <button data-step="rounds:-1"><svg><use href="#i-minus"/></svg></button>
                 <b id="cm-rounds">7</b>
@@ -330,7 +351,7 @@
             </div>
 
             <div class="fld">
-              <label>MATCH TYPE</label>
+              <label data-i18n="MATCH TYPE">MATCH TYPE</label>
               <div class="pills" id="cm-types"></div>
             </div>
 
@@ -342,12 +363,12 @@
             </div>
 
             <div class="fld row">
-              <label>ARMOR</label>
+              <label data-i18n="ARMOR">ARMOR</label>
               <label class="sw"><input type="checkbox" id="cm-armor"/><i></i></label>
             </div>
 
             <div class="fld row">
-              <label>HEADSHOT ONLY</label>
+              <label data-i18n="HEADSHOT ONLY">HEADSHOT ONLY</label>
               <label class="sw"><input type="checkbox" id="cm-hsonly"/><i></i></label>
             </div>
           </aside>
@@ -363,7 +384,7 @@
             </div>
 
             <div class="cm-panel">
-              <div class="cm-panel-head"><svg><use href="#i-map"/></svg>SELECT MAP <em class="dot"></em></div>
+              <div class="cm-panel-head"><svg><use href="#i-map"/></svg><span data-i18n="SELECT MAP">SELECT MAP</span> <em class="dot"></em></div>
               <div class="mapgrid" id="cm-maps"></div>
               <div class="pager" id="cm-pager"></div>
             </div>
@@ -382,15 +403,15 @@
             </div>
 
             <div class="codebox">
-              <span class="code-lbl">Room Code</span>
+              <span class="code-lbl" data-i18n="Room Code">Room Code</span>
               <div class="code" id="cm-code">- - - -</div>
               <button class="mini" data-action="cm-copy"><svg><use href="#i-copy"/></svg> نسخ</button>
               <button class="mini" data-action="cm-chat"><svg><use href="#i-chat"/></svg></button>
             </div>
 
-            <button class="btn wide" data-action="cm-create"><svg><use href="#i-plus"/></svg> CREATE ROOM</button>
-            <button class="btn ghost wide" data-action="cm-joincode"><svg><use href="#i-login"/></svg> JOIN CODE</button>
-            <button class="btn ghost wide hidden" id="cm-leave" data-action="cm-leave">LEAVE ROOM</button>
+            <button class="btn wide" data-action="cm-create"><svg><use href="#i-plus"/></svg> <span data-i18n="CREATE ROOM">CREATE ROOM</span></button>
+            <button class="btn ghost wide" data-action="cm-joincode"><svg><use href="#i-login"/></svg> <span data-i18n="JOIN CODE">JOIN CODE</span></button>
+            <button class="btn ghost wide hidden" id="cm-leave" data-action="cm-leave"><span data-i18n="LEAVE ROOM">LEAVE ROOM</span></button>
           </aside>
         </div>
       </section>
@@ -429,16 +450,15 @@
 
     <!-- ---------- footer ---------- -->
     <footer class="ft">
-      <button class="tab active" data-page="ranked"><svg><use href="#i-ranked"/></svg>Ranked</button>
-      <button class="tab" data-page="leaderboard"><svg><use href="#i-board"/></svg>Leaderboard</button>
-      <button class="tab" data-page="custom"><svg><use href="#i-custom"/></svg>Custom Match</button>
-      <button class="tab more" data-page="profile"><svg><use href="#i-user"/></svg>Profile</button>
-      <button class="tab more" data-page="history"><svg><use href="#i-clock"/></svg>History</button>
-      <button class="tab more" data-page="rewards"><svg><use href="#i-gift"/></svg>Rewards</button>
-      <button class="tab more" data-page="training"><svg><use href="#i-target"/></svg>Training</button>
-      <button class="tab more" data-page="settings"><svg><use href="#i-cog"/></svg>Settings</button>
-      <button class="tab more admin-only hidden" data-page="admin"><svg><use href="#i-shield"/></svg>Admin</button>
-      <button class="tab start" id="btn-start"><svg><use href="#i-play"/></svg>START</button>
+      <button class="tab active" data-page="ranked"><svg><use href="#i-ranked"/></svg><span data-i18n="Ranked">Ranked</span></button>
+      <button class="tab" data-page="leaderboard"><svg><use href="#i-board"/></svg><span data-i18n="Leaderboard">Leaderboard</span></button>
+      <button class="tab" data-page="custom"><svg><use href="#i-custom"/></svg><span data-i18n="Custom Match">Custom Match</span></button>
+      <button class="tab more" data-page="profile"><svg><use href="#i-user"/></svg><span data-i18n="Profile">Profile</span></button>
+      <button class="tab more" data-page="history"><svg><use href="#i-clock"/></svg><span data-i18n="History">History</span></button>
+      <button class="tab more" data-page="rewards"><svg><use href="#i-gift"/></svg><span data-i18n="Rewards">Rewards</span></button>
+      <button class="tab more" data-page="training"><svg><use href="#i-target"/></svg><span data-i18n="Training">Training</span></button>
+      <button class="tab more admin-only hidden" data-page="admin"><svg><use href="#i-shield"/></svg><span data-i18n="Admin">Admin</span></button>
+      <button class="tab start" id="btn-start"><svg><use href="#i-play"/></svg><span data-i18n="START">START</span></button>
     </footer>
 
   </div>

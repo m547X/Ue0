@@ -44,6 +44,7 @@ const DEFAULTS = {
 const S = {
   boot: null,
   theme: null,
+  lang: 'en',
   settings: {},
   page: 'ranked',
 
@@ -138,6 +139,124 @@ function tierColor(rankId) {
   return r ? r.color : '#5A616D';
 }
 
+/* -------------------------------------------------------------------- i18n */
+const I18N = {
+  ar: {
+    // chrome
+    'MATCHMAKING': 'المطابقة', 'PROFILE': 'الملف الشخصي', 'MATCH HISTORY': 'سجل المباريات',
+    'REWARDS': 'المكافآت', 'TRAINING': 'التدريب', 'SETTINGS': 'الإعدادات',
+    'ADMIN CONTROL': 'لوحة الإدارة',
+    'Ranked': 'المصنّف', 'Leaderboard': 'المتصدرون', 'Custom Match': 'مباراة مخصصة',
+    'Profile': 'الملف', 'History': 'السجل', 'Rewards': 'المكافآت',
+    'Training': 'التدريب', 'Settings': 'الإعدادات', 'Admin': 'الإدارة',
+    'START': 'ابدأ', 'CANCEL': 'إلغاء', 'Cancel': 'إلغاء', 'Confirm': 'تأكيد',
+    'Back': 'رجوع', 'Close': 'إغلاق',
+
+    // ranked / queue
+    'SEARCHING': 'جاري البحث', 'READY': 'جاهز', 'NOT READY': 'غير جاهز',
+    'MATCH FOUND': 'تم إيجاد مباراة', 'ACCEPT': 'قبول', 'DECLINE': 'رفض',
+    'WAITING FOR OTHER PLAYERS…': 'بانتظار بقية اللاعبين…',
+    'READY': 'جاهز', 'MAP VOTE': 'تصويت الخريطة', 'SELECT A MAP': 'اختر خريطة',
+    'QUEUE': 'الطابور', 'PARTY': 'المجموعة', 'PARTY INVITE': 'دعوة مجموعة',
+    'Unranked': 'بدون رتبة',
+
+    // custom match
+    'MATCH SETTINGS': 'إعدادات المباراة', 'GAME MODE': 'نمط اللعب', 'ROUNDS': 'الجولات',
+    'MATCH TYPE': 'نوع المباراة', 'WEAPONS': 'الأسلحة', 'ARMOR': 'الدرع',
+    'HEADSHOT ONLY': 'هيدشوت فقط', 'SELECT MAP': 'اختر الخريطة',
+    'Room Code': 'كود الغرفة', 'CREATE ROOM': 'إنشاء غرفة', 'JOIN CODE': 'دخول بكود',
+    'LEAVE ROOM': 'مغادرة الغرفة', 'START MATCH': 'ابدأ المباراة',
+    'APPLY SETTINGS': 'حفظ الإعدادات', 'LOCK': 'قفل', 'UNLOCK': 'فتح',
+    'SWAP': 'تبديل', 'KICK': 'طرد', 'EMPTY': 'فارغ', 'HOST': 'المضيف',
+    'TEAM A': 'الفريق أ', 'TEAM B': 'الفريق ب',
+    'ROOM CODE': 'كود الغرفة', 'CUSTOM GAME': 'مباراة مخصصة',
+    'Enter the room code': 'أدخل كود الغرفة',
+    'Share the room code with your friends.': 'شارك كود الغرفة مع أصدقائك.',
+
+    // leaderboard / profile
+    'YOUR STATISTICS': 'إحصائياتك', 'PLAYER': 'اللاعب', 'POINTS': 'النقاط',
+    'WIN': 'فوز', 'TOTAL KILL': 'مجموع القتل', 'DEATH': 'الوفيات', 'K/D': 'ن/و',
+    'WIN GAME': 'مباريات فائزة', 'TOTAL GAME': 'مجموع المباريات',
+    'KILL SCORE': 'نقاط القتل', 'DEATH SCORE': 'نقاط الوفاة', 'K/D RATIO': 'معدل ن/و',
+    'PAGE': 'صفحة', 'PREV': 'السابق', 'NEXT': 'التالي',
+    'CAREER STATISTICS': 'إحصائيات المسيرة', 'TITLES': 'الألقاب',
+    'ACHIEVEMENTS': 'الإنجازات', 'UNLOCKED': 'مفتوح', 'LOCKED': 'مقفل',
+    'VICTORY': 'فوز', 'DEFEAT': 'خسارة', 'DRAW': 'تعادل',
+
+    // training
+    'AIM TRAINING': 'تدريب التصويب', 'HEADSHOT TRAINING': 'تدريب الهيدشوت',
+    'FREE RANGE': 'ميدان حر', 'ENTER': 'دخول', 'SWITCH': 'تبديل',
+    'EXIT TRAINING': 'الخروج من التدريب', 'HITS': 'إصابات', 'HEADSHOTS': 'هيدشوت',
+
+    // admin
+    'MONITOR': 'مراقبة', 'MATCHES': 'المباريات', 'POINTS': 'النقاط',
+    'PUNISH': 'العقوبات', 'SYSTEM': 'النظام', 'REFRESH': 'تحديث',
+    'TARGET PLAYER': 'اللاعب المستهدف', 'REASON': 'السبب', 'STATUS': 'الحالة',
+    'LOAD': 'تحميل', 'no player loaded': 'لم يُحمَّل لاعب',
+    'ADMIN': 'الإدارة', 'APPLY': 'تنفيذ',
+
+    // toasts
+    'A reason is required for this action.': 'هذا الإجراء يتطلب سببًا.',
+    'Enter a player id or name first.': 'أدخل رقم أو اسم اللاعب أولًا.',
+    'Action applied.': 'تم تنفيذ الإجراء.',
+    'ELIMINATED': 'تم إقصاؤك', 'SURRENDER': 'استسلام'
+  }
+};
+
+function t(str) {
+  if (S.lang !== 'ar') return str;
+  const d = I18N.ar;
+  return (d && d[str]) || str;
+}
+
+/** Re-labels the static markup and flips direction. */
+function applyLanguage(lang) {
+  S.lang = (lang === 'ar') ? 'ar' : 'en';
+  document.documentElement.setAttribute('lang', S.lang);
+  document.documentElement.setAttribute('dir', S.lang === 'ar' ? 'rtl' : 'ltr');
+
+  document.querySelectorAll('[data-i18n]').forEach((n) => {
+    n.textContent = t(n.dataset.i18n);
+  });
+
+  // pages carry translated titles too
+  const title = document.querySelector('.hd-title');
+  if (title) title.textContent = t(PAGE_TITLES[S.page] || 'MATCHMAKING');
+}
+
+/* --------------------------------------------------------- prompt / confirm */
+/* CEF's window.prompt and window.confirm block the render loop and freeze the
+   whole NUI, so both are replaced by this dialog. */
+let promptResolve = null;
+
+function closePrompt() {
+  $('modal-prompt').classList.add('hidden');
+  promptResolve = null;
+}
+
+function askInput(title, placeholder, onOk) {
+  const modal = $('modal-prompt');
+  $('prompt-title').textContent = t(title);
+  $('prompt-text').classList.add('hidden');
+  $('prompt-wrap').classList.remove('hidden');
+  const input = $('prompt-input');
+  input.value = '';
+  input.placeholder = t(placeholder || '');
+  modal.classList.remove('hidden');
+  promptResolve = (ok) => { if (ok) onOk(input.value.trim()); };
+  setTimeout(() => input.focus(), 40);
+}
+
+function askConfirm(title, text, onOk) {
+  const modal = $('modal-prompt');
+  $('prompt-title').textContent = t(title);
+  $('prompt-text').textContent = t(text || '');
+  $('prompt-text').classList.remove('hidden');
+  $('prompt-wrap').classList.add('hidden');
+  modal.classList.remove('hidden');
+  promptResolve = (ok) => { if (ok) onOk(); };
+}
+
 /* ---------------------------------------------------------- custom select */
 /* Native <select> popups cannot be styled inside CEF, so each one is kept in
    the DOM (so .value still works everywhere) and driven by a styled control. */
@@ -219,8 +338,9 @@ function showPage(page) {
   const target = $('pg-' + page);
   if (target) target.classList.add('active');
   document.querySelectorAll('.ft .tab').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
+  $('btn-settings').classList.toggle('on', page === 'settings');
 
-  document.querySelector('.hd-title').textContent = PAGE_TITLES[page] || 'MATCHMAKING';
+  document.querySelector('.hd-title').textContent = t(PAGE_TITLES[page] || 'MATCHMAKING');
   $('btn-start').classList.toggle('hidden', page !== 'ranked');
   $('btn-back').classList.toggle('hidden', !(page === 'custom' && S.room));
 
@@ -261,6 +381,7 @@ function renderBoot(data) {
   if (!S.cm.weapons.length) S.cm.weapons = (d.weapons || []).slice();
   if (!S.cm.map && data.maps && data.maps.length) S.cm.map = data.maps[0].id;
 
+  applyLanguage(S.settings.language || S.lang);
   renderModeTabs();
   renderSlots();
   renderCustom();
@@ -374,7 +495,7 @@ function renderSlots() {
       <div class="slot-top">
         <div class="slot-av">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
-        <div class="slot-ready ${m.ready ? 'on' : ''}">${m.ready ? 'READY' : 'NOT READY'}</div>
+        <div class="slot-ready ${m.ready ? 'on' : ''}">${esc(t(m.ready ? 'READY' : 'NOT READY'))}</div>
       </div>
       <div class="slot-foot">
         <div class="slot-crest">${crest(tier, color)}</div>
@@ -414,8 +535,9 @@ function renderQueue(q) {
 
   const start = $('btn-start');
   start.classList.toggle('searching', searching);
-  start.innerHTML = searching ? '<svg><use href="#i-x"/></svg>CANCEL'
-                              : '<svg><use href="#i-play"/></svg>START';
+  start.innerHTML = searching
+    ? `<svg><use href="#i-x"/></svg>${esc(t('CANCEL'))}`
+    : `<svg><use href="#i-play"/></svg>${esc(t('START'))}`;
 
   $('searchdock').classList.toggle('hidden', !searching);
   if (!searching) { S.queue.elapsed = 0; return; }
@@ -706,7 +828,7 @@ function crestInline(tier, color) {
 }
 
 function renderBoard(d) {
-  $('lb-page').textContent = `PAGE ${d.page || 1}`;
+  $('lb-page').textContent = `${t('PAGE')} ${d.page || 1}`;
   const rows = d.rows || [];
   const me = S.boot && S.boot.player.userId;
   const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.lb.mode);
@@ -726,7 +848,7 @@ function renderBoard(d) {
     ['K/D RATIO', st.kd], ['POINTS', num(st.points)]
   ] : [];
   $('lb-stats').innerHTML = cells.map(([l, v]) =>
-    `<div class="lb-stat"><label>${l}</label><b>${esc(v)}</b></div>`).join('');
+    `<div class="lb-stat"><label>${esc(t(l))}</label><b>${esc(v)}</b></div>`).join('');
 
   const body = $('lb-body');
   body.innerHTML = '';
@@ -815,7 +937,7 @@ function renderProfile() {
 
 /* =============================================================== HISTORY */
 function renderHistory(rows, page) {
-  $('hist-page').textContent = `PAGE ${page || 1}`;
+  $('hist-page').textContent = `${t('PAGE')} ${page || 1}`;
   const host = $('history-list');
   host.innerHTML = '';
   if (!rows || !rows.length) { host.appendChild(el('div', 'empty', 'NO MATCHES PLAYED YET')); return; }
@@ -913,9 +1035,9 @@ function renderTraining() {
   const host = $('traingrid');
   const active = S.training;
   const modes = [
-    { kind: 'aim', label: 'AIM TRAINING', desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
-    { kind: 'headshot', label: 'HEADSHOT TRAINING', desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
-    { kind: 'range', label: 'FREE RANGE', desc: 'Open range with a full loadout. No targets, no timer.' }
+    { kind: 'aim', label: t('AIM TRAINING'), desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
+    { kind: 'headshot', label: t('HEADSHOT TRAINING'), desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
+    { kind: 'range', label: t('FREE RANGE'), desc: 'Open range with a full loadout. No targets, no timer.' }
   ];
   host.innerHTML = '';
 
@@ -937,7 +1059,7 @@ function renderTraining() {
   modes.forEach((m) => {
     const c = el('div', 'traincard',
       `<div><b>${m.label}</b><p>${m.desc}</p></div>
-       <button class="btn">${active ? 'SWITCH' : 'ENTER'}</button>`);
+       <button class="btn">${esc(t(active ? 'SWITCH' : 'ENTER'))}</button>`);
     c.onclick = () => post('action', { action: 'training', enable: true, kind: m.kind });
     host.appendChild(c);
   });
@@ -995,6 +1117,11 @@ function renderSettings() {
         if (lbl) lbl.textContent = value;
       } else value = input.value;
       S.settings[key] = value;
+      if (key === 'language') {
+        S.langPinned = true;
+        try { localStorage.setItem('m5rp_lang_pinned', '1'); } catch (err) {}
+        applyLanguage(value);
+      }
       saveSettings();
     };
     input.oninput = h; input.onchange = h;
@@ -1047,7 +1174,9 @@ function applyTheme(theme) {
 function loadSettings() {
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem('m5rp_settings') || '{}'); } catch (e) {}
+  try { S.langPinned = localStorage.getItem('m5rp_lang_pinned') === '1'; } catch (e) {}
   S.settings = Object.assign({}, DEFAULTS, stored);
+  applyLanguage(S.settings.language || 'en');
   applySettings();
 }
 function saveSettings() {
@@ -1057,6 +1186,7 @@ function saveSettings() {
 }
 function applySettings() {
   const r = document.documentElement;
+  if (S.settings.language && S.settings.language !== S.lang) applyLanguage(S.settings.language);
   if (S.settings.teamColorA) r.style.setProperty('--team-a', S.settings.teamColorA);
   if (S.settings.teamColorB) r.style.setProperty('--team-b', S.settings.teamColorB);
   $('killfeed').classList.toggle('left', S.settings.killFeedPos === 'left');
@@ -1102,7 +1232,13 @@ function admRun(action, extra) {
     if (reason.length < 3) { toast('warning', 'A reason is required for this action.', 'ADMIN'); return; }
     payload.reason = reason;
   }
-  if (def.confirm && !confirm(`${def.label || action}\n\nConfirm this action?`)) return;
+  if (def.confirm) {
+    askConfirm(def.label || action, 'Confirm this action?', () => {
+      Sfx.play('click');
+      post('admin', payload);
+    });
+    return;
+  }
 
   Sfx.play('click');
   post('admin', payload);
@@ -1121,12 +1257,12 @@ function renderAdminTabs() {
   host.innerHTML = '';
   groups.forEach((g) => {
     const b = el('button', 'adm-tab' + (g.id === S.admTab ? ' active' : ''),
-      `<svg><use href="${g.icon}"/></svg>${g.label}`);
+      `<svg><use href="${g.icon}"/></svg>${esc(t(g.label))}`);
     b.onclick = () => { S.admTab = g.id; Sfx.play('click'); renderAdmin(S.admin); };
     host.appendChild(b);
   });
 
-  const refresh = el('button', 'adm-tab', '<svg><use href="#i-back"/></svg>REFRESH');
+  const refresh = el('button', 'adm-tab', `<svg><use href="#i-back"/></svg>${esc(t('REFRESH'))}`);
   refresh.style.marginLeft = 'auto';
   refresh.onclick = () => post('admin', { action: 'dashboard' });
   host.appendChild(refresh);
@@ -1144,17 +1280,17 @@ function renderAdmin(d) {
   /* ---------- shared target bar ---------- */
   const targetBar = `
     <div class="adm-target">
-      <div><span class="lbl">TARGET PLAYER</span>
+      <div><span class="lbl">${esc(t('TARGET PLAYER'))}</span>
         <input class="inp" id="adm-target" placeholder="ID or name" value="${esc(S.admTargetValue || '')}"/></div>
-      <div><span class="lbl">REASON</span>
+      <div><span class="lbl">${esc(t('REASON'))}</span>
         <input class="inp" id="adm-reason" placeholder="Required for most actions"/></div>
-      <div><span class="lbl">STATUS</span>
+      <div><span class="lbl">${esc(t('STATUS'))}</span>
         <div class="who ${S.admLookup ? 'on' : ''}" id="adm-who">
           <span class="dot"></span>
           ${S.admLookup
             ? `<b>${esc(S.admLookup.name)}</b> · ${esc(S.admLookup.rank)} · ${num(S.admLookup.rp)} RP`
-            : 'no player loaded'}
-          <button class="mini" data-adm="lookupInput" style="margin-left:6px">LOAD</button>
+            : esc(t('no player loaded'))}
+          <button class="mini" data-adm="lookupInput" style="margin-left:6px">${esc(t('LOAD'))}</button>
         </div></div>
     </div>`;
 
@@ -1334,7 +1470,7 @@ function admAction(btn) {
 
     case 'lookup':        post('admin', { action: 'playerLookup', target: btn.dataset.target }); break;
     case 'lookupInput':
-      if (!target) { toast('warning', 'Enter a player id or name first.', 'ADMIN'); break; }
+      if (!target) { toast('warning', t('Enter a player id or name first.'), t('ADMIN')); break; }
       post('admin', { action: 'playerLookup', target });
       break;
 
@@ -1576,6 +1712,12 @@ window.addEventListener('message', (e) => {
     case 'open':
       if (!Object.keys(S.settings).length) loadSettings();
       if (d.theme) applyTheme(d.theme);
+      // the client config supplies the default language until the player
+      // chooses one in Settings
+      if (d.language && !S.langPinned) {
+        S.settings.language = d.language;
+        applyLanguage(d.language);
+      }
       $('app').classList.remove('hidden');
       if (!d.silent) Sfx.play('open');
       showPage(d.page && $('pg-' + d.page) ? d.page : (S.page || 'ranked'));
@@ -1584,6 +1726,7 @@ window.addEventListener('message', (e) => {
     case 'close':
       $('app').classList.add('hidden');
       $('modal-invite').classList.add('hidden');
+      closePrompt();
       Sfx.play('close');
       break;
 
@@ -1623,7 +1766,7 @@ window.addEventListener('message', (e) => {
           }
           if (S.page === 'admin') renderAdmin(S.admin); else showPage('profile');
         }
-        else { toast('success', 'Action applied.', 'ADMIN'); post('admin', { action: 'dashboard' }); }
+        else { toast('success', t('Action applied.'), t('ADMIN')); post('admin', { action: 'dashboard' }); }
       }
       break;
     }
@@ -1742,11 +1885,18 @@ $('btn-accept').onclick = () => {
 $('btn-decline').onclick = () => {
   if (S.found) { post('ready', { id: S.found.id, accept: false }); renderFound(null); }
 };
+$('prompt-ok').onclick = () => { const r = promptResolve; closePrompt(); if (r) r(true); };
+$('prompt-cancel').onclick = () => { const r = promptResolve; closePrompt(); if (r) r(false); };
+$('prompt-input').onkeydown = (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('prompt-ok').click(); }
+  if (e.key === 'Escape') { e.preventDefault(); $('prompt-cancel').click(); }
+};
+
 $('cm-armor').onchange = (e) => { S.cm.armor = e.target.checked; };
 $('cm-hsonly').onchange = (e) => { S.cm.hsOnly = e.target.checked; };
 
 document.addEventListener('click', (e) => {
-  const tab = e.target.closest('.ft .tab[data-page]');
+  const tab = e.target.closest('.ft .tab[data-page], .hd-actions [data-page]');
   if (tab) { Sfx.play('click'); showPage(tab.dataset.page); return; }
 
   const step = e.target.closest('[data-step]');
@@ -1818,14 +1968,15 @@ document.addEventListener('click', (e) => {
         toast('success', `Code ${S.room.code} copied`, 'ROOM CODE');
       }
       break;
-    case 'cm-chat': toast('info', 'Share the room code with your friends.', 'ROOM CODE'); break;
+    case 'cm-chat': toast('info', t('Share the room code with your friends.'), t('ROOM CODE')); break;
     case 'cm-create': post('custom', Object.assign({ action: 'create' }, customPayload())); break;
     case 'cm-leave': post('custom', { action: 'leave' }); break;
-    case 'cm-joincode': {
-      const code = (prompt('Room code:') || '').trim();
-      if (code) post('custom', { action: 'joinCode', code });
+    case 'cm-joincode':
+      askInput('JOIN CODE', 'Enter the room code', (code) => {
+        if (!code) { toast('warning', t('Enter the room code'), t('ROOM CODE')); return; }
+        post('custom', { action: 'joinCode', code: code.toUpperCase() });
+      });
       break;
-    }
 
     case 'lb-prev': if (S.lb.page > 1) { S.lb.page -= 1; fetchBoard(); } break;
     case 'lb-next': S.lb.page += 1; fetchBoard(); break;
@@ -1841,11 +1992,16 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (!$('modal-prompt').classList.contains('hidden')) {
+      const r = promptResolve; closePrompt(); if (r) r(false);
+      return;
+    }
     if (!$('modal-invite').classList.contains('hidden')) { $('modal-invite').classList.add('hidden'); return; }
     if (!$('modal-result').classList.contains('hidden')) $('modal-result').classList.add('hidden');
     post('close');
   }
   if (e.key === 'Enter') {
+    if (!$('modal-prompt').classList.contains('hidden')) return;   // handled by the dialog
     if (!$('modal-invite').classList.contains('hidden')) {
       const v = $('invite-id').value.trim();
       if (v) post('party', { action: 'invite', target: v });
