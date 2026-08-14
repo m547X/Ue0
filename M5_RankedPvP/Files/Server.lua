@@ -1592,6 +1592,10 @@ end
 local Parties = {}  -- [partyId] = party
 local Invites  = {} -- [userId] = { partyId, from, expires }
 
+-- forward declaration: the party code needs the matchmaker (party size drives
+-- the searched mode), and the matchmaker needs the party code back
+local Matchmaker
+
 local PartyMgr = {}
 
 local function partyPayload(party)
@@ -1612,11 +1616,31 @@ local function partyPayload(party)
             }
         end
     end
-    return { id = party.id, leader = party.leader, members = members, searching = party.searching }
+    local size = #party.members
+    return {
+        id = party.id, leader = party.leader, members = members,
+        searching = party.searching,
+        size = size,
+        autoMode = Config.PartyQueue.autoMode and Matchmaker.modeForSize(size) or nil,
+        lockToPartySize = Config.PartyQueue.lockToPartySize
+    }
 end
 
 function PartyMgr.sync(party)
     if not party then return end
+
+    -- the searched mode depends on the party size, so a size change while a
+    -- search is running invalidates it
+    if party.searching and party.lastSize and party.lastSize ~= #party.members then
+        party.searching = false
+        for i = 1, #party.members do
+            if Matchmaker.leave(party.members[i]) then break end
+        end
+        notifyUser(party.leader, 'warning',
+            'Party size changed — the search was cancelled.', 'QUEUE')
+    end
+    party.lastSize = #party.members
+
     local payload = partyPayload(party)
     for i = 1, #party.members do
         local s = srcOf(party.members[i])
@@ -1804,7 +1828,7 @@ local ReadyChecks  = {}   -- [id]   = readyCheck
 local Avoid        = {}   -- [userId] = { [otherId] = expiry }
 local RecentOpp    = {}   -- [userId] = { [otherId] = timestamp }
 
-local Matchmaker = {}
+Matchmaker = {}           -- (forward declared above)
 
 local function modeCfg(mode)
     local m = Config.Modes[mode]
@@ -1872,6 +1896,74 @@ function Matchmaker.canQueue(pd, mode)
     return nil
 end
 
+--- The mode a party of this size should default to (autoMode).
+function Matchmaker.modeForSize(size)
+    for i = 1, #Config.RankedQueueModes do
+        local key = Config.RankedQueueModes[i]
+        local cfg = modeCfg(key)
+        if cfg and cfg.type ~= 'ffa' and cfg.teamSize == size then return key end
+    end
+    return nil
+end
+
+--- Expands the requested selection into the list of modes to search.
+-- Returns list, errorMessage.
+function Matchmaker.resolveModes(request, size)
+    local P = Config.PartyQueue
+    local random = P.randomSearch or {}
+
+    local function fits(cfg)
+        if not cfg or cfg.type == 'ffa' then return cfg ~= nil end
+        if size > cfg.teamSize then return false end          -- party too large
+        if P.lockToPartySize and size ~= cfg.teamSize then return false end
+        return true
+    end
+
+    -- ---- random search --------------------------------------------------
+    if request == 'random' then
+        if not random.enabled then return nil, 'Random search is disabled.' end
+
+        local out = {}
+        for i = 1, #(random.modes or {}) do
+            local key = random.modes[i]
+            local cfg = modeCfg(key)
+            if cfg and inList(Config.RankedQueueModes, key) then
+                local ok
+                if random.respectPartySize then
+                    ok = (cfg.type == 'ffa') or (cfg.teamSize == size)
+                else
+                    ok = (cfg.type == 'ffa') or (size <= cfg.teamSize)
+                end
+                if ok then out[#out + 1] = key end
+            end
+        end
+
+        if #out == 0 then
+            return nil, ('No random mode fits a party of %d.'):format(size)
+        end
+        return out
+    end
+
+    -- ---- explicit mode ---------------------------------------------------
+    local cfg = modeCfg(request)
+    if not cfg then return nil, 'Unknown game mode.' end
+    if not inList(Config.RankedQueueModes, request) then
+        return nil, 'This mode is not available in ranked.'
+    end
+
+    if cfg.type ~= 'ffa' and size > cfg.teamSize then
+        return nil, ('Your party is too large for %s.'):format(cfg.label)
+    end
+    if not fits(cfg) then
+        local suggested = Matchmaker.modeForSize(size)
+        return nil, suggested
+            and ('A party of %d must search %s.'):format(size, (modeCfg(suggested) or {}).label or suggested)
+            or  ('No ranked mode fits a party of %d.'):format(size)
+    end
+
+    return { request }
+end
+
 function Matchmaker.join(userId, mode)
     local pd = Players[userId]
     if not pd then return false, 'Player data unavailable.' end
@@ -1885,17 +1977,14 @@ function Matchmaker.join(userId, mode)
         members = copy(party.members)
     end
 
-    local cfg = modeCfg(mode)
-    if not cfg then return false, 'Unknown game mode.' end
-    if #members > cfg.teamSize then
-        return false, ('Your party is too large for %s.'):format(cfg.label)
-    end
+    local modes, modeErr = Matchmaker.resolveModes(mode, #members)
+    if not modes then return false, modeErr end
 
-    -- Every member must be allowed to queue
+    -- Every member must be allowed to queue for the first mode of the set
     for i = 1, #members do
         local mpd = Players[members[i]]
         if not mpd then return false, 'A party member is not loaded.' end
-        local reason = Matchmaker.canQueue(mpd, mode)
+        local reason = Matchmaker.canQueue(mpd, modes[1])
         if reason then return false, ('%s: %s'):format(mpd.name, reason) end
     end
 
@@ -1920,21 +2009,34 @@ function Matchmaker.join(userId, mode)
         totalRank = totalRank + Players[members[i]].rankId
     end
 
-    local entry = {
-        key      = uid('Q'),
-        mode     = mode,
-        members  = members,
-        partyId  = party and party.id or nil,
-        mmr      = math.floor(totalMMR / #members),
-        rankId   = math.floor(totalRank / #members),
-        joinedAt = now(),
-        joinedMs = ms(),
-        range    = Config.Matchmaking.mmrRangeStart,
-        rankRange= Config.Matchmaking.rankRangeStart
-    }
+    -- One entry per searched mode, all sharing a group key so that filling any
+    -- one of them cancels the rest.
+    local groupKey = uid('G')
+    local joinedAt, joinedMs = now(), ms()
 
-    local list = queueList(mode)
-    list[#list + 1] = entry
+    for i = 1, #modes do
+        local entry = {
+            key       = uid('Q'),
+            mode      = modes[i],
+            groupKey  = groupKey,
+            groupModes= modes,
+            request   = mode,
+            members   = members,
+            partyId   = party and party.id or nil,
+            mmr       = math.floor(totalMMR / #members),
+            rankId    = math.floor(totalRank / #members),
+            joinedAt  = joinedAt,
+            joinedMs  = joinedMs,
+            range     = Config.Matchmaking.mmrRangeStart,
+            rankRange = Config.Matchmaking.rankRangeStart
+        }
+        local list = queueList(modes[i])
+        list[#list + 1] = entry
+    end
+
+    local label = (mode == 'random')
+        and ((Config.PartyQueue.randomSearch or {}).label or 'RANDOM')
+        or (modeCfg(modes[1]) or {}).label or modes[1]
 
     for i = 1, #members do
         local mpd = Players[members[i]]
@@ -1942,8 +2044,8 @@ function Matchmaker.join(userId, mode)
         local s = srcOf(members[i])
         if s then
             TriggerClientEvent('m5rp:cl:queue', s, {
-                state = 'SEARCHING', mode = mode, modeLabel = cfg.label,
-                startedAt = entry.joinedAt
+                state = 'SEARCHING', mode = mode, modeLabel = label,
+                modes = modes, startedAt = joinedAt
             })
         end
     end
@@ -1953,17 +2055,22 @@ function Matchmaker.join(userId, mode)
         PartyMgr.sync(party)
     end
 
-    dbg('queue join: %s (%d members) mode=%s mmr=%d', entry.key, #members, mode, entry.mmr)
+    dbg('queue join: group %s (%d members) modes=%s', groupKey, #members, table.concat(modes, ','))
     return true
 end
 
 function Matchmaker.leave(userId, silent)
-    local mode, entry = Matchmaker.inQueue(userId)
-    if not mode then return false end
+    local _, entry = Matchmaker.inQueue(userId)
+    if not entry then return false end
 
-    local list = queueList(mode)
-    for i = #list, 1, -1 do
-        if list[i].key == entry.key then table.remove(list, i) end
+    -- a random search sits in several queues at once: clear every sibling
+    for _, list in pairs(Queue) do
+        for i = #list, 1, -1 do
+            if list[i].key == entry.key
+               or (entry.groupKey and list[i].groupKey == entry.groupKey) then
+                table.remove(list, i)
+            end
+        end
     end
 
     for i = 1, #entry.members do
@@ -1984,10 +2091,16 @@ end
 
 --- Number of players currently searching (all modes) — displayed in the UI.
 function Matchmaker.searchingCount(mode)
-    local n = 0
+    local n, seen = 0, {}
     for m, list in pairs(Queue) do
         if not mode or m == mode then
-            for i = 1, #list do n = n + #list[i].members end
+            for i = 1, #list do
+                local gk = list[i].groupKey or list[i].key
+                if mode or not seen[gk] then
+                    seen[gk] = true
+                    n = n + #list[i].members
+                end
+            end
         end
     end
     return n
@@ -2093,13 +2206,21 @@ local function tryBuildLobby(mode, cfg)
     return { entries = nil, teams = { teamA, teamB }, ffa = false }
 end
 
---- Removes the given entries from the queue.
+--- Removes the given entries — and every sibling of a random search — from
+--- every queue they sit in.
 local function removeEntries(mode, entries)
-    local list = queueList(mode)
-    local keys = {}
-    for i = 1, #entries do keys[entries[i].key] = true end
-    for i = #list, 1, -1 do
-        if keys[list[i].key] then table.remove(list, i) end
+    local keys, groups = {}, {}
+    for i = 1, #entries do
+        keys[entries[i].key] = true
+        if entries[i].groupKey then groups[entries[i].groupKey] = true end
+    end
+
+    for _, list in pairs(Queue) do
+        for i = #list, 1, -1 do
+            if keys[list[i].key] or (list[i].groupKey and groups[list[i].groupKey]) then
+                table.remove(list, i)
+            end
+        end
     end
 end
 
@@ -2222,10 +2343,16 @@ local function failReadyCheck(rc, declinedBy)
         end
 
         if requeue and entryOk then
-            -- put the entry back with its original queue time so it keeps priority
-            entry.joinedMs = entry.joinedMs
-            local list = queueList(rc.mode)
-            list[#list + 1] = entry
+            -- put the entry back with its original queue time so it keeps
+            -- priority, restoring every mode a random search covered
+            local restore = entry.groupModes or { rc.mode }
+            for _, m in ipairs(restore) do
+                local clone = copy(entry)
+                clone.key  = uid('Q')
+                clone.mode = m
+                queueList(m)[#queueList(m) + 1] = clone
+            end
+
             for _, u in ipairs(entry.members) do
                 local mpd = Players[u]
                 if mpd then mpd.state = 'QUEUE' end
@@ -2302,20 +2429,27 @@ function Matchmaker.tick()
         end
     end
 
-    -- push queue timers to searching players
-    for mode, list in pairs(Queue) do
-        local total = Matchmaker.searchingCount()
+    -- push queue timers to searching players (once per group, not per mode)
+    local total = Matchmaker.searchingCount()
+    local pushed = {}
+    for _, list in pairs(Queue) do
         for i = 1, #list do
             local e = list[i]
-            for _, u in ipairs(e.members) do
-                local s = srcOf(u)
-                if s then
-                    TriggerClientEvent('m5rp:cl:queue', s, {
-                        state = 'SEARCHING', mode = mode,
-                        elapsed = math.floor((ms() - e.joinedMs) / 1000),
-                        searching = total,
-                        estimate = math.max(10, 30 + math.floor(e.range / 12))
-                    })
+            local gk = e.groupKey or e.key
+            if not pushed[gk] then
+                pushed[gk] = true
+                for _, u in ipairs(e.members) do
+                    local s = srcOf(u)
+                    if s then
+                        TriggerClientEvent('m5rp:cl:queue', s, {
+                            state = 'SEARCHING',
+                            mode = e.request or e.mode,
+                            modes = e.groupModes,
+                            elapsed = math.floor((ms() - e.joinedMs) / 1000),
+                            searching = total,
+                            estimate = math.max(10, 30 + math.floor(e.range / 12))
+                        })
+                    end
                 end
             end
         end
@@ -6546,6 +6680,12 @@ function Server_BootPayload(pd)
         rankPath= Config.RankPath,
         modes   = modes,
         allModes= allModes,
+        partyQueue = {
+            autoMode        = Config.PartyQueue.autoMode,
+            lockToPartySize = Config.PartyQueue.lockToPartySize,
+            random          = (Config.PartyQueue.randomSearch or {}).enabled == true,
+            randomLabel     = (Config.PartyQueue.randomSearch or {}).label or 'RANDOM'
+        },
         maps    = maps,
         loadouts= loadouts,
         weaponPresets = weaponPresets,

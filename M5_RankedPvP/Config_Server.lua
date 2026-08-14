@@ -483,6 +483,42 @@ Config.Modes = {
 Config.RankedQueueModes = { '1v1', '2v2', '3v3', '5v5', 'tdm', 'snd' }
 
 -- ============================================================================
+-- 9b. PARTY QUEUE BEHAVIOUR
+-- ============================================================================
+-- Controls how the ranked queue reacts to the size of your party.
+
+Config.PartyQueue = {
+
+    -- The selected mode follows the party size automatically: invite a friend
+    -- while on 1V1 and the queue switches to 2V2, a third makes it 3V3, and so
+    -- on. Set to false to keep whatever the player picked.
+    autoMode = true,
+
+    -- Lock the queue to the mode that matches the party size exactly.
+    --   true  : a party of 2 may only search 2V2
+    --   false : a party of 2 may search 2V2 and anything larger (3V3, 5V5 …),
+    --           and the missing slots are filled by matchmaking
+    lockToPartySize = true,
+
+    -- Modes whose team size is smaller than the party can never be searched,
+    -- regardless of the setting above (a party of 3 cannot play 1V1).
+
+    -- Search several modes at once. The first lobby that fills wins and the
+    -- remaining searches are cancelled automatically.
+    randomSearch = {
+        enabled = true,
+        label   = 'RANDOM',
+
+        -- Candidate modes for a random search
+        modes = { '1v1', '2v2', '3v3', '4v4', '5v5' },
+
+        -- true  : only modes whose team size equals the party size
+        -- false : every candidate mode that can fit the party
+        respectPartySize = false
+    }
+}
+
+-- ============================================================================
 -- 10. LOADOUTS / WEAPON META
 -- ============================================================================
 

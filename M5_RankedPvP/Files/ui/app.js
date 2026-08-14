@@ -267,18 +267,81 @@ function renderBoot(data) {
 }
 
 /* ============================================================ RANKED PAGE */
+/** Party size drives which modes may be searched. */
+function partySize() {
+  return (S.party && S.party.members && S.party.members.length) || 1;
+}
+function modeAllowed(m) {
+  const pq = (S.boot && S.boot.partyQueue) || {};
+  const size = partySize();
+  if (m.type === 'ffa') return true;
+  if (size > m.teamSize) return false;                       // party too large
+  if (pq.lockToPartySize && size !== m.teamSize) return false;
+  return true;
+}
+
 function renderModeTabs() {
   const modes = (S.boot && S.boot.modes) || [];
-  const build = (host, current, onPick) => {
-    host.innerHTML = '';
-    modes.forEach((m) => {
-      const b = el('button', 'mtab' + (m.id === current ? ' active' : ''), esc(m.label));
-      b.onclick = () => { Sfx.play('click'); onPick(m.id); };
-      host.appendChild(b);
-    });
-  };
-  build($('mode-tabs'), S.mode, (id) => { S.mode = id; renderModeTabs(); renderSlots(); });
-  build($('lb-tabs'), S.lb.mode, (id) => { S.lb.mode = id; S.lb.page = 1; renderModeTabs(); fetchBoard(); });
+  const pq = (S.boot && S.boot.partyQueue) || {};
+
+  // ---- ranked tabs: locked modes are shown but not selectable
+  const host = $('mode-tabs');
+  host.innerHTML = '';
+  modes.forEach((m) => {
+    const ok = modeAllowed(m);
+    const b = el('button', 'mtab' + (m.id === S.mode ? ' active' : '') + (ok ? '' : ' locked'),
+      esc(m.label));
+    b.title = ok ? '' : `Your party of ${partySize()} cannot search ${m.label}`;
+    b.onclick = () => {
+      if (!ok) { toast('warning', `A party of ${partySize()} cannot search ${m.label}.`, 'QUEUE'); return; }
+      Sfx.play('click');
+      S.mode = m.id;
+      renderModeTabs();
+      renderSlots();
+    };
+    host.appendChild(b);
+  });
+
+  if (pq.random) {
+    const b = el('button', 'mtab random' + (S.mode === 'random' ? ' active' : ''),
+      `<svg><use href="#i-target"/></svg>${esc(pq.randomLabel || 'RANDOM')}`);
+    b.title = 'Searches several modes at once — the first lobby that fills wins';
+    b.onclick = () => { Sfx.play('click'); S.mode = 'random'; renderModeTabs(); renderSlots(); };
+    host.appendChild(b);
+  }
+
+  // ---- leaderboard tabs stay a plain mode filter
+  const lb = $('lb-tabs');
+  lb.innerHTML = '';
+  modes.forEach((m) => {
+    const b = el('button', 'mtab' + (m.id === S.lb.mode ? ' active' : ''), esc(m.label));
+    b.onclick = () => { Sfx.play('click'); S.lb.mode = m.id; S.lb.page = 1; renderModeTabs(); fetchBoard(); };
+    lb.appendChild(b);
+  });
+}
+
+/** Keeps the selected mode in step with the party size. */
+function syncModeToParty() {
+  const pq = (S.boot && S.boot.partyQueue) || {};
+  if (!pq.autoMode) return;
+  if (S.mode === 'random') return;
+
+  const suggested = (S.party && S.party.autoMode) || null;
+  const size = partySize();
+
+  if (suggested) {
+    if (S.mode !== suggested) {
+      S.mode = suggested;
+      const cfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === suggested);
+      if (cfg && size > 1) toast('info', `Party of ${size} — switched to ${cfg.label}.`, 'QUEUE');
+    }
+  } else {
+    // no exact mode for this size: fall back to the first one that fits
+    const fit = ((S.boot && S.boot.modes) || []).find(modeAllowed);
+    if (fit && !modeAllowed(((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode) || {})) {
+      S.mode = fit.id;
+    }
+  }
 }
 
 /** The party slots. Slot 1 is always you, the rest fill from the party. */
@@ -287,7 +350,8 @@ function renderSlots() {
   const p = S.boot && S.boot.player;
   const max = (S.boot && S.boot.maxParty) || 5;
   const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode);
-  const capacity = Math.min(max, modeCfg ? modeCfg.teamSize : max);
+  // RANDOM can fill every slot; a fixed mode caps at its team size
+  const capacity = (S.mode === 'random') ? max : Math.min(max, modeCfg ? modeCfg.teamSize : max);
 
   const members = (S.party && S.party.members && S.party.members.length)
     ? S.party.members
@@ -327,7 +391,10 @@ function renderSlots() {
         <div class="slot-track"><i style="width:${pct}%"></i></div>
         <div class="slot-nums">
           <span>${num(lo)}</span>
-          <span class="slot-rank">${esc(m.rank || 'Unranked')} (${esc((modeCfg && modeCfg.label) || S.mode)})</span>
+          <span class="slot-rank">${esc(m.rank || 'Unranked')} (${esc(
+            S.mode === 'random'
+              ? (((S.boot && S.boot.partyQueue) || {}).randomLabel || 'RANDOM')
+              : ((modeCfg && modeCfg.label) || S.mode))})</span>
           <span>${num(hi)}</span>
         </div>
       </div>`);
@@ -367,8 +434,16 @@ function renderQueue(q) {
   if (!searching) { S.queue.elapsed = 0; return; }
 
   if (q.elapsed !== undefined) S.queue.elapsed = q.elapsed;
-  const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === (q.mode || S.mode));
-  $('sd-mode').textContent = (modeCfg && modeCfg.label) || String(q.mode || S.mode).toUpperCase();
+  if ((q.mode || S.mode) === 'random') {
+    const labels = (q.modes || []).map((id) => {
+      const c = ((S.boot && S.boot.modes) || []).find((m) => m.id === id);
+      return c ? c.label : id.toUpperCase();
+    });
+    $('sd-mode').textContent = labels.length ? labels.join(' · ') : 'RANDOM';
+  } else {
+    const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === (q.mode || S.mode));
+    $('sd-mode').textContent = (modeCfg && modeCfg.label) || String(q.mode || S.mode).toUpperCase();
+  }
   $('sd-time').textContent = clock(S.queue.elapsed);
 }
 
@@ -485,6 +560,8 @@ function renderParty(d) {
   }
 
   S.party = d.id ? d : null;
+  syncModeToParty();
+  renderModeTabs();
   renderSlots();
   renderCustomParty();
 }

@@ -225,6 +225,43 @@ negative one deducts. Each command can be renamed or disabled in
 
 ---
 
+## 7a. Party size and the ranked queue
+
+`Config.PartyQueue` in `Config_Server.lua`:
+
+```lua
+Config.PartyQueue = {
+    autoMode        = true,   -- party size picks the mode: 1 = 1V1, 2 = 2V2 …
+    lockToPartySize = true,   -- a party of 2 may ONLY search 2V2
+    randomSearch = {
+        enabled = true,
+        modes   = { '1v1', '2v2', '3v3', '4v4', '5v5' },
+        respectPartySize = false
+    }
+}
+```
+
+**autoMode** — invite a friend while sitting on 1V1 and the queue switches to
+2V2 by itself; a third makes it 3V3. The party payload carries the mode its
+size implies and the panel follows it.
+
+**lockToPartySize** — with it on, modes that do not match the party size are
+struck through and refuse to be selected, and the server rejects them too. With
+it off, a party may search any mode large enough to hold it and matchmaking
+fills the empty slots. A party can never search a mode smaller than itself
+either way.
+
+**randomSearch** — adds a RANDOM tab that queues the party into several modes
+at once. Each mode gets its own queue entry, all sharing a group key; the first
+lobby to fill wins and every sibling entry is removed. `respectPartySize`
+decides whether the random set is limited to the exact size or to everything
+that fits.
+
+Changing the party size while a search is running cancels it, since the searched
+mode depends on that size.
+
+---
+
 ## 7b. Admin panel and permissions
 
 Open it with `/pvpadmint` or the ADMIN tab. The panel has five sections —
