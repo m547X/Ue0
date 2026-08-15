@@ -6242,6 +6242,38 @@ function Player.pushUpdate(userId)
     return true
 end
 
+--- Reads the rank row straight back and compares it with what is in memory.
+--- Used after a staff grant: a change that did not reach the database has to be
+--- visible right then, not discovered by the player after the next restart.
+--- Returns nil when everything matches, or a description of the mismatch.
+function Player.verifyRank(userId)
+    local pd = Players[userId]
+    if not pd then return nil end
+
+    local seasonId = Season.id()
+    if seasonId == 0 then
+        return 'no active season — the change is held in memory and not saved'
+    end
+
+    local row = DB.single('SELECT rp, rank_id FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
+        { userId, seasonId })
+
+    if not row then
+        err('VERIFY FAILED: no m5_player_ranks row for user %d season %d after saving',
+            userId, seasonId)
+        return ('the database has no rank row for season %d'):format(seasonId)
+    end
+
+    local storedRank, storedRP = tonumber(row.rank_id) or -1, tonumber(row.rp) or -1
+    if storedRank ~= pd.rankId or storedRP ~= pd.rp then
+        err('VERIFY FAILED: user %d memory rank=%d rp=%d but database rank=%d rp=%d (season %d)',
+            userId, pd.rankId, pd.rp, storedRank, storedRP, seasonId)
+        return ('saved value does not match: database has rank %d / %d RP'):format(storedRank, storedRP)
+    end
+
+    return nil
+end
+
 --- Loads a player row into the cache for offline edits.
 local function withPlayer(userId, fn)
     local pd = Players[userId]
@@ -6260,6 +6292,16 @@ local function withPlayer(userId, fn)
         -- online: persist now and refresh the player's interface
         Player.pushUpdate(userId)
     end
+
+    -- Confirm the change actually reached the database. Staff actions are rare,
+    -- so one extra read is cheap next to a grant that quietly does nothing.
+    if type(result) == 'table' then
+        local wasCached = Players[userId] ~= nil
+        if not wasCached then Players[userId] = pd end   -- verify reads the cache
+        result.verifyError = Player.verifyRank(userId)
+        if not wasCached then Players[userId] = nil end
+    end
+
     return result
 end
 
@@ -7032,6 +7074,12 @@ RegisterNetEvent('m5rp:sv:admin', function(action, data)
     if not pd then return end
     local ok, result = Admin.handle(pd, tostring(action or ''), data)
     if ok then
+        -- A change that did not reach the database must be reported now, not
+        -- discovered by the player after the next restart.
+        if type(result) == 'table' and result.verifyError then
+            notify(src, 'error', 'NOT SAVED — ' .. result.verifyError ..
+                '. Check the server console.', 'ADMIN')
+        end
         -- Admin.audit already wrote the row and the webhook
         TriggerClientEvent('m5rp:cl:data', src, { what = 'admin', action = action, result = result })
     else
@@ -7545,8 +7593,21 @@ end)
 -- Shutdown
 -- ---------------------------------------------------------------------------
 
+--- Shutdown is best effort and must never be the only place a change is
+--- written. A stopping resource is torn down as soon as its handlers return,
+--- so an awaited query here can fail to resume and everything after it is
+--- skipped. That is why staff actions and match results save the moment they
+--- happen; this handler only catches whatever the interval flush has not
+--- reached yet. The two markers below make it obvious in the console whether
+--- the save actually completed.
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= RES then return end
+
+    -- players first: their profiles are what matters if the runtime is cut off
+    local pending = count(Players)
+    log('resource stopping — saving %d profiles', pending)
+    Player.saveAll()
+    log('resource stopped — %d profiles saved', pending)
 
     for _, m in pairs(Matches) do
         for userId in pairs(m.players) do
@@ -7564,9 +7625,7 @@ AddEventHandler('onResourceStop', function(resource)
         if s then SetPlayerRoutingBucket(s, 0) end
     end
 
-    Player.saveAll()
     Logger.flush()
-    log('resource stopped — %d profiles saved', count(Players))
 end)
 
 -- Keep the winner reference for custom game bookkeeping.

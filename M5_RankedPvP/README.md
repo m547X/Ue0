@@ -146,8 +146,26 @@ next flush rather than being buried under a phantom season `0`.
 
 ### Checking a grant that "did not stick"
 
-Grants are always logged (`[M5RP] rank set: user … -> … season …`). For the
-full picture, run this in the **server console**:
+**Every staff grant verifies itself.** Right after saving, the rank row is read
+back and compared with memory. If they differ — or the row is missing, or there
+is no active season — the admin gets a red `NOT SAVED — …` toast immediately and
+the console logs `VERIFY FAILED` with both values. A grant that reports nothing
+is on disk; there is no longer a case where it looks applied but silently is not.
+
+Grants are also always logged (`[M5RP] rank set: user … -> … season …`), and a
+restart prints a matching pair of markers:
+
+```
+[M5RP] resource stopping — saving N profiles
+[M5RP] resource stopped — N profiles saved
+```
+
+If the second line never appears, the shutdown save was cut off by the runtime
+teardown. That is survivable by design — staff actions and match results are
+written the moment they happen, not deferred to shutdown — but it is worth
+knowing.
+
+For the full picture, run this in the **server console**:
 
 ```
 m5rankinfo <userId>
