@@ -164,6 +164,7 @@ const I18N = {
     'INVITE PLAYER': 'دعوة لاعب', 'CLICK TO INVITE': 'اضغط للدعوة',
     'OPEN SLOT': 'مقعد شاغر', 'SLOT LOCKED': 'مقعد مقفل',
     'LEADER ONLY': 'القائد فقط', 'SEND INVITE': 'إرسال الدعوة',
+    'BECOMES': 'يتحول إلى', 'INVITE IN ORDER': 'املأ المقعد السابق أولًا',
     'Enter the server ID of the player you want in your party.':
       'أدخل رقم اللاعب في السيرفر لإضافته إلى مجموعتك.',
     'Enter a player ID first.': 'أدخل رقم اللاعب أولًا.',
@@ -465,13 +466,17 @@ function syncModeToParty() {
   }
 }
 
+/** Label of the ranked mode a party of `size` players would play. */
+function modeLabelForSize(size) {
+  const m = ((S.boot && S.boot.modes) || []).find((x) => x.teamSize === size);
+  return m ? m.label : null;
+}
+
 /** The party slots. Slot 1 is always you, the rest fill from the party. */
 function renderSlots() {
   const host = $('party-slots');
   const p = S.boot && S.boot.player;
   const max = (S.boot && S.boot.maxParty) || 5;
-  const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode);
-  const capacity = Math.min(max, modeCfg ? modeCfg.teamSize : max);
 
   const members = (S.party && S.party.members && S.party.members.length)
     ? S.party.members
@@ -479,36 +484,59 @@ function renderSlots() {
 
   const meId = p && p.userId;
   const iAmLeader = !S.party || S.party.leader === meId;
+  const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode);
+
+  /* The seat right after the party is always invitable, whatever mode is
+     selected: inviting is how the party grows, and the mode follows the new
+     size (1v1 -> 2v2 -> 3v3 ...). Gating it on the current mode's team size
+     locked every seat while in 1v1 and left no way to invite anyone. */
+  const nextSeat = members.length;
 
   host.innerHTML = '';
   for (let i = 0; i < max; i++) {
     const m = members[i];
 
     if (!m) {
-      /* An open slot mirrors the filled card's layout so the whole row reads as
-         one set of cards. Three states: invitable, waiting on the leader, or
-         locked because the mode's team size does not reach this seat. */
-      const seatFree  = i < capacity;
-      const invitable = seatFree && iAmLeader;
-      const modeLabel = (modeCfg && modeCfg.label) || S.mode;
+      const isNext    = i === nextSeat;
+      const invitable = isNext && iAmLeader;
 
-      const cls  = invitable ? 'open' : (seatFree ? 'open noperm' : 'locked');
-      const icon = seatFree ? 'i-userplus' : 'i-lock';
-      const head = seatFree ? 'INVITE PLAYER' : 'LOCKED';
-      const sub  = invitable ? 'CLICK TO INVITE' : (seatFree ? 'LEADER ONLY' : 'SLOT LOCKED');
+      /* what this seat means for the mode once it is filled */
+      const seatMode  = modeLabelForSize(i + 1);
+      const growsMode = seatMode && modeCfg && (i + 1) !== modeCfg.teamSize;
+
+      let cls, icon, head, sub;
+      if (invitable) {
+        cls  = 'open';
+        icon = 'i-userplus';
+        head = 'INVITE PLAYER';
+        sub  = growsMode ? null : 'CLICK TO INVITE';
+      } else if (isNext) {
+        cls  = 'open noperm';
+        icon = 'i-userplus';
+        head = 'INVITE PLAYER';
+        sub  = 'LEADER ONLY';
+      } else {
+        // reachable, just not yet — a padlock would read as permanently shut
+        cls  = 'locked';
+        icon = 'i-user';
+        head = 'OPEN SLOT';
+        sub  = 'INVITE IN ORDER';
+      }
+
+      const subText = sub ? tx(sub) : `${tx('BECOMES')} ${seatMode}`;
 
       const slot = el('div', 'slot ' + cls, `
         <div class="slot-top">
           <div class="slot-av ghost"><svg><use href="#${icon}"/></svg></div>
           <div class="slot-name">${esc(tx(head))}</div>
-          <div class="slot-ready">${esc(tx(sub))}</div>
+          <div class="slot-ready">${esc(subText)}</div>
         </div>
         <div class="slot-foot">
           <div class="slot-crest"><span class="ghost-crest"></span></div>
           <div class="slot-track ghost"></div>
           <div class="slot-nums">
             <span>&ndash;</span>
-            <span class="slot-rank">${esc(seatFree ? tx('OPEN SLOT') : modeLabel)}</span>
+            <span class="slot-rank">${esc(seatMode || tx('OPEN SLOT'))}</span>
             <span>&ndash;</span>
           </div>
         </div>`);

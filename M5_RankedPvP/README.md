@@ -262,6 +262,13 @@ Config.PartyQueue = {
 2V2 by itself; a third makes it 3V3. The party payload carries the mode its
 size implies and the panel follows it.
 
+Because of that, the seat directly after your party is **always** invitable, no
+matter which mode is selected — the mode follows the party, not the other way
+round, so gating that seat on the current mode's team size would make 1V1 a dead
+end with no way to invite anyone. It shows the mode it will turn into
+(`BECOMES 2V2`). Seats further out stay dim and read `INVITE IN ORDER`; they
+open as the ones before them fill, up to `Config.Party.maxSize`.
+
 **lockToPartySize** — with it on, modes that do not match the party size are
 struck through and refuse to be selected, and the server rejects them too. With
 it off, a party may search any mode large enough to hold it and matchmaking
