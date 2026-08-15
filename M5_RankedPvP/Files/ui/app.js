@@ -203,7 +203,7 @@ const I18N = {
   }
 };
 
-function t(str) {
+function tx(str) {
   if (S.lang !== 'ar') return str;
   const d = I18N.ar;
   return (d && d[str]) || str;
@@ -216,12 +216,12 @@ function applyLanguage(lang) {
   document.documentElement.setAttribute('dir', S.lang === 'ar' ? 'rtl' : 'ltr');
 
   document.querySelectorAll('[data-i18n]').forEach((n) => {
-    n.textContent = t(n.dataset.i18n);
+    n.textContent = tx(n.dataset.i18n);
   });
 
   // pages carry translated titles too
   const title = document.querySelector('.hd-title');
-  if (title) title.textContent = t(PAGE_TITLES[S.page] || 'MATCHMAKING');
+  if (title) title.textContent = tx(PAGE_TITLES[S.page] || 'MATCHMAKING');
 }
 
 /* --------------------------------------------------------- prompt / confirm */
@@ -236,12 +236,12 @@ function closePrompt() {
 
 function askInput(title, placeholder, onOk) {
   const modal = $('modal-prompt');
-  $('prompt-title').textContent = t(title);
+  $('prompt-title').textContent = tx(title);
   $('prompt-text').classList.add('hidden');
   $('prompt-wrap').classList.remove('hidden');
   const input = $('prompt-input');
   input.value = '';
-  input.placeholder = t(placeholder || '');
+  input.placeholder = tx(placeholder || '');
   modal.classList.remove('hidden');
   promptResolve = (ok) => { if (ok) onOk(input.value.trim()); };
   setTimeout(() => input.focus(), 40);
@@ -249,8 +249,8 @@ function askInput(title, placeholder, onOk) {
 
 function askConfirm(title, text, onOk) {
   const modal = $('modal-prompt');
-  $('prompt-title').textContent = t(title);
-  $('prompt-text').textContent = t(text || '');
+  $('prompt-title').textContent = tx(title);
+  $('prompt-text').textContent = tx(text || '');
   $('prompt-text').classList.remove('hidden');
   $('prompt-wrap').classList.add('hidden');
   modal.classList.remove('hidden');
@@ -340,7 +340,7 @@ function showPage(page) {
   document.querySelectorAll('.ft .tab').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
   $('btn-settings').classList.toggle('on', page === 'settings');
 
-  document.querySelector('.hd-title').textContent = t(PAGE_TITLES[page] || 'MATCHMAKING');
+  document.querySelector('.hd-title').textContent = tx(PAGE_TITLES[page] || 'MATCHMAKING');
   $('btn-start').classList.toggle('hidden', page !== 'ranked');
   $('btn-back').classList.toggle('hidden', !(page === 'custom' && S.room));
 
@@ -495,7 +495,7 @@ function renderSlots() {
       <div class="slot-top">
         <div class="slot-av">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
-        <div class="slot-ready ${m.ready ? 'on' : ''}">${esc(t(m.ready ? 'READY' : 'NOT READY'))}</div>
+        <div class="slot-ready ${m.ready ? 'on' : ''}">${esc(tx(m.ready ? 'READY' : 'NOT READY'))}</div>
       </div>
       <div class="slot-foot">
         <div class="slot-crest">${crest(tier, color)}</div>
@@ -536,8 +536,8 @@ function renderQueue(q) {
   const start = $('btn-start');
   start.classList.toggle('searching', searching);
   start.innerHTML = searching
-    ? `<svg><use href="#i-x"/></svg>${esc(t('CANCEL'))}`
-    : `<svg><use href="#i-play"/></svg>${esc(t('START'))}`;
+    ? `<svg><use href="#i-x"/></svg>${esc(tx('CANCEL'))}`
+    : `<svg><use href="#i-play"/></svg>${esc(tx('START'))}`;
 
   $('searchdock').classList.toggle('hidden', !searching);
   if (!searching) { S.queue.elapsed = 0; return; }
@@ -651,15 +651,15 @@ function renderParty(d) {
   if (!d) return;
 
   if (d.invite) {
-    const t = toast('info', `${d.invite.from} invited you to a party`, 'PARTY INVITE', 12000);
+    const card = toast('info', `${d.invite.from} invited you to a party`, 'PARTY INVITE', 12000);
     const row = el('div');
     row.style.cssText = 'display:flex;gap:6px;margin-top:8px';
     const a = el('button', 'btn', 'ACCEPT'); a.style.cssText = 'padding:6px 14px;font-size:10px';
     const r = el('button', 'btn ghost', 'DECLINE'); r.style.cssText = 'padding:6px 14px;font-size:10px';
-    a.onclick = () => { post('party', { action: 'accept' }); t.remove(); };
-    r.onclick = () => { post('party', { action: 'decline' }); t.remove(); };
+    a.onclick = () => { post('party', { action: 'accept' }); card.remove(); };
+    r.onclick = () => { post('party', { action: 'decline' }); card.remove(); };
     row.appendChild(a); row.appendChild(r);
-    t.appendChild(row);
+    card.appendChild(row);
     return;
   }
 
@@ -828,7 +828,7 @@ function crestInline(tier, color) {
 }
 
 function renderBoard(d) {
-  $('lb-page').textContent = `${t('PAGE')} ${d.page || 1}`;
+  $('lb-page').textContent = `${tx('PAGE')} ${d.page || 1}`;
   const rows = d.rows || [];
   const me = S.boot && S.boot.player.userId;
   const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.lb.mode);
@@ -848,7 +848,7 @@ function renderBoard(d) {
     ['K/D RATIO', st.kd], ['POINTS', num(st.points)]
   ] : [];
   $('lb-stats').innerHTML = cells.map(([l, v]) =>
-    `<div class="lb-stat"><label>${esc(t(l))}</label><b>${esc(v)}</b></div>`).join('');
+    `<div class="lb-stat"><label>${esc(tx(l))}</label><b>${esc(v)}</b></div>`).join('');
 
   const body = $('lb-body');
   body.innerHTML = '';
@@ -937,7 +937,7 @@ function renderProfile() {
 
 /* =============================================================== HISTORY */
 function renderHistory(rows, page) {
-  $('hist-page').textContent = `${t('PAGE')} ${page || 1}`;
+  $('hist-page').textContent = `${tx('PAGE')} ${page || 1}`;
   const host = $('history-list');
   host.innerHTML = '';
   if (!rows || !rows.length) { host.appendChild(el('div', 'empty', 'NO MATCHES PLAYED YET')); return; }
@@ -1035,9 +1035,9 @@ function renderTraining() {
   const host = $('traingrid');
   const active = S.training;
   const modes = [
-    { kind: 'aim', label: t('AIM TRAINING'), desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
-    { kind: 'headshot', label: t('HEADSHOT TRAINING'), desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
-    { kind: 'range', label: t('FREE RANGE'), desc: 'Open range with a full loadout. No targets, no timer.' }
+    { kind: 'aim', label: tx('AIM TRAINING'), desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
+    { kind: 'headshot', label: tx('HEADSHOT TRAINING'), desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
+    { kind: 'range', label: tx('FREE RANGE'), desc: 'Open range with a full loadout. No targets, no timer.' }
   ];
   host.innerHTML = '';
 
@@ -1059,7 +1059,7 @@ function renderTraining() {
   modes.forEach((m) => {
     const c = el('div', 'traincard',
       `<div><b>${m.label}</b><p>${m.desc}</p></div>
-       <button class="btn">${esc(t(active ? 'SWITCH' : 'ENTER'))}</button>`);
+       <button class="btn">${esc(tx(active ? 'SWITCH' : 'ENTER'))}</button>`);
     c.onclick = () => post('action', { action: 'training', enable: true, kind: m.kind });
     host.appendChild(c);
   });
@@ -1257,12 +1257,12 @@ function renderAdminTabs() {
   host.innerHTML = '';
   groups.forEach((g) => {
     const b = el('button', 'adm-tab' + (g.id === S.admTab ? ' active' : ''),
-      `<svg><use href="${g.icon}"/></svg>${esc(t(g.label))}`);
+      `<svg><use href="${g.icon}"/></svg>${esc(tx(g.label))}`);
     b.onclick = () => { S.admTab = g.id; Sfx.play('click'); renderAdmin(S.admin); };
     host.appendChild(b);
   });
 
-  const refresh = el('button', 'adm-tab', `<svg><use href="#i-back"/></svg>${esc(t('REFRESH'))}`);
+  const refresh = el('button', 'adm-tab', `<svg><use href="#i-back"/></svg>${esc(tx('REFRESH'))}`);
   refresh.style.marginLeft = 'auto';
   refresh.onclick = () => post('admin', { action: 'dashboard' });
   host.appendChild(refresh);
@@ -1280,17 +1280,17 @@ function renderAdmin(d) {
   /* ---------- shared target bar ---------- */
   const targetBar = `
     <div class="adm-target">
-      <div><span class="lbl">${esc(t('TARGET PLAYER'))}</span>
+      <div><span class="lbl">${esc(tx('TARGET PLAYER'))}</span>
         <input class="inp" id="adm-target" placeholder="ID or name" value="${esc(S.admTargetValue || '')}"/></div>
-      <div><span class="lbl">${esc(t('REASON'))}</span>
+      <div><span class="lbl">${esc(tx('REASON'))}</span>
         <input class="inp" id="adm-reason" placeholder="Required for most actions"/></div>
-      <div><span class="lbl">${esc(t('STATUS'))}</span>
+      <div><span class="lbl">${esc(tx('STATUS'))}</span>
         <div class="who ${S.admLookup ? 'on' : ''}" id="adm-who">
           <span class="dot"></span>
           ${S.admLookup
             ? `<b>${esc(S.admLookup.name)}</b> · ${esc(S.admLookup.rank)} · ${num(S.admLookup.rp)} RP`
-            : esc(t('no player loaded'))}
-          <button class="mini" data-adm="lookupInput" style="margin-left:6px">${esc(t('LOAD'))}</button>
+            : esc(tx('no player loaded'))}
+          <button class="mini" data-adm="lookupInput" style="margin-left:6px">${esc(tx('LOAD'))}</button>
         </div></div>
     </div>`;
 
@@ -1449,8 +1449,8 @@ function renderAdmin(d) {
   if (!html) html = '<div class="locked-note">YOU HAVE NO PERMISSIONS IN THIS SECTION</div>';
   host.innerHTML = html;
 
-  const t = $('adm-target');
-  if (t) t.oninput = () => { S.admTargetValue = t.value; };
+  const targetInput = $('adm-target');
+  if (targetInput) targetInput.oninput = () => { S.admTargetValue = targetInput.value; };
 
   host.querySelectorAll('[data-adm]').forEach((b) => { b.onclick = () => admAction(b); });
   enhanceSelects(host);
@@ -1470,7 +1470,7 @@ function admAction(btn) {
 
     case 'lookup':        post('admin', { action: 'playerLookup', target: btn.dataset.target }); break;
     case 'lookupInput':
-      if (!target) { toast('warning', t('Enter a player id or name first.'), t('ADMIN')); break; }
+      if (!target) { toast('warning', tx('Enter a player id or name first.'), tx('ADMIN')); break; }
       post('admin', { action: 'playerLookup', target });
       break;
 
@@ -1766,7 +1766,7 @@ window.addEventListener('message', (e) => {
           }
           if (S.page === 'admin') renderAdmin(S.admin); else showPage('profile');
         }
-        else { toast('success', t('Action applied.'), t('ADMIN')); post('admin', { action: 'dashboard' }); }
+        else { toast('success', tx('Action applied.'), tx('ADMIN')); post('admin', { action: 'dashboard' }); }
       }
       break;
     }
@@ -1811,11 +1811,11 @@ window.addEventListener('message', (e) => {
     }
 
     case 'training': {
-      const n = $('training'), t = d.data || {};
+      const n = $('training'), tr = d.data || {};
       const hint = $('train-prompt');
 
       // a press-again-to-confirm prompt from the exit key
-      if (t.confirm) {
+      if (tr.confirm) {
         hint.classList.remove('hidden');
         hint.classList.add('confirm');
         $('train-prompt-text').textContent = 'PRESS AGAIN TO EXIT';
@@ -1824,30 +1824,30 @@ window.addEventListener('message', (e) => {
           hint.classList.remove('confirm');
           $('train-prompt-text').textContent =
             (S.training && S.training.exit && S.training.exit.text) || 'EXIT TRAINING';
-        }, (t.seconds || 2) * 1000);
+        }, (tr.seconds || 2) * 1000);
         break;
       }
 
-      n.classList.toggle('hidden', !t.active);
+      n.classList.toggle('hidden', !tr.active);
 
-      if (!t.active) {
+      if (!tr.active) {
         S.training = null;
         hint.classList.add('hidden');
       } else {
         // periodic updates only carry counters, so merge instead of replacing
-        S.training = Object.assign({ active: true }, S.training, t);
+        S.training = Object.assign({ active: true }, S.training, tr);
 
-        if (t.label) $('training-title').textContent = t.label;
-        if (t.exit) {
+        if (tr.label) $('training-title').textContent = tr.label;
+        if (tr.exit) {
           hint.classList.remove('hidden');
-          $('train-prompt-key').textContent = t.exit.key || 'BACKSPACE';
-          $('train-prompt-text').textContent = t.exit.text || 'EXIT TRAINING';
+          $('train-prompt-key').textContent = tr.exit.key || 'BACKSPACE';
+          $('train-prompt-text').textContent = tr.exit.text || 'EXIT TRAINING';
         }
-        if (t.hits !== undefined) {
-          $('training-hits').textContent = t.hits;
-          $('training-hs').textContent = t.headshots;
-          $('training-acc').textContent = t.accuracy + '%';
-          $('training-time').textContent = t.elapsed + 's';
+        if (tr.hits !== undefined) {
+          $('training-hits').textContent = tr.hits;
+          $('training-hs').textContent = tr.headshots;
+          $('training-acc').textContent = tr.accuracy + '%';
+          $('training-time').textContent = tr.elapsed + 's';
         }
       }
 
@@ -1968,12 +1968,12 @@ document.addEventListener('click', (e) => {
         toast('success', `Code ${S.room.code} copied`, 'ROOM CODE');
       }
       break;
-    case 'cm-chat': toast('info', t('Share the room code with your friends.'), t('ROOM CODE')); break;
+    case 'cm-chat': toast('info', tx('Share the room code with your friends.'), tx('ROOM CODE')); break;
     case 'cm-create': post('custom', Object.assign({ action: 'create' }, customPayload())); break;
     case 'cm-leave': post('custom', { action: 'leave' }); break;
     case 'cm-joincode':
       askInput('JOIN CODE', 'Enter the room code', (code) => {
-        if (!code) { toast('warning', t('Enter the room code'), t('ROOM CODE')); return; }
+        if (!code) { toast('warning', tx('Enter the room code'), tx('ROOM CODE')); return; }
         post('custom', { action: 'joinCode', code: code.toUpperCase() });
       });
       break;
