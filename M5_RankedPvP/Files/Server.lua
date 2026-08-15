@@ -636,6 +636,21 @@ function DB.update(sql, params)
     return res or 0
 end
 
+--- Same query, but reports whether it actually ran. DB.update returns 0 both
+--- for "the query failed" and for "nothing needed changing", which makes it
+--- unsafe for anything that clears a dirty flag on success — a transient error
+--- would drop the change for good. Returns ok, affectedRows.
+function DB.write(sql, params)
+    local ok, res = pcall(function()
+        return MySQL.update.await(sql, params)
+    end)
+    if not ok then
+        err('write failed: %s', tostring(res))
+        return false, 0
+    end
+    return true, res or 0
+end
+
 function DB.init()
     if not Config.Database.autoCreateTables then
         DB.ready = true
@@ -1231,13 +1246,13 @@ function Player.save(pd, removeAfter)
     local seasonId = Season.id()
 
     if pd.dirtyPlayer then
-        DB.update([[UPDATE m5_players SET name = ?, level = ?, xp = ?, titles = ?, badges = ?,
+        local okWrite = DB.write([[UPDATE m5_players SET name = ?, level = ?, xp = ?, titles = ?, badges = ?,
                     active_title = ?, frame = ?, settings = ?, commendations = ?, reports = ?,
                     playtime = ?, last_seen = ? WHERE user_id = ?]],
             { pd.name, pd.level, pd.xp, jsonEncode(pd.titles), jsonEncode(pd.badges),
               pd.activeTitle, pd.frame, jsonEncode(pd.settings), pd.commendations,
               pd.reports, pd.playtime, sqlDate(), pd.userId })
-        pd.dirtyPlayer = false
+        if okWrite then pd.dirtyPlayer = false end
     end
 
     -- Season 0 is not a season: it only happens if a profile was touched before
@@ -1252,7 +1267,7 @@ function Player.save(pd, removeAfter)
     end
 
     if pd.dirtyRank then
-        DB.update([[INSERT INTO m5_player_ranks
+        local okWrite = DB.write([[INSERT INTO m5_player_ranks
                     (user_id, season_id, rp, rank_id, division, highest_rank_id, highest_rp,
                      placement_done, placement_played, placement_data, rank_protection)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)
@@ -1266,23 +1281,26 @@ function Player.save(pd, removeAfter)
             { pd.userId, seasonId, pd.rp, pd.rankId, pd.division, pd.highestRankId, pd.highestRP,
               pd.placementDone and 1 or 0, pd.placementPlayed, jsonEncode(pd.placementData),
               pd.rankProtection })
-        pd.dirtyRank = false
+        -- keep it dirty on a failed write so the next flush retries instead of
+        -- dropping an admin grant or a match result on the floor
+        if okWrite then pd.dirtyRank = false
+        else err('rank save failed for user %d — retrying on the next flush', pd.userId) end
     end
 
     if pd.dirtyMMR then
-        DB.update([[INSERT INTO m5_player_mmr
+        local okWrite = DB.write([[INSERT INTO m5_player_mmr
                     (user_id, season_id, mmr, uncertainty, games, peak_mmr)
                     VALUES (?,?,?,?,?,?)
                     ON DUPLICATE KEY UPDATE
                      mmr = VALUES(mmr), uncertainty = VALUES(uncertainty),
                      games = VALUES(games), peak_mmr = VALUES(peak_mmr)]],
             { pd.userId, seasonId, pd.mmr, pd.uncertainty, pd.mmrGames, pd.peakMMR })
-        pd.dirtyMMR = false
+        if okWrite then pd.dirtyMMR = false end
     end
 
     if pd.dirtyStats then
         local s = pd.stats
-        DB.update([[INSERT INTO m5_player_stats
+        local okWrite = DB.write([[INSERT INTO m5_player_stats
                     (user_id, season_id, matches, wins, losses, draws, kills, deaths, assists,
                      headshots, damage, mvp, win_streak, best_win_streak, lose_streak, clutches,
                      aces, first_bloods, rounds_won, rounds_played, leaves, afk_count, playtime,
@@ -1306,11 +1324,17 @@ function Player.save(pd, removeAfter)
               s.lose_streak, s.clutches, s.aces, s.first_bloods, s.rounds_won, s.rounds_played,
               s.leaves, s.afk_count, s.playtime, s.fav_weapon, s.fav_map,
               jsonEncode(s.weapon_stats), jsonEncode(s.map_stats) })
-        pd.dirtyStats = false
+        if okWrite then pd.dirtyStats = false end
     end
 
+    -- Dropping the cache entry while something is still unwritten would throw
+    -- the change away, so a failed save keeps the player in memory to retry.
     if removeAfter then
-        Players[pd.userId] = nil
+        if pd.dirtyPlayer or pd.dirtyRank or pd.dirtyMMR or pd.dirtyStats then
+            err('keeping user %d cached: unsaved data still pending', pd.userId)
+        else
+            Players[pd.userId] = nil
+        end
     end
 end
 
@@ -6445,6 +6469,10 @@ function Admin.handle(adminPd, action, data)
             Admin.audit(adminPd, action, who,
                 { before = before, after = pd.rp, reason = reason, details = { rank = rank.name } })
             notifyUser(id, 'info', ('Your rank was set to %s — %s'):format(rank.name, reason), 'RANKED')
+            -- always logged: a grant that does not stick is the first thing to
+            -- check in the console, and `m5rankinfo <userId>` shows the rest
+            log('rank set: user %d -> %s (id %d, rp %d) by %s, season %d',
+                id, rank.name, rank.id, pd.rp, adminPd.name, Season.id())
             return { rank = rank.name, rp = pd.rp }
         end)
 
@@ -7200,7 +7228,7 @@ end)
 registerCommand(Config.Commands.rankban, function(pd, src, args)
     -- /rankban <userId|name> <minutes> <reason...>
     if #args < 3 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.rankban.name .. ' <id|name> <minutes> <reason>', 'RANK BAN')
+        notify(src, 'warning', 'Usage: /' .. Config.Commands.rankban.name .. ' <userId> <minutes> <reason>', 'RANK BAN')
         return
     end
     local ok, result = Admin.handle(pd, 'ban', {
@@ -7215,7 +7243,7 @@ end)
 
 registerCommand(Config.Commands.rankunban, function(pd, src, args)
     if #args < 1 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.rankunban.name .. ' <id|name>', 'RANK UNBAN')
+        notify(src, 'warning', 'Usage: /' .. Config.Commands.rankunban.name .. ' <userId>', 'RANK UNBAN')
         return
     end
     local ok, result = Admin.handle(pd, 'unban', { target = args[1] })
@@ -7225,7 +7253,7 @@ end)
 
 registerCommand(Config.Commands.setrank, function(pd, src, args)
     if #args < 3 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrank.name .. ' <id|name> <rankId 0-23> <reason>', 'SET RANK')
+        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrank.name .. ' <userId> <rankId 0-23> <reason>', 'SET RANK')
         return
     end
     local ok, result = Admin.handle(pd, 'setRank', {
@@ -7236,7 +7264,7 @@ end)
 
 registerCommand(Config.Commands.setrp, function(pd, src, args)
     if #args < 3 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrp.name .. ' <id|name> <rp> <reason>', 'SET RP')
+        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrp.name .. ' <userId> <rp> <reason>', 'SET RP')
         return
     end
     local ok, result = Admin.handle(pd, 'setRP', {
@@ -7248,7 +7276,7 @@ end)
 -- Compensate or deduct RP straight from chat.
 registerCommand(Config.Commands.givepvprp, function(pd, src, args)
     if #args < 3 then
-        notify(src, 'warning', 'Usage: /givepvprp <id|name> <amount> <reason>', 'RP')
+        notify(src, 'warning', 'Usage: /givepvprp <userId> <amount> <reason>', 'RP')
         return
     end
     local amount = tonumber(args[2]) or 0
@@ -7267,6 +7295,55 @@ registerCommand(Config.Commands.pvpstatus, function(pd, src)
     print(('[M5RP] status — matches:%d queued:%d rooms:%d players:%d buckets:%d')
         :format(live, queued, count(CustomGames.rooms), count(Players), count(UsedBuckets)))
 end)
+
+--- Server console only: prints what a player's rank looks like in memory next
+--- to what is actually stored, so "the grant did not stick" can be answered
+--- with evidence instead of a guess. Usage: m5rankinfo <userId>
+RegisterCommand('m5rankinfo', function(src, args)
+    if src ~= 0 then return end            -- console only, never a chat command
+
+    local userId = tonumber(args and args[1])
+    if not userId then
+        print('[M5RP] usage: m5rankinfo <userId>')
+        return
+    end
+
+    local seasonId = Season.id()
+    print(('[M5RP] ---- rank report for user %d ----'):format(userId))
+    print(('[M5RP] season: %s (id %d)')
+        :format(Season.current and Season.current.name or 'NONE', seasonId))
+
+    local pd = Players[userId]
+    if pd then
+        print(('[M5RP] memory : rp=%d rankId=%d (%s) placementDone=%s dirtyRank=%s')
+            :format(pd.rp, pd.rankId, Rank.get(pd.rankId).name,
+                    tostring(pd.placementDone), tostring(pd.dirtyRank)))
+    else
+        print('[M5RP] memory : not loaded (player offline)')
+    end
+
+    local row = DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
+        { userId, seasonId })
+    if row then
+        print(('[M5RP] database: rp=%s rank_id=%s (%s) placement_done=%s')
+            :format(tostring(row.rp), tostring(row.rank_id),
+                    Rank.get(tonumber(row.rank_id) or 0).name, tostring(row.placement_done)))
+    else
+        print(('[M5RP] database: NO ROW for season %d'):format(seasonId))
+    end
+
+    -- rows written before the season was known are the classic cause of a
+    -- grant that reappears as Unranked on the next join
+    local orphan = DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = 0',
+        { userId })
+    if orphan then
+        print(('[M5RP] ^3WARNING: a season-0 row exists for this player (rp=%s rank_id=%s). ' ..
+               'It was written before the season loaded and is never read back. ' ..
+               'Re-grant the rank, then delete it.')
+            :format(tostring(orphan.rp), tostring(orphan.rank_id)))
+    end
+    print('[M5RP] --------------------------------')
+end, true)
 
 -- ============================================================================
 -- 22. LIFECYCLE & MASTER LOOP

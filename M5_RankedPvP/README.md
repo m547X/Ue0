@@ -120,7 +120,7 @@ Reads are cached (`leaderboardCacheTime`, `profileCacheTime`), writes are
 batched — player rows are marked dirty and flushed on an interval instead of
 per event. Every table carries the indexes its queries need.
 
-Three points keep per-season data from being lost:
+Five points keep per-season data from being lost:
 
 - **The per-season tables are written as upserts.** `m5_player_ranks`,
   `m5_player_mmr` and `m5_player_stats` are keyed on `(user_id, season_id)`. A
@@ -134,9 +134,34 @@ Three points keep per-season data from being lost:
 - **Re-loading a cached profile flushes it first.** A resource restart re-reads
   everyone who is already connected; the in-memory row is saved before it is
   replaced, so nothing pending is dropped.
+- **A failed write keeps its dirty flag.** `DB.update` returns `0` both when a
+  query errors and when nothing needed changing, so it cannot be used to decide
+  that a save succeeded. `DB.write` reports the two apart; on an error the flag
+  stays set and the next flush retries instead of dropping the change.
+- **A player is never uncached with unsaved data.** `Player.save(pd, true)`
+  keeps the entry in memory if any flag is still dirty.
 
 If there is no active season at all, ranked writes are held and retried on the
 next flush rather than being buried under a phantom season `0`.
+
+### Checking a grant that "did not stick"
+
+Grants are always logged (`[M5RP] rank set: user … -> … season …`). For the
+full picture, run this in the **server console**:
+
+```
+m5rankinfo <userId>
+```
+
+It prints the active season, the in-memory values with their dirty flags, the
+row actually stored for that season, and a warning if a stale `season_id = 0`
+row exists for that player — the fingerprint of a profile written before the
+season had loaded. Such a row is never read back: re-grant the rank and delete
+it.
+
+```sql
+SELECT * FROM m5_player_ranks WHERE season_id = 0;   -- damage from older builds
+```
 
 ---
 
