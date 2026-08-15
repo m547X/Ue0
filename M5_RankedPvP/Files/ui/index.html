@@ -47,6 +47,8 @@
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9L7 7M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></symbol>
+    <symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c0-3.9 2.9-6.2 6.5-6.2 1.3 0 2.5.3 3.5.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18 12.5v6M15 15.5h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.2 10.5V7.8a3.8 3.8 0 017.6 0v2.7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="15.4" r="1.5" fill="currentColor"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v6l4 2" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
     <symbol id="i-gift" viewBox="0 0 24 24"><path d="M3 11h18v9H3zM2 7h20v4H2zM12 7v13" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
     <symbol id="i-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -155,16 +157,17 @@
   <!-- Invite by ID -->
   <div id="modal-invite" class="modal hidden">
     <div class="dlg">
-      <div class="dlg-head"><span class="dlg-dot"></span>Matchmaking</div>
+      <div class="dlg-head"><span class="dlg-dot"></span><span data-i18n="INVITE PLAYER">INVITE PLAYER</span></div>
       <div class="dlg-body">
+        <div class="dlg-text" data-i18n="Enter the server ID of the player you want in your party.">Enter the server ID of the player you want in your party.</div>
         <div class="dlg-input">
-          <svg class="dlg-ico"><use href="#i-user"/></svg>
-          <input id="invite-id" placeholder="ID (سجل رقم اللاعب)" autocomplete="off" />
+          <svg class="dlg-ico"><use href="#i-userplus"/></svg>
+          <input id="invite-id" placeholder="1234" autocomplete="off" inputmode="numeric" />
         </div>
       </div>
       <div class="dlg-foot">
-        <button class="btn ghost" data-action="invite-cancel">Cancel</button>
-        <button class="btn" data-action="invite-send">Send</button>
+        <button class="btn ghost" data-action="invite-cancel" data-i18n="CANCEL">CANCEL</button>
+        <button class="btn" data-action="invite-send" data-i18n="SEND INVITE">SEND INVITE</button>
       </div>
     </div>
   </div>

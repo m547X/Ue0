@@ -181,6 +181,26 @@ end
 -- 03. DATABASE LAYER
 -- ============================================================================
 
+--- Set once the schema exists and the active season is known. Loading a profile
+--- before that point would stamp its per-season rows with season 0, and every
+--- later save (which targets the real season) would then silently update
+--- nothing — the player's rank and stats would reappear as fresh on the next
+--- join. Every entry point that can load a profile waits on this.
+local Boot = { ready = false }
+
+--- Blocks the calling thread until the boot sequence has finished.
+--- Returns false if it never does, so callers can bail instead of hanging.
+local function waitForBoot(timeoutMs)
+    local waited = 0
+    local limit  = timeoutMs or 30000
+    while not Boot.ready do
+        if waited >= limit then return false end
+        Citizen.Wait(100)
+        waited = waited + 100
+    end
+    return true
+end
+
 local DB = {
     ready = false,
     -- Write batching. Dirty players are flushed on Config.Database.flushInterval.
@@ -1051,6 +1071,12 @@ local Player = {}
 
 --- Loads (or creates) every persisted row for a user and puts it in the cache.
 function Player.load(userId, source)
+    -- Re-loading a profile that is already cached replaces the live table, so
+    -- anything not yet written (an admin grant, a match result) would be lost.
+    -- Flush it first; the read below then returns the same values.
+    local cached = Players[userId]
+    if cached then Player.save(cached, false) end
+
     local seasonId = Season.id()
     local ids      = source and identifiersOf(source) or { license = '', discord = '', ip = '' }
     local name     = playerName(userId, source)
@@ -1194,6 +1220,12 @@ function Player.load(userId, source)
 end
 
 --- Flushes one player's dirty rows.
+---
+--- The per-season tables are written as upserts on purpose. A plain UPDATE
+--- silently succeeds with zero affected rows when the (user_id, season_id) row
+--- is missing — which is exactly how an admin-granted rank could disappear on
+--- the next join. Upserting means the write always lands, whether the row was
+--- created at load time, dropped by a season reset, or never existed at all.
 function Player.save(pd, removeAfter)
     if not pd then return end
     local seasonId = Season.id()
@@ -1208,35 +1240,72 @@ function Player.save(pd, removeAfter)
         pd.dirtyPlayer = false
     end
 
+    -- Season 0 is not a season: it only happens if a profile was touched before
+    -- Season.load() ran. Writing there would bury the data in a phantom season,
+    -- so the dirty flags are kept and the next flush retries.
+    if seasonId == 0 then
+        if pd.dirtyRank or pd.dirtyMMR or pd.dirtyStats then
+            err('no active season — holding unsaved ranked data for user %d', pd.userId)
+        end
+        if removeAfter then Players[pd.userId] = nil end
+        return
+    end
+
     if pd.dirtyRank then
-        DB.update([[UPDATE m5_player_ranks SET rp = ?, rank_id = ?, division = ?, highest_rank_id = ?,
-                    highest_rp = ?, placement_done = ?, placement_played = ?, placement_data = ?,
-                    rank_protection = ? WHERE user_id = ? AND season_id = ?]],
-            { pd.rp, pd.rankId, pd.division, pd.highestRankId, pd.highestRP,
+        DB.update([[INSERT INTO m5_player_ranks
+                    (user_id, season_id, rp, rank_id, division, highest_rank_id, highest_rp,
+                     placement_done, placement_played, placement_data, rank_protection)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                    ON DUPLICATE KEY UPDATE
+                     rp = VALUES(rp), rank_id = VALUES(rank_id), division = VALUES(division),
+                     highest_rank_id = VALUES(highest_rank_id), highest_rp = VALUES(highest_rp),
+                     placement_done = VALUES(placement_done),
+                     placement_played = VALUES(placement_played),
+                     placement_data = VALUES(placement_data),
+                     rank_protection = VALUES(rank_protection)]],
+            { pd.userId, seasonId, pd.rp, pd.rankId, pd.division, pd.highestRankId, pd.highestRP,
               pd.placementDone and 1 or 0, pd.placementPlayed, jsonEncode(pd.placementData),
-              pd.rankProtection, pd.userId, seasonId })
+              pd.rankProtection })
         pd.dirtyRank = false
     end
 
     if pd.dirtyMMR then
-        DB.update([[UPDATE m5_player_mmr SET mmr = ?, uncertainty = ?, games = ?, peak_mmr = ?
-                    WHERE user_id = ? AND season_id = ?]],
-            { pd.mmr, pd.uncertainty, pd.mmrGames, pd.peakMMR, pd.userId, seasonId })
+        DB.update([[INSERT INTO m5_player_mmr
+                    (user_id, season_id, mmr, uncertainty, games, peak_mmr)
+                    VALUES (?,?,?,?,?,?)
+                    ON DUPLICATE KEY UPDATE
+                     mmr = VALUES(mmr), uncertainty = VALUES(uncertainty),
+                     games = VALUES(games), peak_mmr = VALUES(peak_mmr)]],
+            { pd.userId, seasonId, pd.mmr, pd.uncertainty, pd.mmrGames, pd.peakMMR })
         pd.dirtyMMR = false
     end
 
     if pd.dirtyStats then
         local s = pd.stats
-        DB.update([[UPDATE m5_player_stats SET matches=?, wins=?, losses=?, draws=?, kills=?, deaths=?,
-                    assists=?, headshots=?, damage=?, mvp=?, win_streak=?, best_win_streak=?,
-                    lose_streak=?, clutches=?, aces=?, first_bloods=?, rounds_won=?, rounds_played=?,
-                    leaves=?, afk_count=?, playtime=?, fav_weapon=?, fav_map=?, weapon_stats=?, map_stats=?
-                    WHERE user_id = ? AND season_id = ?]],
-            { s.matches, s.wins, s.losses, s.draws, s.kills, s.deaths, s.assists, s.headshots,
-              s.damage, s.mvp, s.win_streak, s.best_win_streak, s.lose_streak, s.clutches,
-              s.aces, s.first_bloods, s.rounds_won, s.rounds_played, s.leaves, s.afk_count,
-              s.playtime, s.fav_weapon, s.fav_map, jsonEncode(s.weapon_stats),
-              jsonEncode(s.map_stats), pd.userId, seasonId })
+        DB.update([[INSERT INTO m5_player_stats
+                    (user_id, season_id, matches, wins, losses, draws, kills, deaths, assists,
+                     headshots, damage, mvp, win_streak, best_win_streak, lose_streak, clutches,
+                     aces, first_bloods, rounds_won, rounds_played, leaves, afk_count, playtime,
+                     fav_weapon, fav_map, weapon_stats, map_stats)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON DUPLICATE KEY UPDATE
+                     matches = VALUES(matches), wins = VALUES(wins), losses = VALUES(losses),
+                     draws = VALUES(draws), kills = VALUES(kills), deaths = VALUES(deaths),
+                     assists = VALUES(assists), headshots = VALUES(headshots),
+                     damage = VALUES(damage), mvp = VALUES(mvp),
+                     win_streak = VALUES(win_streak), best_win_streak = VALUES(best_win_streak),
+                     lose_streak = VALUES(lose_streak), clutches = VALUES(clutches),
+                     aces = VALUES(aces), first_bloods = VALUES(first_bloods),
+                     rounds_won = VALUES(rounds_won), rounds_played = VALUES(rounds_played),
+                     leaves = VALUES(leaves), afk_count = VALUES(afk_count),
+                     playtime = VALUES(playtime), fav_weapon = VALUES(fav_weapon),
+                     fav_map = VALUES(fav_map), weapon_stats = VALUES(weapon_stats),
+                     map_stats = VALUES(map_stats)]],
+            { pd.userId, seasonId, s.matches, s.wins, s.losses, s.draws, s.kills, s.deaths,
+              s.assists, s.headshots, s.damage, s.mvp, s.win_streak, s.best_win_streak,
+              s.lose_streak, s.clutches, s.aces, s.first_bloods, s.rounds_won, s.rounds_played,
+              s.leaves, s.afk_count, s.playtime, s.fav_weapon, s.fav_map,
+              jsonEncode(s.weapon_stats), jsonEncode(s.map_stats) })
         pd.dirtyStats = false
     end
 
@@ -6119,18 +6188,18 @@ function Admin.dashboard(userId)
 end
 
 --- Resolves a target from a user id or an online player name.
+--- Admin targets are resolved by user id only. Name matching is deliberately
+--- not supported: two players can share a display name, and a partial match
+--- could silently point a ban or an RP wipe at the wrong account.
 local function resolveTarget(value)
     local id = tonumber(value)
-    if id and (Players[id] or DB.scalar('SELECT user_id FROM m5_players WHERE user_id = ?', { id })) then
-        return id
-    end
-    if type(value) == 'string' then
-        for uidv, pd in pairs(Players) do
-            if pd.name:lower():find(value:lower(), 1, true) then return uidv end
-        end
-        local row = DB.single('SELECT user_id FROM m5_players WHERE name LIKE ? LIMIT 1', { '%' .. value .. '%' })
-        if row then return tonumber(row.user_id) end
-    end
+    if not id then return nil end
+
+    id = math.floor(id)
+    if id <= 0 then return nil end
+
+    if Players[id] then return id end
+    if DB.scalar('SELECT user_id FROM m5_players WHERE user_id = ?', { id }) then return id end
     return nil
 end
 
@@ -6198,7 +6267,7 @@ function Admin.handle(adminPd, action, data)
 
     elseif action == 'playerLookup' then
         local id, who = target()
-        if not id then return false, 'Player not found.' end
+        if not id then return false, 'No player with that ID.' end
         local profile = buildProfile(id, Admin.canSeeMMR(adminPd.userId))
         if not profile then return false, 'No data for that player.' end
         profile.bans  = Bans.get(id)
@@ -6307,7 +6376,7 @@ function Admin.handle(adminPd, action, data)
     -- ================================================== points
     elseif action == 'addRP' or action == 'removeRP' then
         local id, who = target()
-        if not id then return false, 'Player not found.' end
+        if not id then return false, 'No player with that ID.' end
 
         local amount = math.abs(math.floor(tonumber(data.amount) or 0))
         if amount <= 0 then return false, 'Enter an amount.' end
@@ -6382,7 +6451,7 @@ function Admin.handle(adminPd, action, data)
     elseif action == 'addXP' then
         local id, who = target()
         local amount = math.floor(tonumber(data.amount) or 0)
-        if not id then return false, 'Player not found.' end
+        if not id then return false, 'No player with that ID.' end
         if amount <= 0 then return false, 'Enter an amount.' end
         if amount > Config.AdminLimits.maxXPGrant then
             return false, ('Maximum is %d XP per action.'):format(Config.AdminLimits.maxXPGrant)
@@ -6399,7 +6468,7 @@ function Admin.handle(adminPd, action, data)
 
     elseif action == 'resetStats' then
         local id, who = target()
-        if not id then return false, 'Player not found.' end
+        if not id then return false, 'No player with that ID.' end
         local seasonId = Season.id()
         DB.update('DELETE FROM m5_player_stats WHERE user_id = ? AND season_id = ?', { id, seasonId })
         DB.update('DELETE FROM m5_player_ranks WHERE user_id = ? AND season_id = ?', { id, seasonId })
@@ -6417,7 +6486,7 @@ function Admin.handle(adminPd, action, data)
     -- ================================================== punishments
     elseif action == 'ban' then
         local id, who = target()
-        if not id then return false, 'Player not found.' end
+        if not id then return false, 'No player with that ID.' end
 
         local duration = math.max(0, math.floor(tonumber(data.duration) or 0))
         Bans.add(id, {
@@ -6439,14 +6508,14 @@ function Admin.handle(adminPd, action, data)
 
     elseif action == 'unban' then
         local id, who = target()
-        if not id then return false, 'Player not found.' end
+        if not id then return false, 'No player with that ID.' end
         Bans.remove(id, tonumber(data.banId), adminPd.name)
         Admin.audit(adminPd, action, who, { reason = reason })
         return true, { ok = true }
 
     elseif action == 'clearCooldown' then
         local id, who = target()
-        if not id then return false, 'Player not found.' end
+        if not id then return false, 'No player with that ID.' end
         Penalty.cooldowns[id] = nil
         Admin.audit(adminPd, action, who, { reason = reason })
         notifyUser(id, 'success', 'Your queue cooldown was cleared.', 'RANKED')
@@ -6783,7 +6852,7 @@ RegisterNetEvent('m5rp:sv:party', function(action, data)
     elseif action == 'invite' then
         local target = resolveTarget(data.target)
         if not target then
-            ok, reason = false, 'Player not found.'
+            ok, reason = false, 'No player with that ID.'
         else
             ok, reason = PartyMgr.invite(pd.userId, target)
         end
@@ -7208,6 +7277,13 @@ AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
     if not first_spawn then return end
     local src = source
     Citizen.CreateThread(function()
+        -- Never load a profile before the schema and the active season are
+        -- known, or its per-season rows would be stamped with season 0.
+        if not waitForBoot() then
+            err('player %s spawned but the resource never finished booting', tostring(user_id))
+            return
+        end
+
         local pd = Player.load(user_id, src)
         if not pd then return end
         Bans.load(user_id)
@@ -7278,6 +7354,11 @@ Citizen.CreateThread(function()
 
     DB.init()
     Season.load()
+
+    -- From here on a profile can be loaded safely: the tables exist and
+    -- Season.id() returns the real season instead of 0.
+    Boot.ready = true
+
     registerVrpMenu()
 
     -- pick up players who were already connected (resource restart)

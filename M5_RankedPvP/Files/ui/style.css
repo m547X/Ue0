@@ -233,7 +233,7 @@ h1,h2,h3,h4{font-weight:700}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 
 /* invite dialog (small) */
-.dlg{width:330px;border-radius:12px;overflow:hidden;background:var(--panel);
+.dlg{width:360px;border-radius:12px;overflow:hidden;background:var(--panel);
   border:1px solid var(--red);box-shadow:0 20px 60px -20px var(--red-glow)}
 .dlg-head{display:flex;align-items:center;gap:9px;padding:11px 16px;font-size:14px;font-weight:700;
   background:linear-gradient(90deg,var(--red),var(--red-2));color:#fff}
@@ -244,7 +244,13 @@ h1,h2,h3,h4{font-weight:700}
 .dlg-ico{width:17px;height:17px;color:var(--red);flex:none}
 .dlg-input input{flex:1;background:none;border:0;outline:none;font-size:13px}
 .dlg-input input::placeholder{color:var(--dim-2)}
+.dlg-input.bad{border-color:var(--gold);animation:dlgShake .3s var(--ease)}
+@keyframes dlgShake{
+  0%,100%{transform:translateX(0)}
+  25%{transform:translateX(-5px)}
+  75%{transform:translateX(5px)}}
 .dlg-foot{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px 16px}
+.dlg-foot .btn{white-space:nowrap;padding-left:10px;padding-right:10px}
 .dlg-text{font-size:13px;line-height:1.55;color:var(--dim);margin-bottom:12px}
 .dlg-text b{color:var(--text)}
 
@@ -438,13 +444,59 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
   border:1px solid var(--edge-soft);border-radius:calc(var(--r) + 2px);overflow:hidden;
   background:linear-gradient(180deg,var(--panel-2),rgba(8,8,11,.6));
   transition:.2s var(--ease)}
-.slot.empty{align-items:center;justify-content:center;cursor:pointer;
+
+/* --- open / locked seats: same card shape as a filled one, drawn in outline -- */
+.slot.open,.slot.locked{
+  border-style:dashed;border-color:var(--edge-soft);
   background:
-    repeating-linear-gradient(45deg,rgba(255,255,255,.014) 0 10px,transparent 10px 20px),
+    repeating-linear-gradient(45deg,rgba(255,255,255,.012) 0 10px,transparent 10px 20px),
     linear-gradient(180deg,rgba(14,14,18,.5),rgba(8,8,11,.5))}
-.slot.empty svg{width:42px;height:42px;color:rgba(255,46,69,.42);transition:.2s var(--ease)}
-.slot.empty:hover{border-color:var(--red);background:var(--red-soft);transform:translateY(-3px)}
-.slot.empty:hover svg{color:var(--red);transform:scale(1.12)}
+.slot.open{cursor:pointer;outline:none}
+.slot.open.noperm,.slot.locked{cursor:default}
+/* nothing fills the middle of an empty card, so the label block is centred */
+.slot.open .slot-top,.slot.locked .slot-top{
+  flex:1;display:flex;flex-direction:column;justify-content:center;padding-top:0}
+
+/* dashed avatar ring holding the icon, sized exactly like a real avatar */
+.slot-av.ghost{
+  background:radial-gradient(circle at 50% 38%,var(--red-soft),transparent 72%);
+  border:2px dashed rgba(255,46,69,.4);box-shadow:none;
+  color:rgba(255,46,69,.62);transition:.22s var(--ease)}
+.slot-av.ghost svg{width:34px;height:34px;transition:.22s var(--ease)}
+.slot.open .slot-name{color:var(--red);opacity:.82;transition:.22s var(--ease)}
+.slot.open .slot-ready{color:var(--dim-2)}
+
+/* placeholder crest + track keep the footer aligned with the filled cards */
+.ghost-crest{display:block;width:38px;height:38px;margin:3px auto 0;border-radius:50%;
+  border:1px dashed var(--edge-soft);opacity:.5}
+.slot-track.ghost{background:transparent;border-style:dashed;opacity:.55}
+.slot.open .slot-rank,.slot.locked .slot-rank{color:var(--dim-2);opacity:.85}
+
+/* hover only where the click actually does something */
+.slot.open:not(.noperm):hover,.slot.open:not(.noperm):focus-visible{
+  transform:translateY(-3px);border-style:solid;border-color:var(--red);
+  background:linear-gradient(180deg,var(--red-soft),rgba(8,8,11,.55));
+  box-shadow:inset 0 -70px 70px -60px var(--red-glow),0 10px 26px -18px var(--red-glow)}
+.slot.open:not(.noperm):hover .slot-av.ghost,
+.slot.open:not(.noperm):focus-visible .slot-av.ghost{
+  border-color:var(--red);border-style:solid;color:var(--red);
+  box-shadow:0 0 0 3px rgba(255,46,69,.22),0 0 30px -6px var(--red-glow)}
+.slot.open:not(.noperm):hover .slot-av.ghost svg{transform:scale(1.1)}
+.slot.open:not(.noperm):hover .slot-name{opacity:1}
+.slot.open:not(.noperm):hover .slot-ready{color:var(--red-3)}
+
+/* the dashed ring breathes so an empty seat reads as an invitation */
+.slot.open:not(.noperm) .slot-av.ghost{animation:seatPulse 2.6s var(--ease) infinite}
+@keyframes seatPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,46,69,.18)}
+  50%    {box-shadow:0 0 0 9px rgba(255,46,69,0)}}
+
+.slot.locked{opacity:.5}
+.slot.locked .slot-av.ghost{border-color:var(--edge);color:var(--dim-2);
+  background:radial-gradient(circle at 50% 38%,rgba(255,255,255,.03),transparent 72%)}
+.slot.locked .slot-name{color:var(--dim-2)}
+.slot.open.noperm{opacity:.68}
+
 .slot.filled{border-color:var(--edge);
   box-shadow:inset 0 -70px 70px -60px var(--red-glow),inset 0 1px 0 rgba(255,255,255,.05)}
 .slot.filled:hover{transform:translateY(-3px);border-color:var(--red)}
@@ -808,6 +860,8 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
   .shell{height:94vh}
   .slot-top{padding:18px 12px 0}
   .slot-av{width:62px;height:62px;font-size:24px}
+  .slot-av.ghost svg{width:28px;height:28px}
+  .ghost-crest{width:32px;height:32px}
   .idcard{padding:8px 12px;min-width:360px}
   .hd-title{font-size:22px;letter-spacing:.34em}
 }
@@ -833,6 +887,8 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
   .shell{width:min(1760px,92vw);height:min(1000px,90vh)}
   .hd-title{font-size:30px}
   .slot-av{width:88px;height:88px;font-size:34px}
+  .slot-av.ghost svg{width:40px;height:40px}
+  .ghost-crest{width:44px;height:44px}
 }
 @media (min-width:2800px){
   body{font-size:18px}
@@ -877,6 +933,8 @@ html[dir="rtl"] .cm-title .count{margin-left:0;margin-right:auto}
 html[dir="rtl"] .fld label{flex-direction:row-reverse}
 html[dir="rtl"] .mini.right{margin-left:0;margin-right:auto}
 html[dir="rtl"] .slot-nums{flex-direction:row-reverse}
+/* 9px Arabic is unreadable once the Latin letter-spacing is dropped */
+html[dir="rtl"] .slot-ready{font-size:11px}
 html[dir="rtl"] .lb-head span:not(:nth-child(2)),
 html[dir="rtl"] .brow span:not(.who):not(.pos){text-align:center}
 html[dir="rtl"] .brow .who{flex-direction:row-reverse;text-align:right}

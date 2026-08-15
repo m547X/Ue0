@@ -120,6 +120,24 @@ Reads are cached (`leaderboardCacheTime`, `profileCacheTime`), writes are
 batched — player rows are marked dirty and flushed on an interval instead of
 per event. Every table carries the indexes its queries need.
 
+Three points keep per-season data from being lost:
+
+- **The per-season tables are written as upserts.** `m5_player_ranks`,
+  `m5_player_mmr` and `m5_player_stats` are keyed on `(user_id, season_id)`. A
+  plain `UPDATE` reports success while changing nothing when that row does not
+  exist, so an admin-granted rank could vanish on the next join. `INSERT … ON
+  DUPLICATE KEY UPDATE` makes the write land whether the row exists or not.
+- **No profile loads before the season is known.** `vRP:playerSpawn` waits for
+  the boot sequence (`DB.init()` then `Season.load()`). Loading earlier would
+  stamp the player's rows with season `0`, and every later save — which targets
+  the real season — would quietly update nothing.
+- **Re-loading a cached profile flushes it first.** A resource restart re-reads
+  everyone who is already connected; the in-memory row is saved before it is
+  replaced, so nothing pending is dropped.
+
+If there is no active season at all, ranked writes are held and retried on the
+next flush rather than being buried under a phantom season `0`.
+
 ---
 
 ## 4. Headshot — one shot kill, no distance falloff
@@ -320,6 +338,13 @@ Gameplay permissions stay separate: `pvp.menu`, `pvp.custom.create`,
 Point changes are capped by `Config.AdminLimits` (`maxRPGrant`, `maxRPDeduct`,
 `maxXPGrant`) so a typo cannot wreck a ladder, and actions marked `reason = true`
 are refused without one.
+
+**Targets are user IDs only.** The TARGET PLAYER box accepts digits and nothing
+else — the UI strips anything else as you type and the server refuses a
+non-numeric target. Name matching was removed on purpose: two accounts can carry
+the same display name, and a partial match could silently point a ban or an RP
+wipe at the wrong player. Use the LOAD button to confirm the ID resolves to the
+account you expect before acting on it.
 
 ### Audit log
 

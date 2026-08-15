@@ -160,6 +160,14 @@ const I18N = {
     'QUEUE': 'الطابور', 'PARTY': 'المجموعة', 'PARTY INVITE': 'دعوة مجموعة',
     'Unranked': 'بدون رتبة',
 
+    // party slots
+    'INVITE PLAYER': 'دعوة لاعب', 'CLICK TO INVITE': 'اضغط للدعوة',
+    'OPEN SLOT': 'مقعد شاغر', 'SLOT LOCKED': 'مقعد مقفل',
+    'LEADER ONLY': 'القائد فقط', 'SEND INVITE': 'إرسال الدعوة',
+    'Enter the server ID of the player you want in your party.':
+      'أدخل رقم اللاعب في السيرفر لإضافته إلى مجموعتك.',
+    'Enter a player ID first.': 'أدخل رقم اللاعب أولًا.',
+
     // custom match
     'MATCH SETTINGS': 'إعدادات المباراة', 'GAME MODE': 'نمط اللعب', 'ROUNDS': 'الجولات',
     'MATCH TYPE': 'نوع المباراة', 'WEAPONS': 'الأسلحة', 'ARMOR': 'الدرع',
@@ -191,13 +199,14 @@ const I18N = {
     // admin
     'MONITOR': 'مراقبة', 'MATCHES': 'المباريات', 'POINTS': 'النقاط',
     'PUNISH': 'العقوبات', 'SYSTEM': 'النظام', 'REFRESH': 'تحديث',
-    'TARGET PLAYER': 'اللاعب المستهدف', 'REASON': 'السبب', 'STATUS': 'الحالة',
+    'TARGET PLAYER': 'اللاعب المستهدف', 'PLAYER ID': 'رقم اللاعب',
+    'REASON': 'السبب', 'STATUS': 'الحالة',
+    'No player with that ID.': 'لا يوجد لاعب بهذا الرقم.',
     'LOAD': 'تحميل', 'no player loaded': 'لم يُحمَّل لاعب',
     'ADMIN': 'الإدارة', 'APPLY': 'تنفيذ',
 
     // toasts
     'A reason is required for this action.': 'هذا الإجراء يتطلب سببًا.',
-    'Enter a player id or name first.': 'أدخل رقم أو اسم اللاعب أولًا.',
     'Action applied.': 'تم تنفيذ الإجراء.',
     'ELIMINATED': 'تم إقصاؤك', 'SURRENDER': 'استسلام'
   }
@@ -476,9 +485,43 @@ function renderSlots() {
     const m = members[i];
 
     if (!m) {
-      const slot = el('div', 'slot empty', '<svg><use href="#i-plus"/></svg>');
-      if (i < capacity && iAmLeader) slot.onclick = () => openInvite();
-      else slot.style.opacity = '.4';
+      /* An open slot mirrors the filled card's layout so the whole row reads as
+         one set of cards. Three states: invitable, waiting on the leader, or
+         locked because the mode's team size does not reach this seat. */
+      const seatFree  = i < capacity;
+      const invitable = seatFree && iAmLeader;
+      const modeLabel = (modeCfg && modeCfg.label) || S.mode;
+
+      const cls  = invitable ? 'open' : (seatFree ? 'open noperm' : 'locked');
+      const icon = seatFree ? 'i-userplus' : 'i-lock';
+      const head = seatFree ? 'INVITE PLAYER' : 'LOCKED';
+      const sub  = invitable ? 'CLICK TO INVITE' : (seatFree ? 'LEADER ONLY' : 'SLOT LOCKED');
+
+      const slot = el('div', 'slot ' + cls, `
+        <div class="slot-top">
+          <div class="slot-av ghost"><svg><use href="#${icon}"/></svg></div>
+          <div class="slot-name">${esc(tx(head))}</div>
+          <div class="slot-ready">${esc(tx(sub))}</div>
+        </div>
+        <div class="slot-foot">
+          <div class="slot-crest"><span class="ghost-crest"></span></div>
+          <div class="slot-track ghost"></div>
+          <div class="slot-nums">
+            <span>&ndash;</span>
+            <span class="slot-rank">${esc(seatFree ? tx('OPEN SLOT') : modeLabel)}</span>
+            <span>&ndash;</span>
+          </div>
+        </div>`);
+
+      if (invitable) {
+        slot.tabIndex = 0;
+        slot.setAttribute('role', 'button');
+        slot.onclick = () => { Sfx.play('click'); openInvite(); };
+        slot.onkeydown = (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); slot.click(); }
+        };
+      }
+
       host.appendChild(slot);
       continue;
     }
@@ -520,7 +563,26 @@ function openInvite() {
   $('modal-invite').classList.remove('hidden');
   const input = $('invite-id');
   input.value = '';
+  input.parentNode.classList.remove('bad');
   setTimeout(() => input.focus(), 40);
+}
+
+function sendInvite() {
+  const input = $('invite-id');
+  const v = input.value.trim();
+
+  if (!v) {                                   // say why instead of closing silently
+    const wrap = input.parentNode;
+    wrap.classList.remove('bad');
+    void wrap.offsetWidth;                    // restart the shake
+    wrap.classList.add('bad');
+    toast('warning', tx('Enter a player ID first.'), tx('INVITE PLAYER'), 3200);
+    input.focus();
+    return;
+  }
+
+  post('party', { action: 'invite', target: v });
+  $('modal-invite').classList.add('hidden');
 }
 
 function toggleQueue() {
@@ -1214,9 +1276,10 @@ function admDef(action) {
   return (S.admin && S.admin.allowed && S.admin.allowed[action]) || {};
 }
 
-/** Shared target box: one player id/name feeds every player tool. */
+/** Shared target box: one player id feeds every player tool. Digits only. */
 function admTarget() {
-  return ($('adm-target') && $('adm-target').value.trim()) || '';
+  const raw = ($('adm-target') && $('adm-target').value.trim()) || '';
+  return /^[0-9]+$/.test(raw) ? raw : '';
 }
 function admReason() {
   return ($('adm-reason') && $('adm-reason').value.trim()) || '';
@@ -1281,7 +1344,8 @@ function renderAdmin(d) {
   const targetBar = `
     <div class="adm-target">
       <div><span class="lbl">${esc(tx('TARGET PLAYER'))}</span>
-        <input class="inp" id="adm-target" placeholder="ID or name" value="${esc(S.admTargetValue || '')}"/></div>
+        <input class="inp" id="adm-target" inputmode="numeric" maxlength="10"
+               placeholder="${esc(tx('PLAYER ID'))}" value="${esc(S.admTargetValue || '')}"/></div>
       <div><span class="lbl">${esc(tx('REASON'))}</span>
         <input class="inp" id="adm-reason" placeholder="Required for most actions"/></div>
       <div><span class="lbl">${esc(tx('STATUS'))}</span>
@@ -1449,8 +1513,16 @@ function renderAdmin(d) {
   if (!html) html = '<div class="locked-note">YOU HAVE NO PERMISSIONS IN THIS SECTION</div>';
   host.innerHTML = html;
 
+  /* The target is a user id only — a name could match two accounts and point a
+     ban or an RP wipe at the wrong one, so anything non-numeric is stripped. */
   const targetInput = $('adm-target');
-  if (targetInput) targetInput.oninput = () => { S.admTargetValue = targetInput.value; };
+  if (targetInput) {
+    targetInput.oninput = () => {
+      const clean = targetInput.value.replace(/[^0-9]/g, '');
+      if (clean !== targetInput.value) targetInput.value = clean;
+      S.admTargetValue = clean;
+    };
+  }
 
   host.querySelectorAll('[data-adm]').forEach((b) => { b.onclick = () => admAction(b); });
   enhanceSelects(host);
@@ -1470,7 +1542,7 @@ function admAction(btn) {
 
     case 'lookup':        post('admin', { action: 'playerLookup', target: btn.dataset.target }); break;
     case 'lookupInput':
-      if (!target) { toast('warning', tx('Enter a player id or name first.'), tx('ADMIN')); break; }
+      if (!target) { toast('warning', tx('Enter a player ID first.'), tx('ADMIN')); break; }
       post('admin', { action: 'playerLookup', target });
       break;
 
@@ -1944,12 +2016,7 @@ document.addEventListener('click', (e) => {
       break;
 
     case 'invite-cancel': $('modal-invite').classList.add('hidden'); break;
-    case 'invite-send': {
-      const v = $('invite-id').value.trim();
-      if (v) post('party', { action: 'invite', target: v });
-      $('modal-invite').classList.add('hidden');
-      break;
-    }
+    case 'invite-send': sendInvite(); break;
 
     case 'cm-all': {
       const all = ((S.boot && S.boot.weaponPresets) || []).map((w) => w.id);
@@ -2002,12 +2069,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Enter') {
     if (!$('modal-prompt').classList.contains('hidden')) return;   // handled by the dialog
-    if (!$('modal-invite').classList.contains('hidden')) {
-      const v = $('invite-id').value.trim();
-      if (v) post('party', { action: 'invite', target: v });
-      $('modal-invite').classList.add('hidden');
-      return;
-    }
+    if (!$('modal-invite').classList.contains('hidden')) { sendInvite(); return; }
     if (S.found) $('btn-accept').click();
   }
 }, true);
