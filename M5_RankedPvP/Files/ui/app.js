@@ -50,6 +50,7 @@ const S = {
 
   mode: '1v1',
   queue: { searching: false, elapsed: 0 },
+  lastQueue: null,
   found: null, foundTimer: null,
   mapvote: null, mapvoteTimer: null,
 
@@ -164,7 +165,7 @@ const I18N = {
     'INVITE PLAYER': 'دعوة لاعب', 'CLICK TO INVITE': 'اضغط للدعوة',
     'OPEN SLOT': 'مقعد شاغر', 'SLOT LOCKED': 'مقعد مقفل',
     'LEADER ONLY': 'القائد فقط', 'SEND INVITE': 'إرسال الدعوة',
-    'BECOMES': 'يتحول إلى', 'INVITE IN ORDER': 'املأ المقعد السابق أولًا',
+    'INVITE IN ORDER': 'املأ المقعد السابق أولًا',
     'Enter the server ID of the player you want in your party.':
       'أدخل رقم اللاعب في السيرفر لإضافته إلى مجموعتك.',
     'Enter a player ID first.': 'أدخل رقم اللاعب أولًا.',
@@ -219,9 +220,12 @@ function tx(str) {
   return (d && d[str]) || str;
 }
 
-/** Re-labels the static markup and flips direction. */
+/** Re-labels the static markup, flips direction, and redraws dynamic text. */
 function applyLanguage(lang) {
-  S.lang = (lang === 'ar') ? 'ar' : 'en';
+  const next = (lang === 'ar') ? 'ar' : 'en';
+  const changed = next !== S.lang;
+  S.lang = next;
+
   document.documentElement.setAttribute('lang', S.lang);
   document.documentElement.setAttribute('dir', S.lang === 'ar' ? 'rtl' : 'ltr');
 
@@ -229,9 +233,36 @@ function applyLanguage(lang) {
     n.textContent = tx(n.dataset.i18n);
   });
 
+  /* Everything built by a renderer resolved its labels through tx() when it was
+     drawn, so the static pass above cannot reach it — the party slots, the mode
+     tabs and the open page keep the previous language until they are rebuilt. */
+  if (changed) redrawForLanguage();
+
   // pages carry translated titles too
   const title = document.querySelector('.hd-title');
   if (title) title.textContent = tx(PAGE_TITLES[S.page] || 'MATCHMAKING');
+}
+
+/** Rebuilds every rendered surface so a language switch reaches all of it. */
+let langRedrawTimer = 0;
+function redrawForLanguage() {
+  clearTimeout(langRedrawTimer);
+  /* Deferred by a tick on purpose: the switch usually arrives from the language
+     <select>'s own change handler, and rebuilding the settings page would tear
+     that element out from under the event still running on it. Debouncing also
+     collapses the input+change pair a select fires into a single redraw. */
+  langRedrawTimer = setTimeout(() => {
+    if (!S.boot) return;
+    try {
+      renderModeTabs();
+      renderSlots();
+      renderQueue(S.lastQueue);
+      showPage(S.page || 'ranked');
+    } catch (e) {
+      // a failed relabel must never take the menu down with it
+      console.error('language redraw failed', e);
+    }
+  }, 0);
 }
 
 /* --------------------------------------------------------- prompt / confirm */
@@ -500,16 +531,15 @@ function renderSlots() {
       const isNext    = i === nextSeat;
       const invitable = isNext && iAmLeader;
 
-      /* what this seat means for the mode once it is filled */
+      /* the mode this seat belongs to, when one exists for that team size */
       const seatMode  = modeLabelForSize(i + 1);
-      const growsMode = seatMode && modeCfg && (i + 1) !== modeCfg.teamSize;
 
       let cls, icon, head, sub;
       if (invitable) {
         cls  = 'open';
         icon = 'i-userplus';
         head = 'INVITE PLAYER';
-        sub  = growsMode ? null : 'CLICK TO INVITE';
+        sub  = 'CLICK TO INVITE';
       } else if (isNext) {
         cls  = 'open noperm';
         icon = 'i-userplus';
@@ -523,20 +553,18 @@ function renderSlots() {
         sub  = 'INVITE IN ORDER';
       }
 
-      const subText = sub ? tx(sub) : `${tx('BECOMES')} ${seatMode}`;
-
       const slot = el('div', 'slot ' + cls, `
         <div class="slot-top">
           <div class="slot-av ghost"><svg><use href="#${icon}"/></svg></div>
           <div class="slot-name">${esc(tx(head))}</div>
-          <div class="slot-ready">${esc(subText)}</div>
+          <div class="slot-ready">${esc(tx(sub))}</div>
         </div>
         <div class="slot-foot">
           <div class="slot-crest"><span class="ghost-crest"></span></div>
           <div class="slot-track ghost"></div>
           <div class="slot-nums">
             <span>&ndash;</span>
-            <span class="slot-rank">${esc(seatMode || tx('OPEN SLOT'))}</span>
+            <span class="slot-rank">${seatMode ? esc(seatMode) : '&ndash;'}</span>
             <span>&ndash;</span>
           </div>
         </div>`);
@@ -573,7 +601,7 @@ function renderSlots() {
         <div class="slot-track"><i style="width:${pct}%"></i></div>
         <div class="slot-nums">
           <span>${num(lo)}</span>
-          <span class="slot-rank">${esc(m.rank || 'Unranked')} (${esc((modeCfg && modeCfg.label) || S.mode)})</span>
+          <span class="slot-rank">${esc(tx(m.rank || 'Unranked'))} (${esc((modeCfg && modeCfg.label) || S.mode)})</span>
           <span>${num(hi)}</span>
         </div>
       </div>`);
@@ -620,6 +648,7 @@ function toggleQueue() {
 }
 
 function renderQueue(q) {
+  if (q) S.lastQueue = q;          // kept so a language redraw can replay it
   const searching = !!(q && q.state === 'SEARCHING');
   S.queue.searching = searching;
 
