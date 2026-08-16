@@ -120,6 +120,16 @@ Reads are cached (`leaderboardCacheTime`, `profileCacheTime`), writes are
 batched — player rows are marked dirty and flushed on an interval instead of
 per event. Every table carries the indexes its queries need.
 
+**`TINYINT(1)` comes back as a boolean.** oxmysql sits on node-mysql2, which
+maps `TINYINT(1)` to a JavaScript boolean, so such a column arrives in Lua as
+`true`/`false` rather than `1`/`0`. `tonumber(true)` is `nil`, so the natural
+`tonumber(row.flag) == 1` reads a *set* flag as false. That is why a player
+could hold `rank_id = 23, rp = 2600, placement_done = 1` in the database and
+still load as **Unranked**: the rank was stored perfectly, but
+`placement_done` failed the round trip and the boot payload falls back to
+Unranked whenever placement is unfinished. Every such column is now read
+through `toBool()`, which accepts booleans, numbers and strings.
+
 Five points keep per-season data from being lost:
 
 - **The per-season tables are written as upserts.** `m5_player_ranks`,

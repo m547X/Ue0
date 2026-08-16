@@ -100,6 +100,24 @@ local function jsonDecode(v, fallback)
     return fallback or {}
 end
 
+--- Reads a MySQL TINYINT(1) back as a Lua boolean.
+---
+--- This is not decoration. oxmysql sits on node-mysql2, which converts
+--- TINYINT(1) to a JavaScript boolean, so the column arrives in Lua as `true`
+--- or `false` — not as 1 or 0. `tonumber(true)` is nil, so the obvious
+--- `tonumber(row.flag) == 1` evaluates to false for a flag that is set, and a
+--- player whose placement was finished reads back as Unranked on every load.
+--- Older driver versions do hand back a number, and a few setups a string, so
+--- all three forms are accepted.
+local function toBool(v)
+    if type(v) == 'boolean' then return v end
+    if type(v) == 'number'  then return v ~= 0 end
+    if type(v) == 'string'  then
+        return v == '1' or v == 'true' or v == 'TRUE' or v == 't'
+    end
+    return false
+end
+
 local function hashString(s)
     local h = 5381
     for i = 1, #s do
@@ -1172,7 +1190,7 @@ function Player.load(userId, source)
         division       = tonumber(rank.division) or 0,
         highestRankId  = tonumber(rank.highest_rank_id) or 0,
         highestRP      = tonumber(rank.highest_rp) or 0,
-        placementDone  = (tonumber(rank.placement_done) or 0) == 1,
+        placementDone  = toBool(rank.placement_done),
         placementPlayed= tonumber(rank.placement_played) or 0,
         placementData  = jsonDecode(rank.placement_data, {}),
         rankProtection = tonumber(rank.rank_protection) or 0,
@@ -5355,7 +5373,7 @@ function Missions.list(userId)
                 key = r.mission_key,
                 label = def and def.label or r.mission_key,
                 progress = r.progress, target = r.target,
-                completed = r.completed == 1, claimed = r.claimed == 1,
+                completed = toBool(r.completed), claimed = toBool(r.claimed),
                 xp = def and def.xp or 0, money = def and def.money or 0
             }
         end
@@ -5865,7 +5883,7 @@ local function buildProfile(userId, showMMR)
     local wins   = tonumber(srow.wins) or 0
     local losses = tonumber(srow.losses) or 0
     local rank   = Rank.get(tonumber(rrow.rank_id) or 0)
-    local placementDone = (tonumber(rrow.placement_done) or 0) == 1
+    local placementDone = toBool(rrow.placement_done)
 
     local history = DB.query([[SELECT s.number, s.name, sp.final_rp, sp.final_rank_id, sp.rank_name
                                FROM m5_season_players sp
@@ -5981,8 +5999,8 @@ function Board.history(userId, page)
             assists   = tonumber(r.assists) or 0,
             headshots = tonumber(r.headshots) or 0,
             damage    = tonumber(r.damage) or 0,
-            mvp       = tonumber(r.mvp) == 1,
-            ranked    = tonumber(r.ranked) == 1,
+            mvp       = toBool(r.mvp),
+            ranked    = toBool(r.ranked),
             duration  = tonumber(r.duration) or 0,
             date      = r.ended_at
         }
@@ -6007,7 +6025,7 @@ function Board.matchDetail(matchId)
             userId = p.user_id, name = p.name, team = tonumber(p.team) or 1,
             kills = kills, deaths = deaths, assists = tonumber(p.assists) or 0,
             headshots = tonumber(p.headshots) or 0, damage = tonumber(p.damage) or 0,
-            score = tonumber(p.score) or 0, mvp = tonumber(p.mvp) == 1,
+            score = tonumber(p.score) or 0, mvp = toBool(p.mvp),
             rpChange = tonumber(p.rp_change) or 0,
             kd = deaths > 0 and round(kills / deaths, 2) or kills,
             rank = Rank.get(tonumber(p.rank_after) or 0).name,
@@ -6023,9 +6041,9 @@ function Board.matchDetail(matchId)
         scores  = { a = mt.team_a_score, b = mt.team_b_score },
         winner  = mt.winner,
         duration= mt.duration,
-        ranked  = tonumber(mt.ranked) == 1,
+        ranked  = toBool(mt.ranked),
         date    = mt.ended_at,
-        overtime= tonumber(mt.overtime) == 1,
+        overtime= toBool(mt.overtime),
         roster  = roster,
         rounds  = rounds
     }
@@ -6255,7 +6273,8 @@ function Player.verifyRank(userId)
         return 'no active season — the change is held in memory and not saved'
     end
 
-    local row = DB.single('SELECT rp, rank_id FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
+    local row = DB.single(
+        'SELECT rp, rank_id, placement_done FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
         { userId, seasonId })
 
     if not row then
@@ -6269,6 +6288,15 @@ function Player.verifyRank(userId)
         err('VERIFY FAILED: user %d memory rank=%d rp=%d but database rank=%d rp=%d (season %d)',
             userId, pd.rankId, pd.rp, storedRank, storedRP, seasonId)
         return ('saved value does not match: database has rank %d / %d RP'):format(storedRank, storedRP)
+    end
+
+    -- The row can carry the right rank and still display as Unranked if this
+    -- flag does not survive the round trip, so it is checked the same way.
+    if toBool(row.placement_done) ~= (pd.placementDone and true or false) then
+        err('VERIFY FAILED: user %d placement_done stored as %s (%s) but memory has %s',
+            userId, tostring(row.placement_done), type(row.placement_done),
+            tostring(pd.placementDone))
+        return 'placement flag did not round-trip — the player would load as Unranked'
     end
 
     return nil
@@ -7373,9 +7401,12 @@ RegisterCommand('m5rankinfo', function(src, args)
     local row = DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
         { userId, seasonId })
     if row then
-        print(('[M5RP] database: rp=%s rank_id=%s (%s) placement_done=%s')
+        -- the Lua type matters: oxmysql hands TINYINT(1) back as a boolean on
+        -- current versions and as a number on older ones
+        print(('[M5RP] database: rp=%s rank_id=%s (%s) placement_done=%s (lua type: %s -> %s)')
             :format(tostring(row.rp), tostring(row.rank_id),
-                    Rank.get(tonumber(row.rank_id) or 0).name, tostring(row.placement_done)))
+                    Rank.get(tonumber(row.rank_id) or 0).name, tostring(row.placement_done),
+                    type(row.placement_done), tostring(toBool(row.placement_done))))
     else
         print(('[M5RP] database: NO ROW for season %d'):format(seasonId))
     end
