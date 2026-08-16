@@ -203,17 +203,41 @@ local function teleport(spawn, freeze)
     end)
 end
 
+-- Looped effects run until something stops them. Every one started without a
+-- duration is remembered here so it can always be cleared, whatever happens
+-- next — leaving the match, disconnecting, the resource restarting. Without
+-- this, walking out of the combat zone and then leaving the match left the
+-- boundary tint burned onto the screen with no way back.
+local activeEffects = {}
+
 local function screenEffect(name, duration)
     if not Config.Effects.enabled or not name then return end
     if duration then
         StartScreenEffect(name, duration / 1000, false)
     else
         StartScreenEffect(name, 0, true)
+        activeEffects[name] = true
     end
 end
 
 local function stopScreenEffect(name)
-    if name then StopScreenEffect(name) end
+    if not name then return end
+    StopScreenEffect(name)
+    activeEffects[name] = nil
+end
+
+--- Clears every looped effect this resource started. Safe to call at any time.
+local function clearScreenEffects()
+    for name in pairs(activeEffects) do StopScreenEffect(name) end
+    activeEffects = {}
+    -- belt and braces: an effect started before a resource restart is not in
+    -- the table above, and the player has no other way to get rid of it
+    StopAllScreenEffects()
+    TriggerScreenblurFadeOut(0)
+    ResetScenarioTypesEnabled()
+    ClearTimecycleModifier()
+    SetTransitionTimecycleModifier('default', 0.5)
+    ClearExtraTimecycleModifier()
 end
 
 -- ============================================================================
@@ -681,6 +705,13 @@ RegisterNetEvent('m5rp:cl:round', function(data)
 
     elseif data.phase == 'end' then
         State.roundLive = false
+        -- the boundary check stops running between rounds, so its tint has to
+        -- be dropped here or it stays up through the whole break
+        if State.outside then
+            State.outside = false
+            stopScreenEffect(Config.Effects.outOfBoundsEffect)
+            nui({ action = 'boundary', active = false })
+        end
         nui({ action = 'round', data = {
             phase = 'end', round = data.round, winner = data.winner,
             reason = data.reason, scores = data.scores,
@@ -749,6 +780,7 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
 
     stopSpectate()
     clearBots()
+    clearScreenEffects()
 
     local ped = playerPed()
     FreezeEntityPosition(ped, false)
@@ -1561,6 +1593,20 @@ end)
 -- 12. NOTIFICATIONS & MISC
 -- ============================================================================
 
+-- Escape hatch. If a screen effect ever survives — a crash mid match, an old
+-- build, another resource leaving one behind — this wipes the screen clean
+-- without a reconnect.
+RegisterCommand('pvpclear', function()
+    clearScreenEffects()
+    local ped = playerPed()
+    FreezeEntityPosition(ped, false)
+    SetEntityVisible(ped, true, false)
+    DisplayRadar(true)
+    State.frozen = false
+    nui({ action = 'toast', kind = 'success',
+          message = 'Screen effects cleared.', title = 'M5 PVP' })
+end, false)
+
 RegisterNetEvent('m5rp:cl:notify', function(data)
     nui({ action = 'toast', kind = data.kind or 'info',
           message = data.message, title = data.title })
@@ -1577,9 +1623,9 @@ AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
 
     setFocus(false)
-    TriggerScreenblurFadeOut(0)
     clearTrainingTargets()
     clearBots()
+    clearScreenEffects()
 
     if State.spectateCam then
         RenderScriptCams(false, false, 0, true, true)
