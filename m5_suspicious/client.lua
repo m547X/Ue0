@@ -31,16 +31,16 @@ local function drawRect(x, y, w, h, r, g, b, a)
     DrawRect(x + w / 2, y + h / 2, w, h, r, g, b, a)
 end
 
-local LEVEL_RGB = {
-    LOW      = { 120, 200, 120 },
-    MEDIUM   = { 235, 200, 90  },
-    HIGH     = { 240, 150, 60  },
-    CRITICAL = { 235, 70,  70  },
-}
-
 local function levelColor(level)
-    local c = LEVEL_RGB[level] or LEVEL_RGB.LOW
+    local c = Config.LevelColors[level] or Config.LevelColors.LOW
     return c[1], c[2], c[3]
+end
+
+--- 1 / 0 / -1 coming from the server, rendered in the client's language.
+local function yesNo(v)
+    if v == 1 or v == true then return "~r~" .. L.alert_yes end
+    if v == 0 or v == false then return "~g~" .. L.alert_no end
+    return "~c~" .. L.alert_unknown
 end
 
 -- ============================================================
@@ -88,24 +88,24 @@ CreateThread(function()
                 if alerts[i].expires <= now then table.remove(alerts, i) end
             end
 
-            local y = 0.28
+            local y = Config.Alert.Y
             for _, alert in ipairs(alerts) do
                 local d = alert.data
                 local r, g, b = levelColor(d.level)
-                local x, w, h = 0.735, 0.245, 0.185
+                local x, w, h = Config.Alert.X, Config.Alert.W, Config.Alert.H
 
                 drawRect(x, y, w, h, 0, 0, 0, 190)
                 drawRect(x, y, 0.004, h, r, g, b, 255)
                 drawRect(x, y, w, 0.028, r, g, b, 90)
 
-                drawText(("~y~⚠ %s"):format(d.title), x + 0.012, y + 0.004, 0.42, 4, 255, 255, 255, 255)
+                drawText(("~y~! %s"):format(L.alert_title), x + 0.012, y + 0.004, 0.42, 4, 255, 255, 255, 255)
                 drawText(("%d/100  %s"):format(d.score, d.level), x + w - 0.012, y + 0.004, 0.42, 4, r, g, b, 255, "right")
 
                 local body = L.alert_body:format(
                     d.name or "?", d.serverId or "?", d.userId or "?",
                     d.score, d.level,
-                    d.vpn, d.newAcc, d.sharedIP, d.sharedHW,
-                    d.discord, d.fivem
+                    yesNo(d.vpn), yesNo(d.newAcc), d.sharedIP, d.sharedHW,
+                    d.discord or L.alert_none, d.fivem or L.alert_none
                 )
 
                 local line = y + 0.036
@@ -114,7 +114,7 @@ CreateThread(function()
                     line = line + 0.0165
                 end
 
-                y = y + h + 0.012
+                y = y + h + Config.Alert.Gap
             end
 
             Wait(0)
@@ -233,14 +233,7 @@ local function drawList()
     end
 
     drawRect(x, rowY, w, 0.030, 20, 20, 20, 210)
-    drawText("~c~[↑↓] navigate   [Enter] open   [Backspace] close   [R] refresh",
-        x + w / 2, rowY + 0.005, 0.30, 4, 200, 200, 200, 255, "center")
-end
-
-local function yesNo(v)
-    if v == 1 then return "~r~" .. L.alert_yes end
-    if v == 0 then return "~g~" .. L.alert_no end
-    return "~c~" .. L.alert_unknown
+    drawText("~c~" .. L.hint_list, x + w / 2, rowY + 0.005, 0.30, 4, 200, 200, 200, 255, "center")
 end
 
 local function drawDetail()
@@ -256,22 +249,22 @@ local function drawDetail()
     drawText(("%d/100  %s"):format(entry.score, entry.level), x + w - 0.010, y + 0.012, 0.42, 4, r, g, b, 255, "right")
 
     local rows = {
-        { "Risk Level",      ("~s~%s%d/100 - %s"):format("", entry.score, entry.level) },
-        { "Reasons",         #entry.reasons > 0 and table.concat(entry.reasons, ", ") or "-" },
-        { "IP",              entry.ip },
-        { "VPN / Proxy",     yesNo(entry.vpn) },
-        { "New Account",     entry.newAcc and ("~r~" .. L.alert_yes) or ("~g~" .. L.alert_no) },
-        { "Shared IP",       tostring(entry.sharedIP) },
-        { "Shared HWID",     tostring(entry.sharedHW) },
-        { "HWID Tokens",     tostring(entry.tokens) },
-        { "License",         entry.license },
-        { "Discord",         entry.discord },
-        { "FiveM ID",        entry.fivem },
-        { "Steam",           entry.steam },
-        { "Location",        entry.location },
-        { "First Detected",  entry.firstSeen },
-        { "Status",          ("%s (%s)"):format(entry.status, entry.handledBy) },
-        { "Online",          entry.online and ("~g~" .. L.alert_yes) or ("~c~" .. L.alert_no) },
+        { L.row_level,       ("%d/100 - %s"):format(entry.score, entry.level) },
+        { L.row_reasons,     #entry.reasons > 0 and table.concat(entry.reasons, ", ") or "-" },
+        { L.row_ip,          entry.ip },
+        { L.row_vpn,         yesNo(entry.vpn) },
+        { L.row_new,         yesNo(entry.newAcc) },
+        { L.row_shared_ip,   tostring(entry.sharedIP) },
+        { L.row_shared_hwid, tostring(entry.sharedHW) },
+        { L.row_tokens,      tostring(entry.tokens) },
+        { L.row_license,     entry.license },
+        { L.row_discord,     entry.discord },
+        { L.row_fivem,       entry.fivem },
+        { L.row_steam,       entry.steam },
+        { L.row_location,    entry.location },
+        { L.row_first_seen,  entry.firstSeen },
+        { L.row_status,      ("%s (%s)"):format(entry.status, entry.handledBy) },
+        { L.row_online,      entry.online and ("~g~" .. L.alert_yes) or ("~c~" .. L.alert_no) },
     }
 
     local rowY = y + 0.048
@@ -290,7 +283,7 @@ local function drawDetail()
             drawText((selected and "~y~> " or "  ") .. "~s~[" .. action.label() .. "]",
                 x + 0.012, rowY + 0.005, 0.33, 4, 235, 235, 235, 255)
             if action.confirm then
-                drawText("~c~" .. Config.BanDurations[menu.durationIndex].label,
+                drawText("~c~" .. Config.BanDurationLabels[menu.durationIndex],
                     x + w - 0.010, rowY + 0.005, 0.31, 4, 200, 200, 200, 255, "right")
             end
             rowY = rowY + 0.030
@@ -298,8 +291,7 @@ local function drawDetail()
     end
 
     drawRect(x, rowY, w, 0.030, 20, 20, 20, 210)
-    drawText("~c~[↑↓] action   [←→] duration   [Enter] confirm   [Backspace] back",
-        x + w / 2, rowY + 0.005, 0.30, 4, 200, 200, 200, 255, "center")
+    drawText("~c~" .. L.hint_detail, x + w / 2, rowY + 0.005, 0.30, 4, 200, 200, 200, 255, "center")
 end
 
 -- ---------- input ----------
@@ -359,9 +351,9 @@ CreateThread(function()
                     pos = pos < #selectable and pos + 1 or 1
                     menu.actionIndex = selectable[pos]
                 elseif IsControlJustPressed(0, 174) then       -- left
-                    menu.durationIndex = menu.durationIndex > 1 and menu.durationIndex - 1 or #Config.BanDurations
+                    menu.durationIndex = menu.durationIndex > 1 and menu.durationIndex - 1 or #Config.BanDurationLabels
                 elseif IsControlJustPressed(0, 175) then       -- right
-                    menu.durationIndex = menu.durationIndex < #Config.BanDurations and menu.durationIndex + 1 or 1
+                    menu.durationIndex = menu.durationIndex < #Config.BanDurationLabels and menu.durationIndex + 1 or 1
                 elseif IsControlJustPressed(0, 177) then
                     menu.view = "list"
                 elseif IsControlJustPressed(0, 191) or IsControlJustPressed(0, 201) then

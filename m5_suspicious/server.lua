@@ -10,7 +10,15 @@ local Tunnel = module("vrp", "lib/Tunnel")
 local Proxy  = module("vrp", "lib/Proxy")
 vRP = Proxy.getInterface("vRP")
 
-local L = Config.Locale[Config.Language] or Config.Locale.en
+--- Locale lookup with a safe fallback chain: requested -> default -> en.
+local function locale(lang)
+    return Config.Locale[lang] or Config.Locale[Config.Language] or Config.Locale.en
+end
+
+local L  = locale(Config.Language)        -- general / stored strings
+local LK = locale(Config.KickLanguage)    -- connection screen + kick messages (CEF, Arabic-safe)
+local LM = locale(Config.MenuLanguage)    -- anything the client renders with the game fonts
+local LG = Config.LogLabels[Config.LogLanguage] or Config.LogLabels.en   -- Discord embeds
 
 -- ============================================================
 --  0. Small helpers
@@ -545,10 +553,12 @@ local function computeRisk(profile)
     return clamp(score, 0, 100), levelFor(clamp(score, 0, 100)), reasons
 end
 
-local function reasonLabels(reasons)
+--- Translates reason keys into readable labels for the given language.
+local function reasonLabels(reasons, lang)
+    local labels = Config.ReasonLabels[lang or Config.Language] or Config.ReasonLabels.en
     local out = {}
     for _, key in ipairs(reasons) do
-        out[#out + 1] = Config.ReasonLabels[key] or key
+        out[#out + 1] = labels[key] or key
     end
     return out
 end
@@ -591,20 +601,20 @@ local function sendAlert(profile)
     end
     lastAlert[key] = os.time()
 
+    -- Raw values only: the client renders them with its own locale, so the
+    -- menu language is owned entirely by config_client.lua.
     local payload = {
-        title    = L.alert_title,
         name     = profile.name,
         serverId = profile.server_id,
         userId   = profile.user_id,
         score    = profile.score,
         level    = profile.level.name,
-        color    = profile.level.color,
-        vpn      = profile.vpn == 1 and L.alert_yes or (profile.vpn == 0 and L.alert_no or L.alert_unknown),
-        newAcc   = profile.newAccount and L.alert_yes or L.alert_no,
+        vpn      = profile.vpn,                  -- 1 / 0 / -1
+        newAcc   = profile.newAccount,           -- boolean
         sharedIP = profile.sharedIP,
         sharedHW = profile.sharedHWID,
-        discord  = idValue(profile.discordId) or L.alert_none,
-        fivem    = idValue(profile.fivemId) or L.alert_none,
+        discord  = idValue(profile.discordId),   -- nil when missing
+        fivem    = idValue(profile.fivemId),
         duration = Config.Alerts.Duration,
         sound    = Config.Alerts.Sound,
         critical = profile.score >= Config.CriticalThreshold,
@@ -619,8 +629,8 @@ end
 --  8. Connection pipeline
 -- ============================================================
 
-local function expiryText(expires)
-    if not expires then return L.ban_permanent end
+local function expiryText(expires, permanentWord)
+    if not expires then return permanentWord or L.ban_permanent end
     return tostring(expires)
 end
 
@@ -730,27 +740,27 @@ local function logDetection(profile)
 end
 
 local function webhookSuspicious(profile)
-    local labels = reasonLabels(profile.reasons)
+    local labels = reasonLabels(profile.reasons, Config.LogLanguage)
     local critical = profile.score >= Config.CriticalThreshold
     Discord.send("Suspicious", {
-        title = (critical and "🚨 " or "⚠️ ") .. "Suspicious Player",
+        title = (critical and "🚨 " or "⚠️ ") .. LG.suspicious,
         color = critical and Config.WebhookColors.Critical or Config.WebhookColors.Suspicious,
         fields = {
-            field("Name", profile.name),
-            field("Server ID", profile.server_id),
-            field("User ID", profile.user_id or "-"),
-            field("Risk Score", ("%d/100"):format(profile.score)),
-            field("Risk Level", profile.level.name),
-            field("Tokens", profile.tokenCount),
-            field("IP", Config.WebhookShowIP and maskIP(profile.ip) or "hidden"),
-            field("VPN", profile.vpn == 1 and "YES" or (profile.vpn == 0 and "NO" or "UNKNOWN")),
-            field("Location", profile.country and
+            field(LG.name, profile.name),
+            field(LG.server_id, profile.server_id),
+            field(LG.user_id, profile.user_id or "-"),
+            field(LG.score, ("%d/100"):format(profile.score)),
+            field(LG.level, profile.level.name),
+            field(LG.tokens, profile.tokenCount),
+            field(LG.ip, Config.WebhookShowIP and maskIP(profile.ip) or LG.hidden),
+            field(LG.vpn, profile.vpn == 1 and LG.yes or (profile.vpn == 0 and LG.no or LG.unknown)),
+            field(LG.location, profile.country and
                 ("%s / %s"):format(profile.country, profile.city or "-") or "-"),
-            field("Discord", idValue(profile.discordId)),
-            field("FiveM", idValue(profile.fivemId)),
-            field("License", profile.license and (profile.license:sub(1, 20) .. "...") or "-"),
-            field("Shared IP / HWID", ("%d / %d"):format(profile.sharedIP, profile.sharedHWID)),
-            field("Reasons", "• " .. table.concat(labels, "\n• "), false),
+            field(LG.discord, idValue(profile.discordId)),
+            field(LG.fivem, idValue(profile.fivemId)),
+            field(LG.license, profile.license and (profile.license:sub(1, 20) .. "...") or "-"),
+            field(LG.shared, ("%d / %d"):format(profile.sharedIP, profile.sharedHWID)),
+            field(LG.reasons, "• " .. table.concat(labels, "\n• "), false),
         },
         footer = { text = os.date("%Y-%m-%d %H:%M:%S") },
     }, critical)
@@ -759,16 +769,16 @@ end
 local function webhookHWIDDetected(profile)
     local ban = profile.bannedHWID
     Discord.send("HWIDDetected", {
-        title = "🚨 Banned HWID Detected",
+        title = "🚨 " .. LG.hwid_detect,
         color = Config.WebhookColors.HWIDDetected,
         fields = {
-            field("Player", profile.name),
-            field("Server ID", profile.server_id),
-            field("Matched Token", profile.matchedToken and profile.matchedToken.mask or ban.token_mask),
-            field("Original Ban ID", "#" .. tostring(ban.id)),
-            field("Original Player", ("%s (%s)"):format(ban.player_name or "-", ban.user_id or "-")),
-            field("Reason", ban.reason, false),
-            field("Expires", expiryText(ban.expires_at), false),
+            field(LG.player, profile.name),
+            field(LG.server_id, profile.server_id),
+            field(LG.matched_token, profile.matchedToken and profile.matchedToken.mask or ban.token_mask),
+            field(LG.original_ban, "#" .. tostring(ban.id)),
+            field(LG.original_player, ("%s (%s)"):format(ban.player_name or "-", ban.user_id or "-")),
+            field(LG.reason, ban.reason, false),
+            field(LG.expires, expiryText(ban.expires_at, LG.permanent), false),
         },
         footer = { text = os.date("%Y-%m-%d %H:%M:%S") },
     })
@@ -781,16 +791,16 @@ AddEventHandler("playerConnecting", function(name, setKickReason, deferrals)
     local src = source
     deferrals.defer()
     Wait(0)
-    deferrals.update(L.connecting_check)
+    deferrals.update(LK.connecting_check)
 
     local okRun, profile, rejected = pcall(analyse, src, name)
     if not okRun then
         -- Never let an internal failure lock players out of the server.
         err(("analysis crashed: %s"):format(tostring(profile)))
         Discord.send("Error", {
-            title = "⚠️ m5_suspicious error",
+            title = "⚠️ " .. LG.error,
             color = Config.WebhookColors.Error,
-            fields = { field("Message", tostring(profile), false) },
+            fields = { field(LG.message, tostring(profile), false) },
         })
         deferrals.done()
         return
@@ -798,8 +808,8 @@ AddEventHandler("playerConnecting", function(name, setKickReason, deferrals)
 
     if rejected then
         local ban = profile.bannedHWID or profile.bannedLicense
-        local template = profile.bannedHWID and L.banned_hwid or L.banned_license
-        local reason = template:format(ban.reason or "-", ban.id, expiryText(ban.expires_at))
+        local template = profile.bannedHWID and LK.banned_hwid or LK.banned_license
+        local reason = template:format(ban.reason or "-", ban.id, expiryText(ban.expires_at, LK.ban_permanent))
 
         if profile.bannedHWID then
             webhookHWIDDetected(profile)
@@ -835,12 +845,12 @@ AddEventHandler("playerConnecting", function(name, setKickReason, deferrals)
             and #profile.reasons >= Config.AutoBan.MinReasons then
             applyBan(profile, Config.AutoBan.Type, Config.AutoBan.Minutes,
                 Config.AutoBan.Reason, { user_id = nil, name = "auto" })
-            deferrals.done(L.banned_license:format(Config.AutoBan.Reason, "auto", L.ban_permanent))
+            deferrals.done(LK.banned_license:format(Config.AutoBan.Reason, "auto", LK.ban_permanent))
             return
         end
     end
 
-    deferrals.update(L.connecting_done)
+    deferrals.update(LK.connecting_done)
     deferrals.done()
 end)
 
@@ -905,7 +915,7 @@ applyBan = function(target, kind, minutes, reason, admin)
         end
         local tokens = tokensForTarget(target)
         if #tokens == 0 then
-            if kind == "hwid" then return false, L.action_no_tokens end
+            if kind == "hwid" then return false, LM.action_no_tokens end
         end
         for _, t in ipairs(tokens) do
             local id = insert([[
@@ -932,7 +942,7 @@ applyBan = function(target, kind, minutes, reason, admin)
     end
 
     if banned.hwid == 0 and not banned.license then
-        return false, L.action_no_tokens
+        return false, LM.action_no_tokens
     end
 
     invalidateBanCache()
@@ -942,18 +952,18 @@ applyBan = function(target, kind, minutes, reason, admin)
             banned.hwid, tostring(banned.license), expires or "never", reason))
 
     Discord.send("HWIDBan", {
-        title = "🔨 " .. (kind == "license" and "License Ban" or "HWID Ban"),
+        title = "🔨 " .. (kind == "license" and LG.license_ban or LG.hwid_ban),
         color = Config.WebhookColors.HWIDBan,
         fields = {
-            field("Player", target.name or "-"),
-            field("User ID", target.user_id or "-"),
-            field("Server ID", target.source or "-"),
-            field("Banned By", admin.name or "console"),
-            field("Reason", reason, false),
-            field("Tokens", banned.hwid),
-            field("License Banned", banned.license and "YES" or "NO"),
-            field("Status", expires and ("Temporary until " .. expires) or "Permanent"),
-            field("Tokens (masked)", #banned.masks > 0 and table.concat(banned.masks, "\n") or "-", false),
+            field(LG.player, target.name or "-"),
+            field(LG.user_id, target.user_id or "-"),
+            field(LG.server_id, target.source or "-"),
+            field(LG.banned_by, admin.name or "console"),
+            field(LG.reason, reason, false),
+            field(LG.tokens, banned.hwid),
+            field(LG.license_banned, banned.license and LG.yes or LG.no),
+            field(LG.status, expires and (LG.temporary_until .. " " .. expires) or LG.permanent),
+            field(LG.masked_tokens, #banned.masks > 0 and table.concat(banned.masks, "\n") or "-", false),
         },
         footer = { text = os.date("%Y-%m-%d %H:%M:%S") },
     })
@@ -965,7 +975,7 @@ applyBan = function(target, kind, minutes, reason, admin)
         if ok then src = s end
     end
     if src and GetPlayerName(src) then
-        DropPlayer(src, L.banned_hwid:format(reason, banned.ids[1] or "-", expires or L.ban_permanent))
+        DropPlayer(src, LK.banned_hwid:format(reason, banned.ids[1] or "-", expires or LK.ban_permanent))
     end
 
     return true, ("%d token(s)%s banned"):format(banned.hwid, banned.license and " + license" or "")
@@ -987,13 +997,13 @@ local function unbanHWID(banId, admin)
     invalidateBanCache()
     DB.logAction("unban_hwid", { user_id = row.user_id, name = row.player_name }, admin, "ban #" .. banId)
     Discord.send("Unban", {
-        title = "✅ HWID Unban",
+        title = "✅ " .. LG.hwid_unban,
         color = Config.WebhookColors.Unban,
         fields = {
-            field("Ban ID", "#" .. banId),
-            field("Player", row.player_name or "-"),
-            field("User ID", row.user_id or "-"),
-            field("Unbanned By", admin.name or "console"),
+            field(LG.ban_id, "#" .. banId),
+            field(LG.player, row.player_name or "-"),
+            field(LG.user_id, row.user_id or "-"),
+            field(LG.unbanned_by, admin.name or "console"),
         },
     })
     return true, "Unbanned"
@@ -1006,9 +1016,9 @@ local function unbanLicense(license, admin)
     invalidateBanCache()
     DB.logAction("unban_license", { user_id = nil, name = license }, admin, license)
     Discord.send("Unban", {
-        title = "✅ License Unban",
+        title = "✅ " .. LG.license_unban,
         color = Config.WebhookColors.Unban,
-        fields = { field("License", license), field("Unbanned By", admin.name or "console") },
+        fields = { field(LG.license, license), field(LG.unbanned_by, admin.name or "console") },
     })
     return true, "Unbanned"
 end
@@ -1048,13 +1058,13 @@ local function guarded(permissionKey, handler)
     return function(...)
         local src = source
         if rateLimited(src) then
-            TriggerClientEvent("m5_suspicious:notify", src, L.rate_limited, "error")
+            TriggerClientEvent("m5_suspicious:notify", src, LM.rate_limited, "error")
             return
         end
         local allowed, userId = isAdmin(src, permissionKey)
         if not allowed then
             warn(("unauthorized event from %s (%s)"):format(GetPlayerName(src) or "?", src))
-            TriggerClientEvent("m5_suspicious:notify", src, L.no_permission, "error")
+            TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
             return
         end
         local identity = nil
@@ -1104,7 +1114,7 @@ local function buildMenu(force)
             serverId = row.server_id,
             score    = row.risk_score,
             level    = row.risk_level,
-            reasons  = reasonLabels(reasons),
+            reasons  = reasonLabels(reasons, Config.MenuLanguage),
             -- Only masked / partial values are ever shipped to a client.
             ip       = maskIP(row.ip),
             license  = row.license and (row.license:sub(1, 24) .. "...") or "-",
@@ -1169,7 +1179,7 @@ RegisterNetEvent("m5_suspicious:action", guarded(Config.BanPermission, function(
 
     local target = targetFromRecord(recordId)
     if not target then
-        TriggerClientEvent("m5_suspicious:notify", src, L.action_failed:format("record not found"), "error")
+        TriggerClientEvent("m5_suspicious:notify", src, LM.action_failed:format(LM.action_not_found), "error")
         return
     end
 
@@ -1178,7 +1188,7 @@ RegisterNetEvent("m5_suspicious:action", guarded(Config.BanPermission, function(
     if action == "ignore" then
         markHandled(recordId, adminName, "ignored")
         DB.logAction("ignore", target, admin, "record #" .. recordId)
-        TriggerClientEvent("m5_suspicious:notify", src, L.action_ok:format(L.menu_ignore), "success")
+        TriggerClientEvent("m5_suspicious:notify", src, LM.action_ok:format(LM.action_ignored), "success")
         TriggerClientEvent("m5_suspicious:openMenu", src, buildMenu(true))
         return
     end
@@ -1200,10 +1210,10 @@ RegisterNetEvent("m5_suspicious:action", guarded(Config.BanPermission, function(
     local ok, message = applyBan(target, kind, minutes, payload.reason, admin)
     if ok then
         markHandled(recordId, adminName, "actioned")
-        TriggerClientEvent("m5_suspicious:notify", src, L.action_ok:format(message), "success")
+        TriggerClientEvent("m5_suspicious:notify", src, LM.action_ok:format(message), "success")
         TriggerClientEvent("m5_suspicious:openMenu", src, buildMenu(true))
     else
-        TriggerClientEvent("m5_suspicious:notify", src, L.action_failed:format(message), "error")
+        TriggerClientEvent("m5_suspicious:notify", src, LM.action_failed:format(message), "error")
     end
 end))
 
@@ -1217,7 +1227,7 @@ RegisterCommand(Config.Command, function(src)
         return
     end
     if not isAdmin(src) then
-        TriggerClientEvent("m5_suspicious:notify", src, L.no_permission, "error")
+        TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
         return
     end
     TriggerClientEvent("m5_suspicious:openMenu", src, buildMenu(true))
@@ -1236,7 +1246,7 @@ RegisterCommand("unbanhwid", function(src, args)
     if src ~= 0 then
         local allowed, userId = isAdmin(src, Config.BanPermission)
         if not allowed then
-            TriggerClientEvent("m5_suspicious:notify", src, L.no_permission, "error")
+            TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
             return
         end
         admin = { user_id = userId, name = GetPlayerName(src) }
@@ -1257,7 +1267,7 @@ RegisterCommand("unbanlicense", function(src, args)
     if src ~= 0 then
         local allowed, userId = isAdmin(src, Config.BanPermission)
         if not allowed then
-            TriggerClientEvent("m5_suspicious:notify", src, L.no_permission, "error")
+            TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
             return
         end
         admin = { user_id = userId, name = GetPlayerName(src) }

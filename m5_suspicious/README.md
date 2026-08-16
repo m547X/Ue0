@@ -11,12 +11,18 @@ When a player connects, the server collects every identifier and token FiveM exp
 ```
 m5_suspicious/
 ├── fxmanifest.lua
-├── config.lua      -- every tunable value, permission, weight, message and webhook
-├── server.lua      -- all security logic: analysis, scoring, bans, admin API
-├── client.lua      -- rendering only (alerts + menu)
-├── sql.sql         -- database schema
+├── config_server.lua   -- permissions, weights, HWID salt, VPN key, webhooks  (never sent to a client)
+├── config_client.lua   -- language, colours, menu key, labels                 (downloaded by players)
+├── server.lua          -- all security logic: analysis, scoring, bans, admin API
+├── client.lua          -- rendering only (alerts + menu)
+├── sql.sql             -- database schema
 └── README.md
 ```
+
+The config is **split on purpose**. A single shared `config.lua` would ship the
+Discord webhook, the HWID salt and the VPN API key to every connecting player.
+`config_server.lua` is loaded as a `server_script` only, so none of it is
+downloadable.
 
 ---
 
@@ -24,13 +30,40 @@ m5_suspicious/
 
 1. Import `sql.sql` into your database.
 2. Drop the folder into your `resources` directory.
-3. Open `config.lua` and set, at minimum:
+3. Open `config_server.lua` and set, at minimum:
    * `Config.AdminPermission` — the vRP permission your staff has.
    * `Config.HWID.Salt` — **change this once, before the first launch.** Changing it later invalidates every stored hash and existing bans stop matching.
    * `Config.Webhook` — your Discord webhook (or set `Config.EnableDiscordLogs = false`).
-4. Add `ensure m5_suspicious` to `server.cfg`, **after** `vrp` and `oxmysql`.
+4. Open `config_client.lua` and set `Config.Language` (see *Language* below).
+5. Add `ensure m5_suspicious` to `server.cfg`, **after** `vrp` and `oxmysql`.
 
 The resource warns in the console on startup if the salt or the webhook is still at its default value.
+
+---
+
+## Language / اللغة
+
+English and Arabic are both included. The switches are independent because the
+surfaces do **not** all have the same font support:
+
+| Setting | File | Surface | Arabic? |
+|---|---|---|---|
+| `Config.KickLanguage` | `config_server.lua` | connection screen, ban/kick messages | ✅ rendered by CEF |
+| `Config.LogLanguage` | `config_server.lua` | Discord embeds | ✅ |
+| `Config.Language` | `config_server.lua` | strings stored in the database | ✅ |
+| `Config.Language` | `config_client.lua` | in-game menu and alerts | ⚠️ see below |
+| `Config.MenuLanguage` | `config_server.lua` | notifications pushed to an admin | ⚠️ must match the line above |
+
+**The in-game menu is the one limitation.** It is drawn with `DrawText` and the
+native GTA V fonts, which contain no Arabic glyphs — Arabic there renders as
+boxes. Keep the client-side `Config.Language` on `"en"` unless you run a resource
+that replaces the game fonts with an Arabic-capable one, or you rebuild the menu
+as a NUI page (HTML handles Arabic and RTL natively). The defaults ship as
+Arabic everywhere Arabic works, and English for the menu.
+
+Reason labels, Discord field names and every message are translated; add a
+language by copying an existing block in `Config.Locale`, `Config.ReasonLabels`
+and `Config.LogLabels`.
 
 ---
 
@@ -59,7 +92,7 @@ No single indicator decides anything. Each contributes a weight, the sum is clam
 80 - 100  CRITICAL
 ```
 
-Weights live in `Config.RiskScore` and are all editable:
+Weights live in `Config.RiskScore` (`config_server.lua`) and are all editable:
 
 ```lua
 Config.RiskScore = {
@@ -149,7 +182,8 @@ The detail view shows the score, the reasons, masked IP, truncated license, Disc
 * Every decision is server-side. The client sends only a record id, an action name, a duration **index** and a reason string.
 * Permissions are checked server-side on every event, per call — never cached into a client-trusted flag.
 * Server ID and User ID cannot be spoofed: the target is re-resolved from `suspicious_players` by record id, and the live source from `vRP.getUserSource`.
-* Duration is an index into `Config.BanDurations`, so a crafted payload cannot invent an arbitrary value.
+* Duration is an index into `Config.BanDurations` (server side), so a crafted payload cannot invent an arbitrary value. The client only holds the *labels*, in `Config.BanDurationLabels` — keep the two lists in the same order.
+* The salt, the webhook URLs and the VPN API key live in `config_server.lua` and are never downloaded by a client.
 * Reason strings are stripped of control characters and length-capped.
 * Rate limiting per player (`Config.RateLimit`): `Events` per `Window` seconds, with strikes and an optional kick on repeated abuse.
 * Unauthorized event attempts are logged to the server console.

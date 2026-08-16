@@ -1,6 +1,10 @@
 --[[
-    m5_suspicious - Configuration
-    All tunable values live here. Nothing security-relevant is read from the client.
+    m5_suspicious - SERVER configuration
+    ---------------------------------------------------------------
+    This file is NEVER sent to a client. Everything sensitive lives
+    here: permissions, scoring weights, the HWID salt, the VPN API
+    key and the Discord webhooks.
+    Presentation settings are in config_client.lua.
 ]]
 
 Config = {}
@@ -16,8 +20,20 @@ Config.AdminPermission = "admin.permission"
 -- Set to the same value as AdminPermission if you do not want a split.
 Config.BanPermission = "admin.permission"
 
--- Locale used for the built-in strings (see Config.Locale below).
-Config.Language = "en"
+-- Language used for strings that are STORED or LOGGED: "en" or "ar".
+Config.Language = "ar"
+
+-- Language of the connection screen and the ban/kick messages.
+-- These are rendered by CEF and display Arabic correctly.
+Config.KickLanguage = "ar"
+
+-- Language of the notifications the server pushes to an admin's screen.
+-- Must match Config.Language in config_client.lua. Note that the in-game
+-- fonts have no Arabic glyphs, so "ar" here shows boxes - see config_client.lua.
+Config.MenuLanguage = "en"
+
+-- Language used for the Discord embeds. Discord renders Arabic fine.
+Config.LogLanguage = "ar"
 
 -- Print extra information to the server console.
 Config.Debug = false
@@ -33,11 +49,12 @@ Config.SuspiciousThreshold = 60
 Config.CriticalThreshold = 80
 
 -- Risk levels. Evaluated top to bottom, the first matching `max` wins.
+-- Colours per level are a client concern, see Config.LevelColors in config_client.lua.
 Config.RiskLevels = {
-    { name = "LOW",      max = 29,  color = 2 },  -- chat colour index (client side)
-    { name = "MEDIUM",   max = 59,  color = 5 },
-    { name = "HIGH",     max = 79,  color = 17 },
-    { name = "CRITICAL", max = 100, color = 6 },
+    { name = "LOW",      max = 29  },
+    { name = "MEDIUM",   max = 59  },
+    { name = "HIGH",     max = 79  },
+    { name = "CRITICAL", max = 100 },
 }
 
 -- ============================================================
@@ -100,6 +117,9 @@ Config.HWID = {
 }
 
 -- Preset durations offered in the ban menu (minutes, 0 = permanent).
+-- The client only ever sends the INDEX of the chosen entry; the authoritative
+-- duration is read here. Keep this list in the same order as
+-- Config.BanDurationLabels in config_client.lua.
 Config.BanDurations = {
     { label = "Permanent", minutes = 0 },
     { label = "30 Days",   minutes = 60 * 24 * 30 },
@@ -196,8 +216,6 @@ Config.Alerts = {
 -- ============================================================
 
 Config.Command       = "suspicious"          -- /suspicious
-Config.MenuKey       = ""                    -- optional RegisterKeyMapping key, "" to disable
-Config.MenuPageSize  = 10
 -- How many entries the menu pulls from the DB.
 Config.MenuHistory   = 50
 -- Also include entries that were already handled.
@@ -235,55 +253,122 @@ Config.Cache = {
 
 Config.Locale = {
     en = {
-        connecting_check    = "Running security checks...",
-        connecting_done     = "Welcome!",
+        -- Connection screen / kick messages (CEF - Arabic renders correctly)
+        connecting_check = "Running security checks...",
+        connecting_done  = "Welcome!",
+        banned_hwid      = "You are banned from this server.\n\nReason: %s\nBan ID: #%s\nExpires: %s",
+        banned_license   = "You are banned from this server.\n\nReason: %s\nBan ID: #%s\nExpires: %s",
+        ban_permanent    = "Never",
 
-        banned_hwid         = "You are banned from this server.\n\nReason: %s\nBan ID: #%s\nExpires: %s",
-        banned_license      = "You are banned from this server.\n\nReason: %s\nBan ID: #%s\nExpires: %s",
-        ban_permanent       = "Never",
+        -- Notifications pushed to an admin's screen (drawn with the game fonts)
+        no_permission    = "You do not have permission to do that.",
+        rate_limited     = "You are doing that too fast.",
+        action_ok        = "Done: %s",
+        action_failed    = "Action failed: %s",
+        action_ignored   = "Marked as ignored",
+        action_no_tokens = "No tokens stored for that player.",
+        action_not_found = "record not found",
 
-        no_permission       = "You do not have permission to do that.",
-        rate_limited        = "You are doing that too fast.",
+        -- Stored in the database when the admin leaves the reason empty
+        reason_default   = "Suspicious activity",
+    },
 
-        alert_title         = "SUSPICIOUS PLAYER",
-        alert_body          = "Name: %s\nServer ID: %s\nUser ID: %s\n\nRisk Score: %s/100\nRisk Level: %s\n\nVPN/Proxy: %s\nNew Account: %s\nShared IP: %s\nShared HWID: %s\n\nDiscord: %s\nFiveM ID: %s",
-        alert_yes           = "YES",
-        alert_no            = "NO",
-        alert_unknown       = "UNKNOWN",
-        alert_none          = "N/A",
+    -- ------------------------------------------------------------
+    --  العربية
+    -- ------------------------------------------------------------
+    ar = {
+        connecting_check = "جارٍ إجراء الفحوصات الأمنية...",
+        connecting_done  = "أهلاً بك!",
+        banned_hwid      = "أنت محظور من هذا السيرفر.\n\nالسبب: %s\nرقم الحظر: #%s\nينتهي في: %s",
+        banned_license   = "أنت محظور من هذا السيرفر.\n\nالسبب: %s\nرقم الحظر: #%s\nينتهي في: %s",
+        ban_permanent    = "دائم",
 
-        menu_title          = "Suspicious Players",
-        menu_empty          = "No suspicious players recorded.",
-        menu_details        = "View Details",
-        menu_ban_hwid       = "Ban HWID",
-        menu_ban_license    = "Ban License",
-        menu_ban_player     = "Ban Player (HWID + License)",
-        menu_ignore         = "Ignore",
-        menu_refresh        = "Refresh",
-        menu_unban          = "Unban",
-        menu_back           = "Back",
-        menu_offline        = "offline",
+        no_permission    = "ليست لديك صلاحية للقيام بذلك.",
+        rate_limited     = "أنت تكرر هذا الإجراء بسرعة كبيرة.",
+        action_ok        = "تم: %s",
+        action_failed    = "فشل الإجراء: %s",
+        action_ignored   = "تم وضعه كمتجاهَل",
+        action_no_tokens = "لا توجد توكنات مخزنة لهذا اللاعب.",
+        action_not_found = "السجل غير موجود",
 
-        action_ok           = "Done: %s",
-        action_failed       = "Action failed: %s",
-        action_offline      = "That player is offline - stored tokens will be used.",
-        action_no_tokens    = "No tokens stored for that player.",
-
-        reason_prompt       = "Type the ban reason in chat, or /cancel",
-        reason_default      = "Suspicious activity",
+        reason_default   = "نشاط مشبوه",
     },
 }
 
 -- Reason labels used by the score engine (shown in the menu and on Discord).
 Config.ReasonLabels = {
-    VPN            = "VPN / Proxy",
-    NewAccount     = "New Account",
-    MissingFiveM   = "Missing FiveM ID",
-    MissingDiscord = "Missing Discord",
-    MissingSteam   = "Missing Steam",
-    SharedHWID     = "HWID shared with another account",
-    SharedIP       = "IP shared with another account",
-    FewTokens      = "Too few client tokens",
-    BannedHWID     = "Banned HWID",
-    BannedLicense  = "Banned License",
+    en = {
+        VPN            = "VPN / Proxy",
+        NewAccount     = "New Account",
+        MissingFiveM   = "Missing FiveM ID",
+        MissingDiscord = "Missing Discord",
+        MissingSteam   = "Missing Steam",
+        SharedHWID     = "HWID shared with another account",
+        SharedIP       = "IP shared with another account",
+        FewTokens      = "Too few client tokens",
+        BannedHWID     = "Banned HWID",
+        BannedLicense  = "Banned License",
+    },
+    ar = {
+        VPN            = "VPN / بروكسي",
+        NewAccount     = "حساب جديد",
+        MissingFiveM   = "معرّف FiveM مفقود",
+        MissingDiscord = "ديسكورد مفقود",
+        MissingSteam   = "ستيم مفقود",
+        SharedHWID     = "HWID مرتبط بحساب آخر",
+        SharedIP       = "IP مرتبط بحساب آخر",
+        FewTokens      = "عدد التوكنات أقل من الطبيعي",
+        BannedHWID     = "HWID محظور مسبقاً",
+        BannedLicense  = "License محظور مسبقاً",
+    },
+}
+
+-- Titles/labels used inside the Discord embeds, per language.
+Config.LogLabels = {
+    en = {
+        suspicious   = "Suspicious Player",
+        hwid_ban     = "HWID Ban",
+        license_ban  = "License Ban",
+        hwid_detect  = "Banned HWID Detected",
+        hwid_unban   = "HWID Unban",
+        license_unban = "License Unban",
+        error        = "m5_suspicious error",
+
+        name = "Name", server_id = "Server ID", user_id = "User ID",
+        score = "Risk Score", level = "Risk Level", tokens = "Tokens",
+        ip = "IP", vpn = "VPN", location = "Location", discord = "Discord",
+        fivem = "FiveM", license = "License", shared = "Shared IP / HWID",
+        reasons = "Reasons", player = "Player", banned_by = "Banned By",
+        reason = "Reason", status = "Status", expires = "Expires",
+        license_banned = "License Banned", masked_tokens = "Tokens (masked)",
+        matched_token = "Matched Token", original_ban = "Original Ban ID",
+        original_player = "Original Player", ban_id = "Ban ID",
+        unbanned_by = "Unbanned By", message = "Message",
+        yes = "YES", no = "NO", unknown = "UNKNOWN",
+        permanent = "Permanent", temporary_until = "Temporary until",
+        hidden = "hidden",
+    },
+    ar = {
+        suspicious   = "لاعب مشبوه",
+        hwid_ban     = "حظر HWID",
+        license_ban  = "حظر License",
+        hwid_detect  = "تم رصد HWID محظور",
+        hwid_unban   = "فك حظر HWID",
+        license_unban = "فك حظر License",
+        error        = "خطأ في m5_suspicious",
+
+        name = "الاسم", server_id = "رقم السيرفر", user_id = "رقم المستخدم",
+        score = "درجة الخطورة", level = "مستوى الخطورة", tokens = "عدد التوكنات",
+        ip = "الآي بي", vpn = "VPN", location = "الموقع", discord = "ديسكورد",
+        fivem = "FiveM", license = "License", shared = "IP / HWID مشترك",
+        reasons = "الأسباب", player = "اللاعب", banned_by = "بواسطة",
+        reason = "السبب", status = "الحالة", expires = "ينتهي في",
+        license_banned = "حظر License", masked_tokens = "التوكنات (مخفية جزئياً)",
+        matched_token = "التوكن المطابق", original_ban = "رقم الحظر الأصلي",
+        original_player = "اللاعب الأصلي", ban_id = "رقم الحظر",
+        unbanned_by = "فُك بواسطة", message = "الرسالة",
+        yes = "نعم", no = "لا", unknown = "غير معروف",
+        permanent = "دائم", temporary_until = "مؤقت حتى",
+        hidden = "مخفي",
+    },
 }
