@@ -108,9 +108,10 @@ local spectateThreadRunning = false
 -- 02. HELPERS
 -- ============================================================================
 
--- Defined with the bot match further down, but the match cleanup handler above
--- it needs to call it, so the local has to exist first.
+-- Both are defined further down but used by code above them, so the locals
+-- have to exist first.
 local clearBots
+local idleVisualGuard
 
 local function ms() return GetGameTimer() end
 
@@ -225,11 +226,14 @@ end
 -- this, walking out of the combat zone and then leaving the match left the
 -- boundary tint burned onto the screen with no way back.
 local activeEffects = {}
+local blurOn = false
 
 local function screenEffect(name, duration)
     if not Config.Effects.enabled or not name then return end
-    if duration then
-        StartScreenEffect(name, duration / 1000, false)
+    if duration and duration > 0 then
+        -- StartScreenEffect takes milliseconds. Dividing by 1000 made every
+        -- timed effect last about a millisecond, so none of them were visible.
+        StartScreenEffect(name, duration, false)
     else
         StartScreenEffect(name, 0, true)
         activeEffects[name] = true
@@ -249,11 +253,13 @@ local function clearScreenEffects()
     -- belt and braces: an effect started before a resource restart is not in
     -- the table above, and the player has no other way to get rid of it
     StopAllScreenEffects()
+    AnimpostfxStopAll()
     TriggerScreenblurFadeOut(0)
-    ResetScenarioTypesEnabled()
     ClearTimecycleModifier()
-    SetTransitionTimecycleModifier('default', 0.5)
     ClearExtraTimecycleModifier()
+    SetTransitionTimecycleModifier('default', 0.5)
+    ResetScenarioTypesEnabled()
+    blurOn = false
 end
 
 -- ============================================================================
@@ -298,15 +304,22 @@ local function openMenu(page)
 
     if Config.UI.blurBackground then
         TriggerScreenblurFadeIn(180)
+        blurOn = true
     end
 end
 
 local function closeMenu()
+    -- the blur is dropped even when the menu was already considered closed:
+    -- the popups that grab focus on their own set menuOpen without ever
+    -- touching the blur, and one missed fade-out leaves the screen hazy.
+    if blurOn then
+        TriggerScreenblurFadeOut(180)
+        blurOn = false
+    end
     if not State.menuOpen then return end
     State.menuOpen = false
     setFocus(false)
     nui({ action = 'close' })
-    TriggerScreenblurFadeOut(180)
 end
 
 RegisterNUICallback('close', function(_, cb)
@@ -560,15 +573,22 @@ Citizen.CreateThread(function()
     Citizen.Wait(2000)
 
     local cfg = Config.OpenMenu.location
-    if not cfg.enabled then return end
+    local markerOn = cfg.enabled == true
 
-    createBlip()
+    if markerOn then createBlip() end
 
     local T = Config.Timing
     local point = cfg.coords
 
     while true do
         local wait = T.idleFar
+
+        idleVisualGuard()
+
+        if not markerOn then
+            Citizen.Wait(5000)
+            goto continue
+        end
 
         -- the interaction point is disabled while the player is busy
         if State.inMatch or State.spectating or State.training then
@@ -1676,6 +1696,30 @@ do
     end
 end
 
+-- Wipe the screen clean the moment the resource starts. An effect left behind
+-- by a crash, or by a build that predates the fix, survives a restart because
+-- nothing was ever clearing it on the way in — only on the way out. This is
+-- why restarting did not help.
+AddEventHandler('onClientResourceStart', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    clearScreenEffects()
+    local ped = playerPed()
+    FreezeEntityPosition(ped, false)
+    SetEntityVisible(ped, true, false)
+    NetworkSetInSpectatorMode(false, ped)
+    SetRunSprintMultiplierForPlayer(PlayerId(), 1.0)
+    SetPlayerHealthRechargeMultiplier(PlayerId(), 1.0)
+    DisplayRadar(true)
+end)
+
+--- Safety net: whenever the player is idle — no match, no training, no menu,
+--- not spectating — nothing of ours should be on screen. Checked on the slow
+--- proximity tick, so it costs nothing.
+idleVisualGuard = function()
+    if State.inMatch or State.training or State.menuOpen or State.spectating then return end
+    if next(activeEffects) ~= nil or blurOn then clearScreenEffects() end
+end
+
 -- ---------------------------------------------------------------------------
 -- Exports — for other resources on this client. Read only.
 -- ---------------------------------------------------------------------------
@@ -1688,6 +1732,73 @@ exports('getMatchInfo', function()
         ffa = State.ffa, alive = State.alive, map = State.map
     }
 end)
+
+-- ---------------------------------------------------------------------------
+-- Surrender — hold the key to leave the match
+--
+-- A +/- binding gives the hold; the ring on screen fills while the key is
+-- down and the match is only left once it completes. Letting go at any point
+-- cancels, so a stray tap costs nothing.
+-- ---------------------------------------------------------------------------
+do
+    local sCfg = (Config.HUD and Config.HUD.surrender) or {}
+    if sCfg.enabled ~= false then
+        local holding, holdToken = false, 0
+
+        local function canSurrender()
+            if not State.inMatch or State.matchState == 'MATCH_END' then return false end
+            if sCfg.blockDuringCountdown and not State.roundLive then return false end
+            return true
+        end
+
+        local function stopHold()
+            if not holding then return end
+            holding = false
+            holdToken = holdToken + 1
+            nui({ action = 'surrender', data = { active = false } })
+        end
+
+        RegisterCommand('+m5rp_surrender', function()
+            if holding or not canSurrender() then return end
+
+            holding = true
+            holdToken = holdToken + 1
+            local token = holdToken
+            local seconds = tonumber(sCfg.holdTime) or 5
+            local until_ = ms() + seconds * 1000
+
+            nui({ action = 'surrender', data = {
+                active = true, seconds = seconds, key = sCfg.display or 'X'
+            } })
+
+            Citizen.CreateThread(function()
+                while holding and holdToken == token do
+                    if not canSurrender() then stopHold() return end
+
+                    local left = until_ - ms()
+                    if left <= 0 then
+                        holding = false
+                        nui({ action = 'surrender', data = { active = false } })
+                        TriggerServerEvent('m5rp:sv:action', 'leaveMatch', {})
+                        return
+                    end
+
+                    nui({ action = 'surrender', data = {
+                        active = true, seconds = seconds,
+                        key = sCfg.display or 'X',
+                        progress = 1 - (left / (seconds * 1000))
+                    } })
+                    Citizen.Wait(60)
+                end
+            end)
+        end, false)
+
+        RegisterCommand('-m5rp_surrender', function() stopHold() end, false)
+
+        RegisterKeyMapping('+m5rp_surrender',
+            sCfg.label or 'M5 Ranked PvP — Surrender (hold)', 'keyboard', sCfg.key or 'X')
+    end
+end
 
 -- Escape hatch. If a screen effect ever survives — a crash mid match, an old
 -- build, another resource leaving one behind — this wipes the screen clean

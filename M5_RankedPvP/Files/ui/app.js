@@ -68,7 +68,7 @@ const S = {
   },
 
   hud: null, hudTime: 0,
-  matchInfo: null, sbOpen: false,
+  matchInfo: null, sbOpen: false, dmgTimer: 0,
   training: null
 };
 
@@ -226,7 +226,8 @@ const I18N = {
     'TEAM A': 'الفريق أ', 'TEAM B': 'الفريق ب', 'ALIVE': 'على قيد الحياة',
     'NO PLAYERS': 'لا يوجد لاعبون', 'RANKED': 'مصنّف', 'PLAYER': 'اللاعب',
     'K': 'قتل', 'D': 'موت', 'A': 'مساعدة', 'HS': 'هيد', 'DMG': 'ضرر',
-    'PING': 'البنق', 'HOLD': 'استمر بالضغط على'
+    'PING': 'البنق', 'HOLD': 'استمر بالضغط على',
+    'HOLD TO SURRENDER': 'استمر بالضغط للانسحاب'
   }
 };
 
@@ -1725,6 +1726,19 @@ function renderHud(d) {
   $('hud-team-a').textContent = d.teamA || tx('TEAM A');
   $('hud-team-b').textContent = d.teamB || tx('TEAM B');
 
+  // one pip per round won, out of the rounds needed to take the match
+  const need = (S.matchInfo && S.matchInfo.settings && S.matchInfo.settings.roundsToWin)
+               || Math.ceil((d.maxRounds || 0) / 2) || 0;
+  if (need > 0 && !d.ffa) {
+    const pips = (won) => `<div class="pips ${won.side}">${
+      Array.from({ length: need }, (_, i) =>
+        `<i class="${i < won.n ? 'on' : ''}"></i>`).join('')}</div>`;
+    $('hud-pips').innerHTML = pips({ side: 'a', n: d.scores.a }) + pips({ side: 'b', n: d.scores.b });
+    $('hud-pips').style.display = '';
+  } else {
+    $('hud-pips').style.display = 'none';
+  }
+
   const board = d.scoreboard || [];
   const meId  = S.boot && S.boot.player && S.boot.player.userId;
   renderFaces('hud-faces-a', board.filter((p) => p.team === 1), meId);
@@ -1801,10 +1815,18 @@ function updateTimer() {
 function renderLocalHud(d) {
   if (!d) return;
   const hp = Math.max(0, Math.min(100, d.health));
-  $('hud-hp').textContent = hp; $('hud-hp-bar').style.width = hp + '%';
-  $('hud-ar').textContent = d.armor; $('hud-ar-bar').style.width = Math.max(0, Math.min(100, d.armor)) + '%';
-  $('hud-weapon-name').textContent = String(d.weapon || '').replace('WEAPON_', '');
-  $('hud-clip').textContent = d.clip; $('hud-ammo').textContent = d.ammo;
+  $('hud-hp').textContent = hp;
+  $('hud-hp-bar').style.width = hp + '%';
+  $('hud-hp').parentNode.classList.toggle('low', hp <= 30);
+
+  const ar = Math.max(0, Math.min(100, d.armor));
+  $('hud-ar').textContent = d.armor;
+  $('hud-ar-bar').style.width = ar + '%';
+
+  $('hud-weapon-name').textContent = String(d.weapon || '').replace('WEAPON_', '').replace(/_/g, ' ');
+  $('hud-clip').textContent = d.clip;
+  $('hud-ammo').textContent = d.ammo;
+  $('hud-clip').parentNode.classList.toggle('empty', (d.clip || 0) === 0);
 }
 
 function addKillFeed(d) {
@@ -2065,6 +2087,31 @@ window.addEventListener('message', (e) => {
     }
 
     case 'scoreboard': toggleScoreboard(d.show === true); break;
+
+    case 'damaged': {
+      // a short red vignette, stronger for a heavier hit
+      const n = $('dmg-flash');
+      n.style.setProperty('opacity', '');
+      n.classList.remove('on');
+      void n.offsetWidth;
+      n.style.opacity = Math.min(1, 0.35 + (d.amount || 0) / 60);
+      n.classList.add('on');
+      clearTimeout(S.dmgTimer);
+      S.dmgTimer = setTimeout(() => { n.classList.remove('on'); n.style.opacity = ''; }, 110);
+      break;
+    }
+
+    case 'surrender': {
+      const n = $('surrender');
+      const s = d.data || {};
+      if (!s.active) { n.classList.add('hidden'); break; }
+      $('sr-key').textContent = s.key || 'X';
+      // 2 * PI * r, r = 44
+      const C = 276.5;
+      $('sr-arc').style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, s.progress || 0)));
+      n.classList.remove('hidden');
+      break;
+    }
     case 'hud': renderHud(d.data); break;
     case 'localHud': renderLocalHud(d.data); break;
     case 'killfeed': addKillFeed(d.data); break;

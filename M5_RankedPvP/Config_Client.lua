@@ -298,6 +298,20 @@ Config.HUD = {
         autoOnRoundEnd = true
     },
 
+    -- Hold a key to leave the match. A hold rather than a press so it can
+    -- never be hit by accident mid fight, and it is bound through FiveM's
+    -- keybinding system so the player can move it off X.
+    surrender = {
+        enabled  = true,
+        key      = 'X',
+        display  = 'X',
+        label    = 'M5 Ranked PvP — Surrender (hold)',
+        holdTime = 5,                 -- seconds the key must stay down
+        -- Refuse while the round is still counting down, so nobody quits
+        -- before the first shot by leaning on the key.
+        blockDuringCountdown = true
+    },
+
     killFeed = {
         enabled   = true,
         position  = 'right', -- 'right' | 'left'
