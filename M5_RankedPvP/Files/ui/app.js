@@ -207,6 +207,14 @@ const I18N = {
     'LOAD': 'تحميل', 'no player loaded': 'لم يُحمَّل لاعب',
     'ADMIN': 'الإدارة', 'APPLY': 'تنفيذ',
 
+    // bot match
+    'Start Bot Match': 'بدء مباراة ضد بوت', 'Stop Bot Match': 'إيقاف مباراة البوت',
+    'BOT': 'بوت', 'BOTS': 'بوتات', 'RANDOM MAP': 'خريطة عشوائية', 'STOP': 'إيقاف',
+    'Ends your practice session and returns you to the world.':
+      'ينهي جلسة التدريب ويعيدك إلى العالم.',
+    'Practice duel against AI on your own screen. Always unranked — no RP, MMR or stats.':
+      'مبارزة تدريبية ضد الذكاء الاصطناعي على شاشتك. غير مصنفة دائمًا — بلا نقاط أو MMR أو إحصائيات.',
+
     // toasts
     'A reason is required for this action.': 'هذا الإجراء يتطلب سببًا.',
     'Action applied.': 'تم تنفيذ الإجراء.',
@@ -1333,6 +1341,14 @@ function admDef(action) {
   return (S.admin && S.admin.allowed && S.admin.allowed[action]) || {};
 }
 
+/** Difficulty presets for the bot match, sent with the admin dashboard. */
+function botDifficultyOptions() {
+  const list = (S.admin && S.admin.botMatch && S.admin.botMatch.difficulties) || [];
+  if (!list.length) return `<option value="normal">NORMAL</option>`;
+  return list.map((d) =>
+    `<option value="${esc(d.id)}"${d.isDefault ? ' selected' : ''}>${esc(d.label)}</option>`).join('');
+}
+
 /** Shared target box: one player id feeds every player tool. Digits only. */
 function admTarget() {
   const raw = ($('adm-target') && $('adm-target').value.trim()) || '';
@@ -1420,10 +1436,17 @@ function renderAdmin(d) {
     if (!admCan(action)) return '';
     const def = admDef(action);
     const o = opts || {};
+    // hints may carry markup, so they are translated but not escaped. A row
+    // with controls still shows its hint, printed underneath them.
+    const middle = o.fields
+      ? `<div class="act-fields">${o.fields}${
+           o.hint ? `<div class="act-note">${tx(o.hint)}</div>` : ''}</div>`
+      : `<div class="act-hint">${tx(o.hint || '')}</div>`;
+
     return `<div class="act ${o.danger ? 'danger' : ''}">
-      <div class="act-name"><b>${esc(def.label || action)}</b><span>${esc(def.permission || action)}</span></div>
-      <div class="${o.fields ? 'act-fields' : 'act-hint'}">${o.fields || o.hint || ''}</div>
-      <button class="btn ${o.danger ? '' : 'ghost'}" data-adm="${esc(o.run || action)}">${esc(o.button || 'APPLY')}</button>
+      <div class="act-name"><b>${esc(tx(def.label || action))}</b><span>${esc(def.permission || action)}</span></div>
+      ${middle}
+      <button class="btn ${o.danger ? '' : 'ghost'}" data-adm="${esc(o.run || action)}">${esc(tx(o.button || 'APPLY'))}</button>
     </div>`;
   };
 
@@ -1476,6 +1499,21 @@ function renderAdmin(d) {
         <div class="act-name"><b>Unfreeze Queue</b><span>pvp.admin.freeze</span></div>
         <div class="act-hint">Re-opens ranked matchmaking.</div>
         <button class="btn ghost" data-adm="freezeOff">UNFREEZE</button></div>` : ''}
+
+      ${act('startBotMatch', { button: 'START', fields: `
+        <select id="adm-bot-diff">${botDifficultyOptions()}</select>
+        <select id="adm-bot-count">${[1, 2, 3, 4, 5]
+          .map((n) => `<option value="${n}">${n} ${tx(n === 1 ? 'BOT' : 'BOTS')}</option>`).join('')}</select>
+        <select id="adm-bot-rounds">${[1, 3, 5, 7, 9]
+          .map((n) => `<option value="${n}"${n === 5 ? ' selected' : ''}>${n} ${tx('ROUNDS')}</option>`).join('')}</select>
+        <select id="adm-bot-map"><option value="">${esc(tx('RANDOM MAP'))}</option>${
+          ((S.boot && S.boot.maps) || [])
+            .map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('')}</select>`,
+        hint: 'Practice duel against AI on your own screen. Always unranked — no RP, MMR or stats.' })}
+      ${admCan('startBotMatch') ? `<div class="act">
+        <div class="act-name"><b>${esc(tx('Stop Bot Match'))}</b><span>pvp.admin.botmatch</span></div>
+        <div class="act-hint">${esc(tx('Ends your practice session and returns you to the world.'))}</div>
+        <button class="btn ghost" data-adm="stopBotMatch">${esc(tx('STOP'))}</button></div>` : ''}
     </div>
 
     <div class="card" style="margin-top:16px"><span class="card-tag">LIVE MATCHES</span>
@@ -1607,6 +1645,16 @@ function admAction(btn) {
     case 'movePlayer':    admRun('movePlayer', { target, matchId: val('adm-match'), team: parseInt(val('adm-team'), 10) }); break;
     case 'freezeOn':      admRun('freeze', { value: true }); break;
     case 'freezeOff':     admRun('freeze', { value: false }); break;
+
+    case 'startBotMatch':
+      admRun('startBotMatch', {
+        difficulty: val('adm-bot-diff'),
+        bots:       parseInt(val('adm-bot-count'), 10) || 1,
+        rounds:     parseInt(val('adm-bot-rounds'), 10) || 5,
+        map:        val('adm-bot-map') || null
+      });
+      break;
+    case 'stopBotMatch':  admRun('stopBotMatch', {}); break;
 
     case 'addRP':         admRun('addRP', { target, amount: parseInt(val('adm-rp-add'), 10) }); break;
     case 'removeRP':      admRun('removeRP', { target, amount: parseInt(val('adm-rp-rem'), 10) }); break;

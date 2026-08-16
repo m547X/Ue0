@@ -29,6 +29,7 @@
         09  HUD
         10  Spectator
         11  Training
+        11b Bot match (staff practice)
         12  Notifications & misc events
     ============================================================================
 ]]
@@ -68,6 +69,13 @@ local State = {
     training   = false,
     trainingProps = {},
 
+    -- bot match (staff practice): local peds, reported by this client only
+    bots        = {},
+    botsActive  = false,
+    botsHeld    = false,
+    botMatchId  = nil,
+    botHeadshot = false,
+
     -- boundary
     outside      = false,
     outsideUntil = 0,
@@ -99,6 +107,10 @@ local spectateThreadRunning = false
 -- ============================================================================
 -- 02. HELPERS
 -- ============================================================================
+
+-- Defined with the bot match further down, but the match cleanup handler above
+-- it needs to call it, so the local has to exist first.
+local clearBots
 
 local function ms() return GetGameTimer() end
 
@@ -736,6 +748,7 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
     State.outside    = false
 
     stopSpectate()
+    clearBots()
 
     local ped = playerPed()
     FreezeEntityPosition(ped, false)
@@ -1393,6 +1406,158 @@ RegisterNetEvent('m5rp:cl:training', function(data)
 end)
 
 -- ============================================================================
+-- 11b. BOT MATCH  (staff practice)
+-- ============================================================================
+--
+-- Only a client can create a ped and give it combat AI, so the bots live here.
+-- Everything that counts — rounds, score, when a round starts and ends — stays
+-- on the server; this file reports one thing back, that a bot went down, and
+-- the server treats that as worthless outside a staff practice session.
+
+clearBots = function()
+    for i = 1, #State.bots do
+        local ped = State.bots[i].ped
+        if DoesEntityExist(ped) then DeletePed(ped) end
+    end
+    State.bots       = {}
+    State.botsActive = false
+    State.botsHeld   = false
+end
+
+--- Arms one ped: stats, weapon, accuracy and combat behaviour.
+local function configureBot(ped, cfg, relationship)
+    SetEntityInvincible(ped, false)
+    SetPedCanRagdoll(ped, false)
+    SetBlockingOfNonTemporaryEvents(ped, true)
+    SetPedSuffersCriticalHits(ped, true)
+    SetPedDiesWhenInjured(ped, false)
+    SetPedDropsWeaponsWhenDead(ped, false)
+    SetEntityAsMissionEntity(ped, true, true)
+
+    SetEntityMaxHealth(ped, cfg.health or 200)
+    SetEntityHealth(ped, cfg.health or 200)
+    SetPedArmour(ped, cfg.armor or 0)
+
+    GiveWeaponToPed(ped, GetHashKey(cfg.weapon or 'WEAPON_PISTOL'), 500, false, true)
+    SetPedAccuracy(ped, cfg.accuracy or 30)
+    SetPedShootRate(ped, math.floor((cfg.reaction or 0.6) * 100))
+    SetPedCombatAbility(ped, 2)
+    SetPedCombatRange(ped, 2)
+    SetPedCombatMovement(ped, cfg.combatMovement or 2)
+    SetPedAlertness(ped, cfg.alertness or 2)
+    SetPedFleeAttributes(ped, 0, false)
+    SetPedCombatAttributes(ped, 46, true)   -- always fight
+    SetPedCombatAttributes(ped, 5,  true)   -- may use vehicles: off by task below
+    SetPedCombatAttributes(ped, 0,  true)   -- use cover
+    SetPedSeeingRange(ped, 200.0)
+    SetPedHearingRange(ped, 200.0)
+    SetPedRelationshipGroupHash(ped, relationship)
+end
+
+RegisterNetEvent('m5rp:cl:bots', function(data)
+    if not data then return end
+
+    if data.clear then
+        clearBots()
+        return
+    end
+
+    if data.release then
+        -- the countdown is over: let them fight
+        State.botsHeld = false
+        local me = playerPed()
+        for i = 1, #State.bots do
+            local ped = State.bots[i].ped
+            if DoesEntityExist(ped) and not IsEntityDead(ped) then
+                FreezeEntityPosition(ped, false)
+                TaskCombatPed(ped, me, 0, 16)
+            end
+        end
+        return
+    end
+
+    if not data.spawn then return end
+
+    clearBots()
+    State.botMatchId  = data.matchId
+    State.botHeadshot = data.headshotOneShot == true
+
+    local model = GetHashKey(data.model or 's_m_y_marine_01')
+    RequestModel(model)
+    local timeout = ms() + 5000
+    while not HasModelLoaded(model) and ms() < timeout do Citizen.Wait(20) end
+    if not HasModelLoaded(model) then
+        nui({ action = 'toast', kind = 'error',
+              message = 'Could not load the bot model.', title = 'BOT MATCH' })
+        return
+    end
+
+    -- a group of their own so they fight the player and not each other
+    local group = GetHashKey('M5RP_BOTS')
+    AddRelationshipGroup('M5RP_BOTS')
+    SetRelationshipBetweenGroups(5, group, GetHashKey('PLAYER'))
+    SetRelationshipBetweenGroups(5, GetHashKey('PLAYER'), group)
+    SetRelationshipBetweenGroups(0, group, group)
+
+    local spots = data.spots or {}
+    for i = 1, #spots do
+        local p = spots[i]
+        local ped = CreatePed(4, model, p.x, p.y, p.z, p.h or 0.0, false, false)
+        if DoesEntityExist(ped) then
+            configureBot(ped, data.bot or {}, group)
+            FreezeEntityPosition(ped, true)      -- held until the round goes live
+            State.bots[#State.bots + 1] = { ped = ped, down = false }
+        end
+    end
+
+    SetModelAsNoLongerNeeded(model)
+    State.botsActive = #State.bots > 0
+    State.botsHeld   = true
+
+    if not State.botsActive then return end
+
+    -- One watcher for the whole session. It only looks for a bot dying and
+    -- tells the server; it never decides anything about the round.
+    Citizen.CreateThread(function()
+        while State.botsActive do
+            local anyAlive = false
+
+            for i = 1, #State.bots do
+                local b = State.bots[i]
+                if not b.down and DoesEntityExist(b.ped) then
+                    if IsEntityDead(b.ped) or GetEntityHealth(b.ped) <= 0 then
+                        b.down = true
+                        local hasBone, bone = GetPedLastDamageBone(b.ped)
+                        TriggerServerEvent('m5rp:sv:bot', 'down', {
+                            headshot = (hasBone and HEAD_BONES[bone]) == true
+                        })
+                    else
+                        anyAlive = true
+                        -- one shot headshot applies to bots as well
+                        if State.botHeadshot then
+                            local hasBone, bone = GetPedLastDamageBone(b.ped)
+                            if hasBone and HEAD_BONES[bone]
+                               and HasEntityBeenDamagedByEntity(b.ped, playerPed(), true) then
+                                ClearEntityLastDamageEntity(b.ped)
+                                SetEntityHealth(b.ped, 0)
+                            end
+                        end
+                        -- keep them engaged if they lost the target
+                        if not State.botsHeld and not IsPedInCombat(b.ped, playerPed()) then
+                            TaskCombatPed(b.ped, playerPed(), 0, 16)
+                        end
+                    end
+                end
+            end
+
+            -- nothing left to watch until the next round spawns a new set
+            if not anyAlive then State.botsActive = false end
+            Citizen.Wait(150)
+        end
+    end)
+end)
+
+-- ============================================================================
 -- 12. NOTIFICATIONS & MISC
 -- ============================================================================
 
@@ -1414,6 +1579,7 @@ AddEventHandler('onResourceStop', function(resource)
     setFocus(false)
     TriggerScreenblurFadeOut(0)
     clearTrainingTargets()
+    clearBots()
 
     if State.spectateCam then
         RenderScriptCams(false, false, 0, true, true)

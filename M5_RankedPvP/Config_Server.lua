@@ -115,6 +115,8 @@ Config.AdminActions = {
     kickFromMatch = { permission = 'pvp.admin.match.kick',   label = 'Kick From Match',     group = 'match', reason = true },
     closeRoom     = { permission = 'pvp.admin.custom.close', label = 'Close Custom Room',   group = 'match', confirm = true },
     freeze        = { permission = 'pvp.admin.freeze',       label = 'Freeze Ranked Queue', group = 'match', confirm = true },
+    startBotMatch = { permission = 'pvp.admin.botmatch',     label = 'Start Bot Match',     group = 'match' },
+    stopBotMatch  = { permission = 'pvp.admin.botmatch',     label = 'Stop Bot Match',      group = 'match' },
 
     -- ---- points ---------------------------------------------------------
     addRP         = { permission = 'pvp.admin.rp.add',       label = 'Compensate RP',       group = 'points', reason = true },
@@ -797,6 +799,92 @@ Config.Training = {
         headshot = { label = 'HEADSHOT TRAINING', targets = 8,  spacing = 12.0, time = 120 },
         range    = { label = 'FREE RANGE',        targets = 0,  spacing = 0.0,  time = 0   }
     }
+}
+
+-- ============================================================================
+-- 12a. BOT MATCH  (staff only)
+-- ============================================================================
+--
+-- A practice duel against AI opponents, started from the admin panel. It runs
+-- the real match presentation — private bucket, map spawns, rounds, HUD, kill
+-- feed, end screen — so a mode or a map can be checked with one person.
+--
+-- It is deliberately UNRANKED and cannot be made ranked. The bots are local
+-- peds on the starting player's client, which is the only place a ped can be
+-- created and given combat AI, so their deaths are reported by that client
+-- rather than proven by the server. Nothing may ride on a client's word, so a
+-- bot match awards no RP, no MMR, no stats, no match history — and it is
+-- limited to staff who hold the permission below.
+--
+Config.BotMatch = {
+    enabled = true,
+
+    -- The permission lives on the admin action itself, so there is one source
+    -- of truth: Config.AdminActions.startBotMatch.permission ('pvp.admin.botmatch').
+    -- Anyone holding Config.Permissions.superAdmin also passes while
+    -- Config.Permissions.adminGrantsAll is true.
+
+    -- First bucket of the range used for these sessions. Each running bot
+    -- match takes the next free one (64 are reserved from here) so two staff
+    -- practising at once never share a world.
+    bucket = 90100,
+
+    -- Map: an id from Config.Maps, or nil to let the starter pick (the panel
+    -- offers the list and falls back to the first map that supports the mode).
+    defaultMap = nil,
+
+    -- Round structure, mirroring a normal 1v1. Rounds needed to win are
+    -- derived from the round count (best of N), so there is no separate knob
+    -- that could disagree with the number picked in the panel.
+    rounds        = 5,       -- default; the panel offers 1, 3, 5, 7 and 9
+    roundTime     = 120,     -- seconds, 0 = unlimited
+    countdown     = 5,       -- freeze before a round goes live
+    roundEndDelay = 5,       -- pause on the round result before the next one
+    endDelay      = 12,      -- how long the match end screen stays before cleanup
+
+    -- The human side
+    loadout        = 'duel',
+    headshotOneShot = true,  -- same one shot headshot rule as a real match
+
+    -- Hard ceiling. The bots are local peds, so a large number costs the
+    -- starting player frames and nobody else.
+    maxBots = 5,
+
+    bots = {
+        count = 1,           -- default, overridable per start up to maxBots
+        model = 's_m_y_marine_01',
+        namePrefix = 'BOT',
+
+        -- Presets offered in the panel. accuracy is 0-100, reaction is the
+        -- shooting rate multiplier, and combatMovement is 0 stationary,
+        -- 1 defensive, 2 advance, 3 suicidal.
+        difficulties = {
+            easy = {
+                label = 'EASY',
+                health = 150, armor = 0,   accuracy = 15, reaction = 0.35,
+                weapon = 'WEAPON_PISTOL',       combatMovement = 1, alertness = 0
+            },
+            normal = {
+                label = 'NORMAL',
+                health = 200, armor = 50,  accuracy = 35, reaction = 0.6,
+                weapon = 'WEAPON_PISTOL_MK2',   combatMovement = 2, alertness = 2
+            },
+            hard = {
+                label = 'HARD',
+                health = 200, armor = 100, accuracy = 60, reaction = 0.85,
+                weapon = 'WEAPON_CARBINERIFLE', combatMovement = 2, alertness = 3
+            },
+            insane = {
+                label = 'INSANE',
+                health = 200, armor = 100, accuracy = 85, reaction = 1.0,
+                weapon = 'WEAPON_CARBINERIFLE', combatMovement = 3, alertness = 3
+            }
+        },
+        defaultDifficulty = 'normal'
+    },
+
+    -- Post the result to the adminActions webhook like any other staff action
+    logToWebhook = true
 }
 
 -- ============================================================================

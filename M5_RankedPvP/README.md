@@ -416,6 +416,56 @@ the last 30 server-wide appear in the System tab. Rows older than
 
 ---
 
+## 7c. Bot match — practising alone
+
+**Admin panel → MATCHES → Start Bot Match.** Pick a difficulty, one to five
+bots, the number of rounds and a map, and you are dropped into a private world
+against AI. It runs the real match presentation — map spawns, countdown,
+rounds, HUD, kill feed, score, end screen — so a map or a weapon set can be
+checked without a second player. **STOP** ends it, and so does the normal leave
+button; disconnecting or restarting the resource cleans it up too.
+
+Permission: `pvp.admin.botmatch`, on both `startBotMatch` and `stopBotMatch`
+in `Config.AdminActions`. Holders of `pvp.all` pass as usual.
+
+### It is always unranked, and that is deliberate
+
+Only a client can create a ped and give it combat AI, so the bots live on the
+screen of whoever started the session. That means a bot's death is *reported*
+by that client, not proven by the server — the one thing this resource never
+accepts for anything that counts. So nothing counts here:
+
+| | Bot match |
+|---|---|
+| RP / MMR | none |
+| Season stats | untouched |
+| Match history | no row written |
+| Leaderboard | unaffected |
+
+The server still owns everything it can: the session, the rounds, the score,
+every timer and transition, when a round starts and ends, and the player's own
+death (which arrives through the normal combat path). The client is trusted for
+exactly one message — "a bot went down" — and that message is worthless.
+
+This is also why it is staff-only rather than a feature for everyone. Making it
+public would need server-owned bots, which FiveM cannot provide.
+
+### Tuning
+
+`Config.BotMatch` in `Config_Server.lua`: `rounds`, `roundTime`, `countdown`,
+`roundEndDelay`, `endDelay`, the player `loadout`, `maxBots`, and the
+`bots.difficulties` presets — health, armour, weapon, `accuracy` (0-100),
+`reaction`, `combatMovement` (0 stationary → 3 suicidal) and `alertness`. Add
+or rename presets freely; the panel lists whatever is there, ordered by
+accuracy. Rounds needed to win are derived from the round count (best of N), so
+no second setting can disagree with the one you picked.
+
+Each session takes its own routing bucket from `Config.BotMatch.bucket`
+upwards (64 are reserved), so two admins practising at the same time never land
+in each other's world.
+
+---
+
 ## 8. Feature map
 
 **Matchmaking** — MMR/rank/ping windows that widen over time, party-aware team

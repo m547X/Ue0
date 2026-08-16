@@ -5212,6 +5212,392 @@ function Training.stop(userId)
 end
 
 -- ============================================================================
+-- 15b. BOT MATCH  (staff only, never ranked)
+-- ============================================================================
+--
+-- Runs the real match presentation for one player against local AI peds. The
+-- server owns the session: rounds, score, timers, the win condition and every
+-- transition. The client owns only what a server cannot do — creating peds and
+-- giving them combat AI — and reports the two outcomes it alone can observe:
+-- a bot went down, or the round timed out on its side.
+--
+-- Those reports are not provable, which is exactly why nothing is at stake: a
+-- bot match writes no RP, no MMR, no stats and no match row, and only staff
+-- holding the action's permission can start one.
+
+local BotMatch = { sessions = {} }   -- [userId] = session
+
+local function botDifficulty(key)
+    local d = Config.BotMatch.bots.difficulties
+    return d[key] or d[Config.BotMatch.bots.defaultDifficulty] or d.normal
+end
+
+--- The map a bot match runs on: the requested one, the configured default, or
+--- the first map that supports 1v1.
+local function botMap(requested)
+    local m = requested and MapById[requested]
+    if m then return m end
+    m = Config.BotMatch.defaultMap and MapById[Config.BotMatch.defaultMap]
+    if m then return m end
+    local list = mapsForMode('1v1')
+    return list[1] or Config.Maps[1]
+end
+
+local function botPush(sess, event, payload)
+    local s = srcOf(sess.userId)
+    if s then TriggerClientEvent(event, s, payload) end
+end
+
+--- Score line for the HUD and the end screen.
+local function botScoreboard(sess)
+    local pd = Players[sess.userId]
+    return {
+        {
+            userId = sess.userId, serverId = srcOf(sess.userId),
+            name = pd and pd.name or 'PLAYER', team = 1,
+            kills = sess.kills, deaths = sess.deaths,
+            headshots = sess.headshots, damage = 0, score = sess.kills * 100,
+            alive = sess.alive, ping = 0
+        },
+        {
+            userId = -1, serverId = nil,
+            name = Config.BotMatch.bots.namePrefix .. ' TEAM', team = 2,
+            kills = sess.deaths, deaths = sess.kills,
+            headshots = 0, damage = 0, score = sess.deaths * 100,
+            alive = sess.botsAlive > 0, ping = 0
+        }
+    }
+end
+
+local function botHud(sess, throttle)
+    -- the live state pushes every tick; one update a second is plenty
+    if throttle then
+        if sess.lastHud and (ms() - sess.lastHud) < 1000 then return end
+        sess.lastHud = ms()
+    else
+        sess.lastHud = ms()
+    end
+
+    botPush(sess, 'm5rp:cl:hud', {
+        state = sess.state,
+        alive = sess.alive,
+        round = sess.round,
+        rounds = sess.rounds,
+        scores = { [1] = sess.scores[1], [2] = sess.scores[2] },
+        time = sess.stateEnd and math.max(0, sess.stateEnd - now()) or 0,
+        botsAlive = sess.botsAlive,
+        scoreboard = botScoreboard(sess)
+    })
+end
+
+--- Spawns (or respawns) the bots and puts the player on the opposite side.
+local function botBeginRound(sess)
+    sess.round     = sess.round + 1
+    sess.alive     = true
+    sess.botsAlive = sess.botCount
+    sess.state     = 'COUNTDOWN'
+    sess.stateEnd  = now() + Config.BotMatch.countdown
+
+    local map  = sess.map
+    local mine = (map.teamA and map.teamA[1]) or map.spectator
+    local diff = sess.difficulty
+
+    -- player side
+    local base = Config.Loadouts[Config.BotMatch.loadout] or Config.Loadouts.duel
+    botPush(sess, 'm5rp:cl:round', {
+        matchId = sess.id, phase = 'spawn', freeze = true,
+        spawn = { x = mine.x, y = mine.y, z = mine.z, h = mine.w },
+        loadout = { health = base.health, armor = base.armor, weapons = base.weapons },
+        protection = 0
+    })
+
+    -- bot side: the client creates the peds at these points
+    local spots = {}
+    local pool  = map.teamB or map.teamA or {}
+    for i = 1, sess.botCount do
+        local p = pool[((i - 1) % math.max(1, #pool)) + 1]
+        if p then spots[#spots + 1] = { x = p.x, y = p.y, z = p.z, h = p.w } end
+    end
+
+    botPush(sess, 'm5rp:cl:bots', {
+        matchId = sess.id,
+        spawn   = true,
+        round   = sess.round,
+        model   = Config.BotMatch.bots.model,
+        namePrefix = Config.BotMatch.bots.namePrefix,
+        spots   = spots,
+        bot     = {
+            health = diff.health, armor = diff.armor, accuracy = diff.accuracy,
+            reaction = diff.reaction, weapon = diff.weapon,
+            combatMovement = diff.combatMovement, alertness = diff.alertness
+        },
+        headshotOneShot = Config.BotMatch.headshotOneShot and Config.Headshot.oneShotKill
+    })
+
+    botPush(sess, 'm5rp:cl:round', {
+        matchId = sess.id, phase = 'countdown', round = sess.round,
+        seconds = Config.BotMatch.countdown, scores = sess.scores
+    })
+    botHud(sess)
+end
+
+local function botGoLive(sess)
+    sess.state    = 'LIVE'
+    sess.stateEnd = Config.BotMatch.roundTime > 0
+                    and (now() + Config.BotMatch.roundTime) or nil
+    botPush(sess, 'm5rp:cl:bots', { matchId = sess.id, release = true })
+    botPush(sess, 'm5rp:cl:round', {
+        matchId = sess.id, phase = 'live', round = sess.round,
+        time = Config.BotMatch.roundTime
+    })
+    botHud(sess)
+end
+
+--- Ends the current round. `winner` is 1 for the player, 2 for the bots,
+--- 0 for a draw.
+local function botEndRound(sess, winner, reason)
+    if sess.state == 'ROUND_END' or sess.state == 'MATCH_END' then return end
+
+    if winner == 1 or winner == 2 then sess.scores[winner] = sess.scores[winner] + 1 end
+
+    sess.state    = 'ROUND_END'
+    sess.stateEnd = now() + Config.BotMatch.roundEndDelay
+
+    botPush(sess, 'm5rp:cl:bots', { matchId = sess.id, clear = true })
+    botPush(sess, 'm5rp:cl:round', {
+        matchId = sess.id, phase = 'end', round = sess.round,
+        winner = winner, reason = reason, scores = sess.scores,
+        scoreboard = botScoreboard(sess)
+    })
+    botHud(sess)
+end
+
+function BotMatch.finish(sess, reason)
+    if sess.state == 'MATCH_END' then return end
+    sess.state    = 'MATCH_END'
+    sess.stateEnd = now() + Config.BotMatch.endDelay
+
+    local winner = sess.scores[1] > sess.scores[2] and 1
+                or (sess.scores[2] > sess.scores[1] and 2 or 0)
+
+    botPush(sess, 'm5rp:cl:bots', { matchId = sess.id, clear = true })
+    botPush(sess, 'm5rp:cl:end', {
+        matchId = sess.id,
+        winner  = winner,
+        myTeam  = 1,
+        result  = winner == 1 and 'WIN' or (winner == 2 and 'LOSS' or 'DRAW'),
+        reason  = reason or 'COMPLETE',
+        ranked  = false,
+        practice = true,
+        scores  = sess.scores,
+        scoreboard = botScoreboard(sess),
+        rp = { delta = 0, before = 0, after = 0 },
+        mvp = nil
+    })
+end
+
+--- Tears the session down and puts the player back in the world.
+function BotMatch.stop(userId, reason)
+    local sess = BotMatch.sessions[userId]
+    if not sess then return false, 'No bot match is running.' end
+
+    BotMatch.sessions[userId] = nil
+    UsedBuckets[sess.bucket] = nil
+
+    local pd = Players[userId]
+    if pd and pd.state == 'BOTMATCH' then
+        pd.state    = 'IDLE'
+        pd.matchId  = nil
+        pd.team     = 0
+    end
+
+    local s = srcOf(userId)
+    if s then
+        TriggerClientEvent('m5rp:cl:bots', s, { matchId = sess.id, clear = true })
+        TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = sess.id })
+        SetPlayerRoutingBucket(s, 0)
+    end
+
+    if Config.BotMatch.logToWebhook then
+        Logger.send('adminActions', 'Bot Match Ended', nil, pd, {
+            { name = 'Result', value = ('%d - %d'):format(sess.scores[1], sess.scores[2]) },
+            { name = 'Rounds', value = tostring(sess.round) },
+            { name = 'Difficulty', value = sess.difficultyKey },
+            { name = 'Reason', value = reason or 'stopped' }
+        })
+    end
+    return true
+end
+
+function BotMatch.start(pd, opts)
+    if not Config.BotMatch.enabled then return false, 'Bot matches are disabled.' end
+    if not pd then return false, 'Player not found.' end
+    if BotMatch.sessions[pd.userId] then return false, 'You are already in a bot match.' end
+    if pd.state ~= 'IDLE' then return false, 'Leave your current activity first.' end
+
+    local s = srcOf(pd.userId)
+    if not s then return false, 'You must be in game to start one.' end
+
+    opts = opts or {}
+    local diffKey = Config.BotMatch.bots.difficulties[opts.difficulty]
+                    and opts.difficulty or Config.BotMatch.bots.defaultDifficulty
+    local count = math.floor(tonumber(opts.bots) or Config.BotMatch.bots.count)
+    count = clamp(count, 1, Config.BotMatch.maxBots)
+
+    local rounds = math.floor(tonumber(opts.rounds) or Config.BotMatch.rounds)
+    rounds = clamp(rounds, 1, 15)
+
+    local map = botMap(opts.map)
+    if not map then return false, 'No map is available.' end
+
+    -- Each session needs its own world. Sharing one bucket would drop two
+    -- admins practising at the same time into each other's match.
+    local bucket
+    for b = Config.BotMatch.bucket, Config.BotMatch.bucket + 63 do
+        if not UsedBuckets[b] then bucket = b break end
+    end
+    if not bucket then return false, 'No free routing bucket for a bot match.' end
+
+    local sess = {
+        id        = uid('B'),
+        userId    = pd.userId,
+        bucket    = bucket,
+        map       = map,
+        rounds    = rounds,
+        -- best of N: 1->1, 3->2, 5->3, 7->4. Derived from the chosen round
+        -- count rather than the config, which would cap a 7 round pick at 3.
+        roundsToWin = math.floor(rounds / 2) + 1,
+        botCount  = count,
+        botsAlive = 0,
+        difficultyKey = diffKey,
+        difficulty = botDifficulty(diffKey),
+        round     = 0,
+        scores    = { [1] = 0, [2] = 0 },
+        kills = 0, deaths = 0, headshots = 0,
+        alive     = false,
+        state     = 'WAITING',
+        stateEnd  = now() + 2,
+        startedAt = now()
+    }
+    BotMatch.sessions[pd.userId] = sess
+    UsedBuckets[sess.bucket] = sess.id
+
+    pd.state   = 'BOTMATCH'
+    pd.matchId = nil
+    pd.team    = 1
+
+    SetPlayerRoutingBucket(s, sess.bucket)
+    configureBucket(sess.bucket)
+
+    TriggerClientEvent('m5rp:cl:setup', s, {
+        matchId   = sess.id,
+        mode      = '1v1',
+        modeLabel = ('BOT MATCH · %s'):format(sess.difficulty.label),
+        modeType  = 'team',
+        ranked    = false,
+        custom    = true,
+        practice  = true,
+        ffa       = false,
+        team      = 1,
+        map = { id = map.id, name = map.name, image = map.image,
+                center = { x = map.center.x, y = map.center.y, z = map.center.z },
+                radius = map.radius },
+        roster = {
+            { userId = pd.userId, name = pd.name, team = 1, rank = Rank.get(pd.rankId).name },
+            { userId = -1, name = ('%s x%d'):format(Config.BotMatch.bots.namePrefix, count),
+              team = 2, rank = sess.difficulty.label }
+        },
+        settings = {
+            friendlyFire    = false,
+            minimap         = false,
+            movement        = 1.0,
+            jump            = true,
+            headshotOneShot = Config.BotMatch.headshotOneShot and Config.Headshot.oneShotKill,
+            headshotOnly    = false,
+            matchType       = 'normal',
+            respawn         = false,
+            spawnProtection = 0,
+            roundsToWin     = sess.roundsToWin,
+            killLimit       = 0,
+            boundaryWarning = Config.Match.boundary.warningTime
+        }
+    })
+
+    log('bot match started: user %d, %d bot(s), %s, map %s',
+        pd.userId, count, diffKey, map.id)
+    return true, {
+        rounds = rounds, bots = count, difficulty = sess.difficulty.label, map = map.name
+    }
+end
+
+--- The player died. Called from the combat path, which already owns deaths.
+function BotMatch.playerDied(userId)
+    local sess = BotMatch.sessions[userId]
+    if not sess or sess.state ~= 'LIVE' then return false end
+    sess.alive  = false
+    sess.deaths = sess.deaths + 1
+
+    botPush(sess, 'm5rp:cl:killfeed', {
+        killer = Config.BotMatch.bots.namePrefix, killerTeam = 2,
+        victim = Players[userId] and Players[userId].name or 'YOU', victimTeam = 1,
+        headshot = false
+    })
+    botEndRound(sess, 2, 'ELIMINATION')
+    return true
+end
+
+--- A bot went down. Only the starting client can observe this.
+function BotMatch.botDown(userId, headshot)
+    local sess = BotMatch.sessions[userId]
+    if not sess or sess.state ~= 'LIVE' then return false end
+    if sess.botsAlive <= 0 then return false end
+
+    sess.botsAlive = sess.botsAlive - 1
+    sess.kills     = sess.kills + 1
+    if headshot then sess.headshots = sess.headshots + 1 end
+
+    botPush(sess, 'm5rp:cl:killfeed', {
+        killer = Players[userId] and Players[userId].name or 'YOU', killerTeam = 1,
+        victim = Config.BotMatch.bots.namePrefix, victimTeam = 2,
+        headshot = headshot == true
+    })
+
+    if sess.botsAlive <= 0 then
+        botEndRound(sess, 1, 'ELIMINATION')
+    else
+        botHud(sess)
+    end
+    return true
+end
+
+--- Drives every running session. Called from the master loop.
+function BotMatch.tick()
+    for userId, sess in pairs(BotMatch.sessions) do
+        local s = srcOf(userId)
+        if not s then
+            BotMatch.stop(userId, 'disconnected')
+        elseif sess.stateEnd and now() >= sess.stateEnd then
+            if sess.state == 'WAITING' then
+                botBeginRound(sess)
+            elseif sess.state == 'COUNTDOWN' then
+                botGoLive(sess)
+            elseif sess.state == 'LIVE' then
+                botEndRound(sess, 0, 'TIME')          -- nobody closed it out
+            elseif sess.state == 'ROUND_END' then
+                local done = sess.scores[1] >= sess.roundsToWin
+                          or sess.scores[2] >= sess.roundsToWin
+                          or sess.round >= sess.rounds
+                if done then BotMatch.finish(sess, 'COMPLETE') else botBeginRound(sess) end
+            elseif sess.state == 'MATCH_END' then
+                BotMatch.stop(userId, 'finished')
+            end
+        elseif sess.state == 'LIVE' then
+            botHud(sess, true)
+        end
+    end
+end
+
+-- ============================================================================
 -- 16. REWARDS / XP / MISSIONS / ACHIEVEMENTS
 -- ============================================================================
 
@@ -6221,6 +6607,24 @@ function Admin.dashboard(userId)
         maps        = maps,
         modes       = modes,
         frozen      = Config.Global.rankedFrozen,
+        -- only the labels the panel needs, and only for staff who reached here
+        botMatch    = {
+            enabled = Config.BotMatch.enabled,
+            maxBots = Config.BotMatch.maxBots,
+            running = BotMatch.sessions[userId] ~= nil,
+            difficulties = (function()
+                local out = {}
+                for key, d in pairs(Config.BotMatch.bots.difficulties) do
+                    out[#out + 1] = {
+                        id = key, label = d.label, accuracy = d.accuracy or 0,
+                        isDefault = key == Config.BotMatch.bots.defaultDifficulty
+                    }
+                end
+                -- easiest first, so a custom set of presets still reads in order
+                table.sort(out, function(a, b) return a.accuracy < b.accuracy end)
+                return out
+            end)()
+        },
         season      = Season.current and {
             id = Season.current.id, name = Season.current.name,
             number = Season.current.number, endsAt = Season.endsAt
@@ -6466,6 +6870,23 @@ function Admin.handle(adminPd, action, data)
         Admin.audit(adminPd, action, nil, {
             details = { frozen = Config.Global.rankedFrozen }, reason = reason })
         return true, { frozen = Config.Global.rankedFrozen }
+
+    elseif action == 'startBotMatch' then
+        -- always for the caller: the session lives on their client, so it
+        -- cannot be started on somebody else's behalf
+        local ok, res = BotMatch.start(adminPd, {
+            difficulty = data.difficulty, bots = data.bots,
+            rounds = data.rounds, map = data.map
+        })
+        if not ok then return false, res end
+        Admin.audit(adminPd, action, nil, { details = res, reason = reason })
+        return true, res
+
+    elseif action == 'stopBotMatch' then
+        local ok, res = BotMatch.stop(adminPd.userId, 'stopped by admin')
+        if not ok then return false, res end
+        Admin.audit(adminPd, action, nil, { reason = reason })
+        return true, { ok = true }
 
     -- ================================================== points
     elseif action == 'addRP' or action == 'removeRP' then
@@ -7011,10 +7432,27 @@ RegisterNetEvent('m5rp:sv:combat', function(kind, data)
         Combat.headshot(pd, data)
     elseif kind == 'death' then
         if not Security.allow(pd, 'kill') then return end
-        Combat.death(pd, data)
+        -- a bot match keeps its own score and never touches the ranked path
+        if BotMatch.sessions[pd.userId] then
+            BotMatch.playerDied(pd.userId)
+        else
+            Combat.death(pd, data)
+        end
     elseif kind == 'oob' then
         if not Security.allow(pd, 'kill') then return end
         Combat.outOfBounds(pd)
+    end
+end)
+
+--- The only thing a bot match takes from the client: a bot going down, which
+--- the server cannot observe because the peds are local to that client. The
+--- session is looked up by the caller's own id, so nobody can report into
+--- anyone else's match, and the result is worth nothing anyway.
+RegisterNetEvent('m5rp:sv:bot', function(action, data)
+    local pd = caller('kill')
+    if not pd then return end
+    if tostring(action) == 'down' then
+        BotMatch.botDown(pd.userId, type(data) == 'table' and data.headshot == true)
     end
 end)
 
@@ -7151,8 +7589,13 @@ RegisterNetEvent('m5rp:sv:action', function(action, data)
         if not ok then notify(src, 'error', reason, 'RECONNECT') end
 
     elseif action == 'leaveMatch' then
-        local m = pd.matchId and Matches[pd.matchId]
-        if m then Match.removePlayer(m, pd.userId, 'LEAVE') end
+        -- the same button ends a bot match, so there is one way out
+        if BotMatch.sessions[pd.userId] then
+            BotMatch.stop(pd.userId, 'left')
+        else
+            local m = pd.matchId and Matches[pd.matchId]
+            if m then Match.removePlayer(m, pd.userId, 'LEAVE') end
+        end
 
     elseif action == 'training' then
         if data.enable then
@@ -7479,6 +7922,7 @@ AddEventHandler('vRP:playerLeave', function(user_id, source)
 
     if CustomGames.of(user_id) then CustomGames.leave(user_id) end
     if Training.players[user_id] then Training.stop(user_id) end
+    if BotMatch.sessions[user_id] then BotMatch.stop(user_id, 'disconnected') end
 
     SrcToUser[pd.source or source] = nil
     UserToSrc[user_id] = nil
@@ -7551,6 +7995,12 @@ Citizen.CreateThread(function()
                 err('match tick failed (%s): %s', tostring(m.id), tostring(e))
                 Logger.send('errors', 'Match Tick Error', tostring(e))
             end
+        end
+
+        -- ---- bot matches (staff practice sessions) ----------------------
+        if next(BotMatch.sessions) then
+            local ok, e = pcall(BotMatch.tick)
+            if not ok then err('bot match tick failed: %s', tostring(e)) end
         end
 
         -- ---- matchmaking -----------------------------------------------
@@ -7654,6 +8104,14 @@ AddEventHandler('onResourceStop', function(resource)
     for userId in pairs(Training.players) do
         local s = srcOf(userId)
         if s then SetPlayerRoutingBucket(s, 0) end
+    end
+
+    for userId in pairs(BotMatch.sessions) do
+        local s = srcOf(userId)
+        if s then
+            TriggerClientEvent('m5rp:cl:bots', s, { clear = true })
+            SetPlayerRoutingBucket(s, 0)
+        end
     end
 
     Logger.flush()
