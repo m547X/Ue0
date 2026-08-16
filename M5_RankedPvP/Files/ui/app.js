@@ -68,6 +68,7 @@ const S = {
   },
 
   hud: null, hudTime: 0,
+  matchInfo: null, sbOpen: false,
   training: null
 };
 
@@ -218,7 +219,14 @@ const I18N = {
     // toasts
     'A reason is required for this action.': 'هذا الإجراء يتطلب سببًا.',
     'Action applied.': 'تم تنفيذ الإجراء.',
-    'ELIMINATED': 'تم إقصاؤك', 'SURRENDER': 'استسلام'
+    'ELIMINATED': 'تم إقصاؤك', 'SURRENDER': 'استسلام',
+
+    // in-match HUD and scoreboard
+    'ROUND': 'الجولة', 'OVERTIME': 'وقت إضافي', 'FREE FOR ALL': 'الكل ضد الكل',
+    'TEAM A': 'الفريق أ', 'TEAM B': 'الفريق ب', 'ALIVE': 'على قيد الحياة',
+    'NO PLAYERS': 'لا يوجد لاعبون', 'RANKED': 'مصنّف', 'PLAYER': 'اللاعب',
+    'K': 'قتل', 'D': 'موت', 'A': 'مساعدة', 'HS': 'هيد', 'DMG': 'ضرر',
+    'PING': 'البنق', 'HOLD': 'استمر بالضغط على'
   }
 };
 
@@ -266,6 +274,11 @@ function redrawForLanguage() {
       renderSlots();
       renderQueue(S.lastQueue);
       showPage(S.page || 'ranked');
+      // in-match surfaces too, or a switch mid match leaves them behind
+      if (S.hud) renderHud(S.hud);
+      if (S.matchInfo && S.matchInfo.scoreboardHint) {
+        $('sb-hint').textContent = `${tx('HOLD')} ${S.matchInfo.scoreboardHint}`;
+      }
     } catch (e) {
       // a failed relabel must never take the menu down with it
       console.error('language redraw failed', e);
@@ -1675,6 +1688,28 @@ function admAction(btn) {
 }
 
 /* =============================================================== IN MATCH */
+/** A player portrait. The initial is always drawn underneath and the avatar
+ *  sits on top of it, so a picture that fails to load simply reveals the
+ *  letter — no error handler rewriting the DOM while it is still parsing. */
+function avatarCell(p, cls) {
+  const img = p.avatar
+    ? `<img src="${esc(p.avatar)}" alt="" loading="lazy" onerror="this.remove()"/>`
+    : '';
+  return `<div class="${cls}"><span class="ini">${esc(initial(p.name))}</span>${img}</div>`;
+}
+
+/** The row of portraits on one side of the HUD. */
+function renderFaces(hostId, players, meId) {
+  const host = $(hostId);
+  if (!host) return;
+  host.innerHTML = players.map((p) => {
+    const state = (p.connected === false) ? ' down'
+                : (p.alive === false ? ' down' : '');
+    const mine  = p.userId === meId ? ' me' : '';
+    return avatarCell(p, 'face' + state + mine);
+  }).join('');
+}
+
 function renderHud(d) {
   if (!d) return;
   S.hud = d;
@@ -1682,11 +1717,81 @@ function renderHud(d) {
   $('hud-score-b').textContent = d.scores.b;
   $('hud-alive-a').textContent = d.aliveA;
   $('hud-alive-b').textContent = d.aliveB;
-  $('hud-round').textContent = d.ffa ? 'FREE FOR ALL'
-    : (d.overtime ? `OVERTIME · ROUND ${d.round}` : `ROUND ${d.round}`);
+  $('hud-round').textContent = d.ffa ? tx('FREE FOR ALL')
+    : (d.overtime ? `${tx('OVERTIME')} · ${tx('ROUND')} ${d.round}` : `${tx('ROUND')} ${d.round}`);
   $('hud-ping').textContent = `${d.ping || 0} ms`;
+
+  // team names come from the server (fixed, or named after a player)
+  $('hud-team-a').textContent = d.teamA || tx('TEAM A');
+  $('hud-team-b').textContent = d.teamB || tx('TEAM B');
+
+  const board = d.scoreboard || [];
+  const meId  = S.boot && S.boot.player && S.boot.player.userId;
+  renderFaces('hud-faces-a', board.filter((p) => p.team === 1), meId);
+  renderFaces('hud-faces-b', board.filter((p) => p.team === 2), meId);
+
+  if (S.sbOpen) renderScoreboard();
+
   S.hudTime = d.time || 0;
   updateTimer();
+}
+
+/* ------------------------------------------------------------ scoreboard */
+/** Full in-match scoreboard, shown while TAB is held. */
+function renderScoreboard() {
+  const d = S.hud;
+  if (!d) return;
+
+  const meId  = S.boot && S.boot.player && S.boot.player.userId;
+  const board = (d.scoreboard || []).slice();
+
+  $('sb-mode').textContent = (S.matchInfo && S.matchInfo.modeLabel)
+    || (d.ffa ? tx('FREE FOR ALL') : tx('RANKED'));
+  $('sb-map').textContent = (S.matchInfo && S.matchInfo.map && S.matchInfo.map.name) || '';
+  $('sb-score-a').textContent = d.scores.a;
+  $('sb-score-b').textContent = d.scores.b;
+  $('sb-round').textContent = d.maxRounds
+    ? `${tx('ROUND')} ${d.round} / ${d.maxRounds}` : `${tx('ROUND')} ${d.round}`;
+
+  $('sb-team-a').textContent = d.teamA || tx('TEAM A');
+  $('sb-team-b').textContent = d.teamB || tx('TEAM B');
+  $('sb-alive-a').textContent = `${d.aliveA} ${tx('ALIVE')}`;
+  $('sb-alive-b').textContent = `${d.aliveB} ${tx('ALIVE')}`;
+
+  const row = (p) => {
+    const cls = (p.connected === false ? ' gone' : (p.alive === false ? ' dead' : ''))
+              + (p.userId === meId ? ' me' : '');
+    return `<div class="sb-row${cls}">
+      <span class="sb-who">
+        ${avatarCell(p, 'sb-av')}
+        <span class="sb-nm"><b>${esc(p.name)}</b><span>${esc(tx(p.rank || ''))}</span></span>
+      </span>
+      <span>${p.kills || 0}</span>
+      <span>${p.deaths || 0}</span>
+      <span>${p.assists || 0}</span>
+      <span class="hs">${p.headshots || 0}</span>
+      <span>${num(p.damage || 0)}</span>
+      <span class="sb-ping">${p.ping || 0}</span>
+    </div>`;
+  };
+
+  const side = (team) => {
+    const rows = board.filter((p) => p.team === team)
+                      .sort((a, b) => (b.score || 0) - (a.score || 0));
+    return rows.length ? rows.map(row).join('')
+                       : `<div class="sb-empty">${esc(tx('NO PLAYERS'))}</div>`;
+  };
+
+  $('sb-rows-a').innerHTML = side(1);
+  $('sb-rows-b').innerHTML = side(2);
+}
+
+function toggleScoreboard(show) {
+  S.sbOpen = !!show;
+  const n = $('scoreboard');
+  if (!n) return;
+  if (show) { renderScoreboard(); n.classList.remove('hidden'); }
+  else n.classList.add('hidden');
 }
 function updateTimer() {
   const n = $('hud-timer');
@@ -1948,7 +2053,18 @@ window.addEventListener('message', (e) => {
       break;
     }
 
-    case 'matchSetup': $('hud').classList.remove('hidden'); $('killfeed').innerHTML = ''; break;
+    case 'matchSetup': {
+      S.matchInfo = d.data || null;
+      const hint = S.matchInfo && S.matchInfo.scoreboardHint;
+      $('sb-hint').textContent = hint ? `${tx('HOLD')} ${hint}` : '';
+      $('sb-hint').style.display = hint ? '' : 'none';
+      $('hud').classList.remove('hidden');
+      $('killfeed').innerHTML = '';
+      toggleScoreboard(false);
+      break;
+    }
+
+    case 'scoreboard': toggleScoreboard(d.show === true); break;
     case 'hud': renderHud(d.data); break;
     case 'localHud': renderLocalHud(d.data); break;
     case 'killfeed': addKillFeed(d.data); break;
@@ -1964,7 +2080,10 @@ window.addEventListener('message', (e) => {
       S.hud = null;
       break;
 
-    case 'hudVisible': $('hud').classList.toggle('hidden', !d.value); break;
+    case 'hudVisible':
+      $('hud').classList.toggle('hidden', !d.value);
+      if (!d.value) toggleScoreboard(false);   // never leave it stuck open
+      break;
 
     case 'boundary': {
       const n = $('boundary');

@@ -955,6 +955,75 @@ Config.Matchmaking = {
 -- 15. MATCH FLOW
 -- ============================================================================
 
+-- ============================================================================
+-- 15b. PLAYER AVATARS  (match HUD and scoreboard)
+-- ============================================================================
+--
+-- Each player in the HUD and the TAB scoreboard shows a picture. Where it
+-- comes from is up to you.
+--
+Config.Avatars = {
+    enabled = true,
+
+    -- Shown whenever a real picture cannot be resolved. Use a local file under
+    -- Files/ui/img/ (add it to the `files` list in fxmanifest.lua) or any URL.
+    default = 'https://cdn.discordapp.com/embed/avatars/0.png',
+
+    -- How to resolve a picture. First match wins, and any step may be off.
+    --
+    --   'discord'  ask Discord for the real avatar of the player's linked
+    --              account. Needs a bot token; see below.
+    --   'template' build a URL from the player's discord id yourself, with no
+    --              API call at all. %s is replaced by the bare discord id.
+    --   'none'     always use `default`.
+    --
+    source = 'discord',
+
+    -- Only used when source = 'template'
+    template = 'https://my-cdn.example.com/avatars/%s.png',
+
+    discord = {
+        -- A bot token from https://discord.com/developers/applications.
+        -- The bot needs no permissions and no server membership — reading a
+        -- user's public avatar only requires the token itself.
+        --
+        -- LEAVE THIS EMPTY and the system falls back to `default` silently.
+        -- Never put the token anywhere that reaches the client; this file is
+        -- server only, which is why it lives here.
+        botToken = '',
+
+        -- Discord rate limits hard, so results are cached. Seconds.
+        cacheTime = 21600,          -- 6 hours
+
+        -- Size of the requested image (power of two, 16 - 4096)
+        size = 128
+    }
+}
+
+-- ============================================================================
+-- 15c. TEAM NAMES  (match HUD and scoreboard)
+-- ============================================================================
+--
+Config.TeamNames = {
+    -- 'fixed'  the two names below, always
+    -- 'leader' name each side after one of its players, e.g. "M547'S TEAM".
+    --          In a 1v1 that reads as the two player names facing each other,
+    --          which is usually what you want.
+    mode = 'leader',
+
+    fixed = { [1] = 'TEAM A', [2] = 'TEAM B' },
+
+    -- Used by 'leader'. %s is the player's name.
+    pattern = "%s'S TEAM",
+
+    -- With 'leader', a team of one shows just the name instead of the pattern.
+    soloIsPlain = true,
+
+    -- Which player names the team: 'party' uses the party leader when the
+    -- side queued together, otherwise the highest ranked player.
+    pick = 'party'
+}
+
 Config.Match = {
     -- Global tick used by the match state machine
     tickInterval      = 250,

@@ -466,6 +466,105 @@ in each other's world.
 
 ---
 
+## 7d. Export.lua — your code, your hooks
+
+`Export.lua` is the one file meant to be edited. Give a hook a body and it runs
+at that moment; nothing else needs touching.
+
+```lua
+M5.Server.onMatchJoin = function(data)
+    vRP.tryPayment({ data.userId, 500 })          -- entry fee
+end
+
+M5.Client.onMatchJoin = function(data)
+    exports['my_hud']:setVisible(false)           -- hide your own HUD
+end
+
+M5.Client.onMatchLeave = function(data)
+    exports['my_hud']:setVisible(true)
+end
+```
+
+It is a `shared_script`, so the same file loads on both sides: `M5.Client`
+hooks only ever run on the client, `M5.Server` hooks only on the server. Every
+hook is wrapped in `pcall` — a mistake in your code prints an error and the
+match carries on. It can never take the PvP system down.
+
+| Client | Server |
+|---|---|
+| `onMatchJoin` `onMatchLeave` | `onMatchJoin` `onMatchLeave` |
+| `onRoundStart` `onRoundEnd` | `onMatchEnd` `onKill` |
+| `onDeath` `onMatchEnd` | `onQueueJoin` `onQueueLeave` |
+| `onTrainingStart` `onTrainingEnd` | `onRankChange` |
+
+Each hook receives one table; the fields are documented above every hook in the
+file itself.
+
+**From another resource**, without editing anything, the same moments fire as
+events (`m5rp:onMatchJoin`, `m5rp:onKill`, …) on the side they belong to, and
+these exports are available:
+
+```lua
+-- server
+exports.M5_RankedPvP:isInMatch(userId)
+exports.M5_RankedPvP:getMatchInfo(userId)
+exports.M5_RankedPvP:getPlayerRank(userId)    -- rank, rp, mmr, level
+exports.M5_RankedPvP:getPlayerStats(userId)
+-- client
+exports.M5_RankedPvP:isInMatch()
+exports.M5_RankedPvP:isTraining()
+exports.M5_RankedPvP:getMatchInfo()
+```
+
+---
+
+## 7e. Match HUD, avatars and the scoreboard
+
+### Avatars — `Config.Avatars`
+
+Every player in the HUD and the scoreboard shows a picture. Where it comes from
+is `Config.Avatars.source`:
+
+- **`'discord'`** — the real avatar of the player's linked Discord account.
+  Put a bot token in `Config.Avatars.discord.botToken`; the bot needs no
+  permissions and does not have to be in your server, reading a public avatar
+  only needs the token. Results are cached for `cacheTime` seconds because
+  Discord rate limits hard. **Leave the token empty and it silently falls back
+  to the default image** — nothing breaks.
+- **`'template'`** — build the URL yourself from the discord id, no API call:
+  `template = 'https://my-cdn.example.com/avatars/%s.png'`.
+- **`'none'`** — always the default.
+
+`Config.Avatars.default` is used whenever a picture is missing or fails to
+load. It can be a URL or a local file under `Files/ui/img/` (add it to the
+`files` block in `fxmanifest.lua`).
+
+The lookup is server side and only the finished URL reaches the UI — the bot
+token stays in `Config_Server.lua`. If an image fails to load in game, the
+player's initial shows in its place; the letter is always drawn underneath, so
+there is no broken-image state.
+
+### Team names — `Config.TeamNames`
+
+`mode = 'leader'` names each side after one of its players — `M547'S TEAM` —
+using the party leader that queued it, or the highest ranked player when there
+was no party. A team of one shows just the name, so a 1v1 reads as the two
+player names facing each other. `mode = 'fixed'` uses `TEAM A` / `TEAM B`.
+
+### Scoreboard — hold TAB
+
+`Config.HUD.scoreboard`. Holding the key opens the full board: both teams with
+avatars, names, rank, K / D / A, headshots, damage and ping, your own row
+highlighted, dead players dimmed and disconnected ones greyed out. It also
+appears on its own during the round break (`autoOnRoundEnd`).
+
+The key is registered through FiveM's keybinding system, so a player can rebind
+it under **Settings → Key Bindings → FiveM → M5 Ranked PvP** instead of being
+stuck with TAB. It needs no NUI focus — the board is display only, so it cannot
+swallow your mouse mid fight.
+
+---
+
 ## 8. Feature map
 
 **Matchmaking** — MMR/rank/ping windows that widen over time, party-aware team

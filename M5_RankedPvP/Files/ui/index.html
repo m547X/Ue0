@@ -77,11 +77,23 @@
   <!-- Match HUD -->
   <div id="hud" class="hud hidden">
     <div class="hud-top">
-      <div class="hud-side a"><span class="hud-label">TEAM A</span><span class="hud-alive" id="hud-alive-a">0</span></div>
+      <div class="hud-side a">
+        <div class="hud-team">
+          <span class="hud-label" id="hud-team-a">TEAM A</span>
+          <span class="hud-alive" id="hud-alive-a">0</span>
+        </div>
+        <div class="hud-faces" id="hud-faces-a"></div>
+      </div>
       <div class="hud-mid">
         <span id="hud-score-a">0</span><i></i><span id="hud-score-b">0</span>
       </div>
-      <div class="hud-side b"><span class="hud-alive" id="hud-alive-b">0</span><span class="hud-label">TEAM B</span></div>
+      <div class="hud-side b">
+        <div class="hud-team">
+          <span class="hud-alive" id="hud-alive-b">0</span>
+          <span class="hud-label" id="hud-team-b">TEAM B</span>
+        </div>
+        <div class="hud-faces" id="hud-faces-b"></div>
+      </div>
     </div>
     <div class="hud-sub">
       <span id="hud-round">ROUND 1</span><em></em>
@@ -97,6 +109,38 @@
         <span id="hud-weapon-name">—</span>
         <span class="hud-ammo"><b id="hud-clip">0</b><i>/</i><span id="hud-ammo">0</span></span>
       </div>
+    </div>
+  </div>
+
+  <!-- Hold TAB during a match -->
+  <div id="scoreboard" class="scoreboard hidden">
+    <div class="sb-shell">
+      <div class="sb-head">
+        <div class="sb-title"><span id="sb-mode">RANKED</span><em id="sb-map"></em></div>
+        <div class="sb-score"><b id="sb-score-a">0</b><i></i><b id="sb-score-b">0</b></div>
+        <div class="sb-round" id="sb-round">ROUND 1</div>
+      </div>
+      <div class="sb-teams">
+        <div class="sb-team a">
+          <div class="sb-team-head"><span id="sb-team-a">TEAM A</span><em id="sb-alive-a">0 ALIVE</em></div>
+          <div class="sb-cols">
+            <span class="grow" data-i18n="PLAYER">PLAYER</span>
+            <span data-i18n="K">K</span><span data-i18n="D">D</span><span data-i18n="A">A</span>
+            <span data-i18n="HS">HS</span><span data-i18n="DMG">DMG</span><span data-i18n="PING">PING</span>
+          </div>
+          <div class="sb-rows" id="sb-rows-a"></div>
+        </div>
+        <div class="sb-team b">
+          <div class="sb-team-head"><span id="sb-team-b">TEAM B</span><em id="sb-alive-b">0 ALIVE</em></div>
+          <div class="sb-cols">
+            <span class="grow" data-i18n="PLAYER">PLAYER</span>
+            <span data-i18n="K">K</span><span data-i18n="D">D</span><span data-i18n="A">A</span>
+            <span data-i18n="HS">HS</span><span data-i18n="DMG">DMG</span><span data-i18n="PING">PING</span>
+          </div>
+          <div class="sb-rows" id="sb-rows-b"></div>
+        </div>
+      </div>
+      <div class="sb-foot"><span id="sb-hint">HOLD TAB</span></div>
     </div>
   </div>
 

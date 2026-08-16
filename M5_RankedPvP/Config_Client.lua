@@ -285,6 +285,19 @@ Config.HUD = {
     showWeapon       = true,
     showRoundTimer   = true,
 
+    -- Full scoreboard shown while a key is held during a match.
+    -- The key is registered with FiveM's keybinding system, so a player can
+    -- rebind it under Settings > Key Bindings > FiveM > M5 Ranked PvP.
+    scoreboard = {
+        enabled  = true,
+        key      = 'TAB',            -- default binding
+        display  = 'TAB',            -- what the hint at the bottom shows
+        label    = 'M5 Ranked PvP — Scoreboard',
+        showHint = true,
+        -- Show it automatically during the round-end and match-end pauses
+        autoOnRoundEnd = true
+    },
+
     killFeed = {
         enabled   = true,
         position  = 'right', -- 'right' | 'left'

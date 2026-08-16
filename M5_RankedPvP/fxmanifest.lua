@@ -3,11 +3,13 @@
      M5 Ranked PvP  —  Competitive PvP System for FiveM
     ----------------------------------------------------------------------------
      Framework : vRP  |  Database : oxmysql  |  UI : NUI (HTML/CSS/JS)
-     Structure : Lua files are limited to exactly four:
+     Structure : Four system files, none of which you need to edit:
                     Config_Client.lua
                     Config_Server.lua
                     Files/Client.lua
                     Files/Server.lua
+                 Plus one file that is yours:
+                    Export.lua        your hooks, events and exports
     ============================================================================
 ]]
 
@@ -21,6 +23,10 @@ description 'M5 Ranked PvP — Competitive Ranked / MMR / Seasons / Custom Games
 version     '1.0.0'
 
 ui_page 'Files/ui/index.html'
+
+-- Your integration hooks. Loaded on both sides so M5.Client and M5.Server can
+-- live in one file; it holds no settings and no secrets.
+shared_script 'Export.lua'
 
 -- Client side only. Config_Server.lua is deliberately NOT listed here.
 client_scripts {

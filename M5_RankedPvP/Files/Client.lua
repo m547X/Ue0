@@ -120,6 +120,22 @@ end
 
 local function playerPed() return PlayerPedId() end
 
+-- ---------------------------------------------------------------------------
+-- Integration hooks (Export.lua)
+--
+-- Calls the matching M5.Client hook and fires the same moment as an event, so
+-- other resources can listen without touching this file. Errors inside a hook
+-- are printed and swallowed — nothing there may break the match.
+-- ---------------------------------------------------------------------------
+local function hook(name, data)
+    local fn = M5 and M5.Client and M5.Client[name]
+    if type(fn) == 'function' then
+        local ok, e = pcall(fn, data)
+        if not ok then print(('[M5RP] Export.lua M5.Client.%s failed: %s'):format(name, tostring(e))) end
+    end
+    TriggerEvent('m5rp:' .. name, data)
+end
+
 local function weaponNameFromHash(hash)
     -- resolve the readable name from the whitelist so the server always gets a
     -- name it can validate instead of a raw hash
@@ -634,6 +650,9 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
 
     closeMenu()
 
+    local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}
+    data.scoreboardHint = (sbCfg.enabled ~= false and sbCfg.showHint ~= false)
+                          and (sbCfg.display or 'TAB') or nil
     nui({ action = 'matchSetup', data = data })
     nui({ action = 'hudVisible', value = Config.HUD.enabled })
 
@@ -651,6 +670,14 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
     NetworkSetFriendlyFireOption(true)
     SetCanAttackFriendly(ped, State.settings.friendlyFire == true, false)
 
+    hook('onMatchJoin', {
+        matchId = data.matchId, mode = data.mode, modeLabel = data.modeLabel,
+        ranked = data.ranked == true, custom = data.custom == true,
+        practice = data.practice == true, team = State.team, ffa = State.ffa,
+        map = data.map and { id = data.map.id, name = data.map.name } or nil,
+        players = data.roster and #data.roster or 0
+    })
+
     startMatchThread()
 end)
 
@@ -658,6 +685,7 @@ RegisterNetEvent('m5rp:cl:round', function(data)
     if data.matchId and data.matchId ~= State.matchId then return end
 
     if data.phase == 'spawn' or data.phase == 'respawn' then
+        nui({ action = 'scoreboard', show = false })   -- the break is over
         State.alive = true
         State.reportedDeath = false
         State.outside = false
@@ -688,6 +716,7 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         State.frozen    = false
         FreezeEntityPosition(playerPed(), false)
         nui({ action = 'round', data = { phase = 'live', round = data.round, time = data.time } })
+        hook('onRoundStart', { matchId = State.matchId, round = data.round, time = data.time })
 
     elseif data.phase == 'loadout' then
         -- gun game promotion
@@ -717,6 +746,16 @@ RegisterNetEvent('m5rp:cl:round', function(data)
             reason = data.reason, scores = data.scores,
             myTeam = State.team, scoreboard = data.scoreboard
         } })
+
+        local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}
+        if sbCfg.enabled ~= false and sbCfg.autoOnRoundEnd then
+            nui({ action = 'scoreboard', show = true })
+        end
+
+        hook('onRoundEnd', {
+            matchId = State.matchId, round = data.round, winner = data.winner,
+            reason = data.reason, scores = data.scores
+        })
     end
 end)
 
@@ -754,6 +793,10 @@ RegisterNetEvent('m5rp:cl:end', function(data)
     State.matchState = 'MATCH_END'
 
     nui({ action = 'matchEnd', data = data })
+    hook('onMatchEnd', {
+        matchId = data.matchId, result = data.result,
+        scores = data.scores, rp = data.rp
+    })
 
     if not State.menuOpen then
         State.menuOpen = true
@@ -777,6 +820,11 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
     State.settings   = {}
     State.roster     = {}
     State.outside    = false
+
+    hook('onMatchLeave', {
+        matchId = data and data.matchId or State.matchId,
+        reason = (data and data.reason) or 'END'
+    })
 
     stopSpectate()
     clearBots()
@@ -995,6 +1043,11 @@ RegisterNetEvent('m5rp:cl:die', function(data)
         killer = data.killer, weapon = data.weapon, headshot = data.headshot,
         respawn = data.respawn, respawnTime = data.respawnTime
     } })
+
+    hook('onDeath', {
+        matchId = State.matchId, killer = data.killer, weapon = data.weapon,
+        headshot = data.headshot == true, respawn = data.respawn == true
+    })
 
     if not data.respawn and Config.Spectator.enabled then
         Citizen.SetTimeout((data.spectateDelay or 2) * 1000, function()
@@ -1353,8 +1406,10 @@ end
 
 RegisterNetEvent('m5rp:cl:training', function(data)
     if not data or data.enable == false then
+        local wasTraining = State.training
         State.training = false
         clearTrainingTargets()
+        if wasTraining then hook('onTrainingEnd', {}) end
         local ped = playerPed()
         RemoveAllPedWeapons(ped, true)
         SetEntityMaxHealth(ped, 200)
@@ -1368,6 +1423,7 @@ RegisterNetEvent('m5rp:cl:training', function(data)
 
     State.training = true
     closeMenu()
+    hook('onTrainingStart', { kind = data.kind, label = data.label })
 
     if data.spawn then teleport(data.spawn, false) end
     if data.loadout then applyLoadout(data.loadout) end
@@ -1592,6 +1648,46 @@ end)
 -- ============================================================================
 -- 12. NOTIFICATIONS & MISC
 -- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- Scoreboard (hold to show)
+--
+-- A +/- command pair is the only way FiveM gives a "while held" binding, and
+-- registering it means the player can rebind the key in the pause menu instead
+-- of being stuck with TAB. It needs no NUI focus: the board is display only.
+-- ---------------------------------------------------------------------------
+do
+    local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}
+    if sbCfg.enabled ~= false then
+        local function canShow()
+            return State.inMatch and State.matchState ~= 'NONE'
+        end
+
+        RegisterCommand('+m5rp_scoreboard', function()
+            if canShow() then nui({ action = 'scoreboard', show = true }) end
+        end, false)
+
+        RegisterCommand('-m5rp_scoreboard', function()
+            nui({ action = 'scoreboard', show = false })
+        end, false)
+
+        RegisterKeyMapping('+m5rp_scoreboard',
+            sbCfg.label or 'M5 Ranked PvP — Scoreboard', 'keyboard', sbCfg.key or 'TAB')
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Exports — for other resources on this client. Read only.
+-- ---------------------------------------------------------------------------
+exports('isInMatch',   function() return State.inMatch end)
+exports('isTraining',  function() return State.training end)
+exports('getMatchInfo', function()
+    if not State.inMatch then return nil end
+    return {
+        matchId = State.matchId, state = State.matchState, team = State.team,
+        ffa = State.ffa, alive = State.alive, map = State.map
+    }
+end)
 
 -- Escape hatch. If a screen effect ever survives — a crash mid match, an old
 -- build, another resource leaving one behind — this wipes the screen clean

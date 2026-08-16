@@ -51,6 +51,25 @@ local function err(fmt, ...)
     print(('^1[M5RP][error] ' .. fmt .. '^7'):format(...))
 end
 
+-- ---------------------------------------------------------------------------
+-- Integration hooks (Export.lua)
+--
+-- One entry point for everything the server owner wants to run around a match.
+-- Each hook is called inside pcall so a mistake in Export.lua prints an error
+-- and the match carries on; nothing in here may take the system down. The same
+-- moment is also broadcast as an event, so other resources can listen without
+-- touching this one.
+-- ---------------------------------------------------------------------------
+
+local function hook(name, data)
+    local fn = M5 and M5.Server and M5.Server[name]
+    if type(fn) == 'function' then
+        local ok, e = pcall(fn, data)
+        if not ok then err('Export.lua M5.Server.%s failed: %s', name, tostring(e)) end
+    end
+    TriggerEvent('m5rp:' .. name, data)
+end
+
 local function round(v, p)
     local m = 10 ^ (p or 0)
     return math.floor(v * m + 0.5) / m
@@ -1032,6 +1051,15 @@ function RP.apply(pd, delta, reason)
     end
 
     pd.dirtyRank = true
+
+    if changed then
+        hook('onRankChange', {
+            userId = pd.userId, name = pd.name,
+            from = { id = beforeRank, name = Rank.get(beforeRank).name },
+            to   = { id = newRank.id, name = newRank.name },
+            rp = pd.rp, promoted = newRank.id > beforeRank
+        })
+    end
 
     return {
         before     = before,
@@ -2125,6 +2153,9 @@ function Matchmaker.join(userId, mode)
                 modes = modes, startedAt = joinedAt
             })
         end
+        hook('onQueueJoin', {
+            userId = members[i], name = mpd.name, mode = mode, partySize = #members
+        })
     end
 
     if party then
@@ -2157,6 +2188,10 @@ function Matchmaker.leave(userId, silent)
         if s and not silent then
             TriggerClientEvent('m5rp:cl:queue', s, { state = 'IDLE' })
         end
+        hook('onQueueLeave', {
+            userId = entry.members[i], name = mpd and mpd.name or '?',
+            mode = entry.mode, partySize = #entry.members
+        })
     end
 
     if entry.partyId and Parties[entry.partyId] then
@@ -2719,6 +2754,123 @@ local function aliveCount(m, team)
     return n
 end
 
+-- ---------------------------------------------------------------------------
+-- Avatars
+--
+-- Resolved server side and handed to the UI as a plain URL. The Discord bot
+-- token never leaves Config_Server.lua; the client only ever sees the picture
+-- address, and a default one whenever anything is missing or fails.
+-- ---------------------------------------------------------------------------
+
+local AvatarCache = {}   -- [userId] = { url = string, at = timestamp }
+
+local function defaultAvatar()
+    return Config.Avatars.default or ''
+end
+
+--- The bare discord id out of a "discord:123456789" identifier.
+local function discordIdOf(pd)
+    if not pd or type(pd.discord) ~= 'string' or pd.discord == '' then return nil end
+    return pd.discord:match('(%d+)$')
+end
+
+--- Asks Discord for a user's avatar hash once, then caches the built URL.
+--- Runs in its own thread: the HTTP call must never hold up a match tick.
+local function fetchDiscordAvatar(userId, discordId)
+    local cfg = Config.Avatars.discord
+    if not cfg or cfg.botToken == '' then return end
+
+    PerformHttpRequest('https://discord.com/api/v10/users/' .. discordId,
+        function(status, body)
+            local url = defaultAvatar()
+            if status == 200 and body then
+                local ok, data = pcall(json.decode, body)
+                if ok and type(data) == 'table' and data.avatar then
+                    local ext = tostring(data.avatar):sub(1, 2) == 'a_' and 'gif' or 'png'
+                    url = ('https://cdn.discordapp.com/avatars/%s/%s.%s?size=%d')
+                        :format(discordId, data.avatar, ext, cfg.size or 128)
+                elseif ok and type(data) == 'table' then
+                    -- no custom avatar: Discord's own default for that account
+                    local n = tonumber(data.discriminator or 0) or 0
+                    url = ('https://cdn.discordapp.com/embed/avatars/%d.png'):format(n % 5)
+                end
+            elseif status == 401 then
+                err('discord avatar lookup rejected the bot token (401) — check Config.Avatars.discord.botToken')
+            elseif status == 429 then
+                dbg('discord avatar lookup rate limited for %s', discordId)
+            end
+            AvatarCache[userId] = { url = url, at = now() }
+        end, 'GET', '', { Authorization = 'Bot ' .. cfg.botToken })
+end
+
+--- The picture for a player. Always returns something usable immediately; a
+--- Discord lookup fills the cache in the background for the next push.
+local function avatarFor(userId)
+    if not Config.Avatars.enabled then return nil end
+
+    local cached = AvatarCache[userId]
+    local ttl    = (Config.Avatars.discord and Config.Avatars.discord.cacheTime) or 21600
+    if cached and (now() - cached.at) < ttl then return cached.url end
+
+    local pd = Players[userId]
+    local discordId = discordIdOf(pd)
+    local source = Config.Avatars.source or 'none'
+
+    if source == 'template' and discordId and Config.Avatars.template then
+        local url = Config.Avatars.template:format(discordId)
+        AvatarCache[userId] = { url = url, at = now() }
+        return url
+    end
+
+    if source == 'discord' and discordId then
+        -- serve the default now, swap it in once Discord answers
+        if not cached then
+            AvatarCache[userId] = { url = defaultAvatar(), at = 0 }
+            Citizen.CreateThread(function() fetchDiscordAvatar(userId, discordId) end)
+        end
+        return (AvatarCache[userId] or {}).url or defaultAvatar()
+    end
+
+    AvatarCache[userId] = { url = defaultAvatar(), at = now() }
+    return defaultAvatar()
+end
+
+-- ---------------------------------------------------------------------------
+-- Team names
+-- ---------------------------------------------------------------------------
+
+--- Names one side of a match. With 'leader' the side is named after the party
+--- leader that queued it, or its highest ranked player when there is no party.
+local function teamNameFor(m, team)
+    local cfg = Config.TeamNames or {}
+    local fixed = (cfg.fixed and cfg.fixed[team]) or (team == 2 and 'TEAM B' or 'TEAM A')
+    if cfg.mode ~= 'leader' then return fixed end
+
+    local members = teamPlayers(m, team)
+    if #members == 0 then return fixed end
+
+    local pick
+    if cfg.pick == 'party' then
+        for i = 1, #members do
+            local pd = Players[members[i].userId]
+            if pd and pd.partyId and Parties[pd.partyId]
+               and Parties[pd.partyId].leader == members[i].userId then
+                pick = members[i]
+                break
+            end
+        end
+    end
+    if not pick then
+        for i = 1, #members do
+            if not pick or (members[i].rankId or 0) > (pick.rankId or 0) then pick = members[i] end
+        end
+    end
+    if not pick then return fixed end
+
+    if #members == 1 and cfg.soloIsPlain ~= false then return pick.name end
+    return (cfg.pattern or "%s'S TEAM"):format(pick.name)
+end
+
 local function playerListPayload(m)
     local out = {}
     for userId, mp in pairs(m.players) do
@@ -2728,7 +2880,9 @@ local function playerListPayload(m)
             alive = mp.alive, connected = mp.connected,
             kills = mp.kills, deaths = mp.deaths, assists = mp.assists,
             headshots = mp.headshots, damage = math.floor(mp.damage),
-            score = mp.score, rank = mp.rankName, ping = 0
+            score = mp.score, rank = mp.rankName, rankId = mp.rankId,
+            avatar = avatarFor(userId),
+            ping = srcOf(userId) and (GetPlayerPing(srcOf(userId)) or 0) or 0
         }
     end
     table.sort(out, function(a, b)
@@ -2860,6 +3014,14 @@ function Match.addPlayer(m, userId, team)
     pd.state   = m.customId and 'CUSTOM' or 'MATCH'
     pd.matchId = m.id
     pd.team    = team or 1
+
+    hook('onMatchJoin', {
+        userId = userId, source = srcOf(userId), name = pd.name,
+        matchId = m.id, mode = m.mode, ranked = m.ranked,
+        custom = m.customId ~= nil, practice = false,
+        team = pd.team, rankId = pd.rankId, rank = Rank.get(pd.rankId).name,
+        rp = pd.rp, mmr = pd.mmr
+    })
     return true
 end
 
@@ -2874,7 +3036,8 @@ function Match.deploy(m, userId)
     local roster = {}
     for uidv, other in pairs(m.players) do
         roster[#roster + 1] = {
-            userId = uidv, name = other.name, team = other.team, rank = other.rankName
+            userId = uidv, name = other.name, team = other.team, rank = other.rankName,
+            avatar = avatarFor(uidv)
         }
     end
 
@@ -2887,6 +3050,7 @@ function Match.deploy(m, userId)
         custom    = m.customId ~= nil,
         ffa       = m.ffa,
         team      = mp.team,
+        teamNames = { [1] = teamNameFor(m, 1), [2] = teamNameFor(m, 2) },
         map = m.map and {
             id     = m.map.id,
             name   = m.map.name,
@@ -3280,6 +3444,8 @@ function Match.pushHud(m, force)
         time     = timeLeft,
         aliveA   = aliveCount(m, 1),
         aliveB   = aliveCount(m, 2),
+        teamA    = teamNameFor(m, 1),
+        teamB    = teamNameFor(m, 2),
         overtime = m.overtimeCount > 0,
         killLimit= m.settings.killLimit,
         ffa      = m.ffa,
@@ -3305,6 +3471,19 @@ local function addKillFeed(m, killerName, victimName, weapon, headshot, killerTe
     Match.broadcast(m, 'm5rp:cl:killfeed', {
         killer = killerName, victim = victimName, weapon = weapon,
         headshot = headshot, killerTeam = killerTeam, victimTeam = victimTeam
+    })
+
+    -- the server has already resolved this kill, so the hook sees the truth
+    local killerId, victimId
+    for userId, mp in pairs(m.players) do
+        if mp.name == killerName then killerId = userId end
+        if mp.name == victimName then victimId = userId end
+    end
+    hook('onKill', {
+        matchId = m.id,
+        killerUserId = killerId, killerName = killerName,
+        victimUserId = victimId, victimName = victimName,
+        weapon = weapon, headshot = headshot == true
     })
 end
 
@@ -3620,6 +3799,28 @@ function Match.endMatch(m, winner, reason)
                 ranked   = m.ranked
             })
         end
+    end
+
+    -- Everything the system owed has been paid out by now, so a hook here can
+    -- safely add its own rewards on top.
+    do
+        local players = {}
+        for userId, mp in pairs(m.players) do
+            local r = results[userId]
+            players[#players + 1] = {
+                userId = userId, name = mp.name, team = mp.team,
+                kills = mp.kills, deaths = mp.deaths, assists = mp.assists,
+                headshots = mp.headshots, damage = math.floor(mp.damage),
+                score = mp.score,
+                won = (winner ~= 0 and mp.team == winner),
+                rpDelta = (r and r.rp and r.rp.delta) or 0
+            }
+        end
+        hook('onMatchEnd', {
+            matchId = m.id, mode = m.mode, ranked = m.ranked,
+            winner = winner, scores = { a = m.scores[1], b = m.scores[2] },
+            mvp = mvpId, players = players
+        })
     end
 
     Logger.send('matchEnd', 'Match Finished',
@@ -3990,6 +4191,11 @@ end
 function Match.removePlayer(m, userId, reason)
     local mp = m.players[userId]
     if not mp then return end
+
+    hook('onMatchLeave', {
+        userId = userId, source = srcOf(userId), name = mp.name,
+        matchId = m.id, reason = reason or 'LEAVE'
+    })
 
     mp.connected = false
     mp.alive     = false
@@ -5255,16 +5461,19 @@ local function botScoreboard(sess)
         {
             userId = sess.userId, serverId = srcOf(sess.userId),
             name = pd and pd.name or 'PLAYER', team = 1,
-            kills = sess.kills, deaths = sess.deaths,
+            kills = sess.kills, deaths = sess.deaths, assists = 0,
             headshots = sess.headshots, damage = 0, score = sess.kills * 100,
-            alive = sess.alive, ping = 0
+            rank = pd and Rank.get(pd.rankId).name or '',
+            avatar = avatarFor(sess.userId),
+            alive = sess.alive, connected = true, ping = 0
         },
         {
             userId = -1, serverId = nil,
             name = Config.BotMatch.bots.namePrefix .. ' TEAM', team = 2,
-            kills = sess.deaths, deaths = sess.kills,
+            kills = sess.deaths, deaths = sess.kills, assists = 0,
             headshots = 0, damage = 0, score = sess.deaths * 100,
-            alive = sess.botsAlive > 0, ping = 0
+            rank = sess.difficulty.label, avatar = Config.Avatars.default,
+            alive = sess.botsAlive > 0, connected = true, ping = 0
         }
     }
 end
@@ -5283,7 +5492,12 @@ local function botHud(sess, throttle)
         alive = sess.alive,
         round = sess.round,
         rounds = sess.rounds,
-        scores = { [1] = sess.scores[1], [2] = sess.scores[2] },
+        scores = { a = sess.scores[1], b = sess.scores[2] },
+        teamA = Players[sess.userId] and Players[sess.userId].name or 'YOU',
+        teamB = ('%s x%d'):format(Config.BotMatch.bots.namePrefix, sess.botCount),
+        aliveA = sess.alive and 1 or 0,
+        aliveB = sess.botsAlive,
+        maxRounds = sess.rounds,
         time = sess.stateEnd and math.max(0, sess.stateEnd - now()) or 0,
         botsAlive = sess.botsAlive,
         scoreboard = botScoreboard(sess)
@@ -6943,6 +7157,7 @@ function Admin.handle(adminPd, action, data)
         return true, withPlayer(id, function(pd)
             local rank = Rank.get(rankId)
             local before = pd.rp
+            local beforeRank = pd.rankId
             pd.rankId, pd.division = rank.id, rank.division
             pd.rp = rank.rpRequired
 
@@ -6964,6 +7179,12 @@ function Admin.handle(adminPd, action, data)
             -- check in the console, and `m5rankinfo <userId>` shows the rest
             log('rank set: user %d -> %s (id %d, rp %d) by %s, season %d',
                 id, rank.name, rank.id, pd.rp, adminPd.name, Season.id())
+            hook('onRankChange', {
+                userId = id, name = pd.name,
+                from = { id = beforeRank, name = Rank.get(beforeRank).name },
+                to   = { id = rank.id, name = rank.name },
+                rp = pd.rp, promoted = rank.id > beforeRank
+            })
             return { rank = rank.name, rp = pd.rp }
         end)
 
@@ -8115,6 +8336,43 @@ AddEventHandler('onResourceStop', function(resource)
     end
 
     Logger.flush()
+end)
+
+-- ---------------------------------------------------------------------------
+-- Exports — for other resources. Read only, nothing here changes state.
+-- ---------------------------------------------------------------------------
+
+exports('isInMatch', function(userId)
+    local pd = Players[tonumber(userId) or -1]
+    return pd ~= nil and pd.matchId ~= nil and Matches[pd.matchId] ~= nil
+end)
+
+exports('getMatchInfo', function(userId)
+    local pd = Players[tonumber(userId) or -1]
+    if not pd or not pd.matchId then return nil end
+    local m = Matches[pd.matchId]
+    if not m then return nil end
+    return {
+        matchId = m.id, mode = m.mode, ranked = m.ranked,
+        custom = m.customId ~= nil, state = m.state, round = m.round,
+        scores = { a = m.scores[1], b = m.scores[2] },
+        team = pd.team, map = m.map and m.map.id or nil
+    }
+end)
+
+exports('getPlayerRank', function(userId)
+    local pd = Players[tonumber(userId) or -1]
+    if not pd then return nil end
+    return {
+        rankId = pd.rankId, rank = Rank.get(pd.rankId).name,
+        rp = pd.rp, mmr = pd.mmr, level = pd.level,
+        placementDone = pd.placementDone
+    }
+end)
+
+exports('getPlayerStats', function(userId)
+    local pd = Players[tonumber(userId) or -1]
+    return pd and pd.stats or nil
 end)
 
 -- Keep the winner reference for custom game bookkeeping.
