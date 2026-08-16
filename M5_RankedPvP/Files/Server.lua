@@ -1514,16 +1514,46 @@ end
 -- Client push helpers
 -- ---------------------------------------------------------------------------
 
-local function notify(source, kind, message, title)
+-- ---------------------------------------------------------------------------
+-- Text (Locale.lua)
+--
+-- The English line is the key, so nothing here needs a lookup table of its
+-- own: every message written in this file is handed to _L() on its way out and
+-- comes back in the player's language, or unchanged when there is no
+-- translation for it.
+--
+-- The server does not know which language a given player picked until they
+-- have booted, so the actual swap happens on their client, which holds the
+-- table. What the server sends is the English key plus the values to fill in.
+-- ---------------------------------------------------------------------------
+
+--- Translates a line into the server default. Used for console output and
+--- Discord logs, where there is no player to ask.
+local function _L(str)
+    if type(str) ~= 'string' then return str end
+    local lang = (Locale and Locale[Locale.default]) or nil
+    return (lang and lang[str]) or str
+end
+
+--- Same, but formats afterwards. The pattern is translated *before* the values
+--- are substituted, which is the only order that works.
+local function _Lf(str, ...)
+    return _L(str):format(...)
+end
+
+local function notify(source, kind, message, title, ...)
     if not source then return end
+    -- The client translates and formats: it is the side that knows the
+    -- player's chosen language.
     TriggerClientEvent('m5rp:cl:notify', source, {
-        kind = kind or 'info', message = message, title = title
+        kind = kind or 'info', message = message, title = title,
+        args = select('#', ...) > 0 and { ... } or nil
     })
 end
 
-local function notifyUser(userId, kind, message, title)
+local function notifyUser(userId, kind, message, title, ...)
     local s = srcOf(userId)
-    if s then notify(s, kind, message, title) end
+    if s then notify(s, kind, message, title, ...) end
 end
 
 -- ============================================================================
@@ -2092,7 +2122,7 @@ function Matchmaker.join(userId, mode)
         local mpd = Players[members[i]]
         if not mpd then return false, 'A party member is not loaded.' end
         local reason = Matchmaker.canQueue(mpd, modes[1])
-        if reason then return false, ('%s: %s'):format(mpd.name, reason) end
+        if reason then return false, _Lf('%s: %s', mpd.name, _L(reason)) end
     end
 
     -- Party rank gap check
@@ -4341,7 +4371,7 @@ function Match.startSurrender(m, userId)
     if not cfg.enabled then return false, 'Surrender is disabled.' end
     if m.state ~= 'LIVE' and m.state ~= 'ROUND_END' then return false, 'Not available right now.' end
     if m.round < cfg.minRound then
-        return false, ('Available from round %d.'):format(cfg.minRound)
+        return false, _Lf('Available from round %d.', cfg.minRound)
     end
     if m.surrender and m.surrender.expires > ms() then return false, 'A vote is already running.' end
     if m.surrenderCooldown and m.surrenderCooldown > ms() then return false, 'Please wait before voting again.' end
@@ -5892,7 +5922,7 @@ function Rewards.addXP(pd, amount)
     end
 
     if leveled then
-        notifyUser(pd.userId, 'success', ('You reached level %d'):format(pd.level), 'LEVEL UP')
+        notifyUser(pd.userId, 'success', 'You reached level %d', 'LEVEL UP', pd.level)
     end
 end
 
@@ -6033,7 +6063,7 @@ function Achievements.check(pd)
                 DB.insert('INSERT IGNORE INTO m5_player_achievements (user_id, achievement) VALUES (?, ?)',
                     { pd.userId, a.key })
                 Rewards.addXP(pd, a.xp or 0)
-                notifyUser(pd.userId, 'success', ('Achievement unlocked: %s'):format(a.label), 'ACHIEVEMENT')
+                notifyUser(pd.userId, 'success', 'Achievement unlocked: %s', 'ACHIEVEMENT', a.label)
             end
         end
     end
@@ -6958,7 +6988,7 @@ function Admin.handle(adminPd, action, data)
     local def = Config.AdminActions[action]
     if not def then return false, 'Unknown admin action.' end
     if not Admin.can(adminPd.userId, action) then
-        return false, ('No permission (%s).'):format(def.permission)
+        return false, _Lf('No permission (%s).', def.permission)
     end
 
     local okReason, reason, reasonErr = checkReason(action, data.reason)
@@ -7060,7 +7090,7 @@ function Admin.handle(adminPd, action, data)
         if not tpd or not tpd.matchId then return false, 'That player is not in a match.' end
         Match.removePlayer(Matches[tpd.matchId], id, 'ADMIN')
         Admin.audit(adminPd, action, who, { reason = reason })
-        notifyUser(id, 'error', ('You were removed from the match: %s'):format(reason), 'ADMIN')
+        notifyUser(id, 'error', 'You were removed from the match: %s', 'ADMIN', reason)
         return true, { ok = true }
 
     elseif action == 'closeRoom' then
@@ -7110,7 +7140,7 @@ function Admin.handle(adminPd, action, data)
         local amount = math.abs(math.floor(tonumber(data.amount) or 0))
         if amount <= 0 then return false, 'Enter an amount.' end
         local cap = (action == 'addRP') and Config.AdminLimits.maxRPGrant or Config.AdminLimits.maxRPDeduct
-        if amount > cap then return false, ('Maximum is %d RP per action.'):format(cap) end
+        if amount > cap then return false, _Lf('Maximum is %d RP per action.', cap) end
 
         local delta = (action == 'addRP') and amount or -amount
 
@@ -7145,7 +7175,7 @@ function Admin.handle(adminPd, action, data)
 
             Admin.audit(adminPd, action, who,
                 { before = before, after = pd.rp, amount = pd.rp - before, reason = reason })
-            notifyUser(id, 'info', ('Your RP was set to %d — %s'):format(pd.rp, reason), 'RANKED')
+            notifyUser(id, 'info', 'Your RP was set to %d — %s', 'RANKED', pd.rp, reason)
             return { rp = pd.rp, rank = rank.name }
         end)
 
@@ -7174,7 +7204,7 @@ function Admin.handle(adminPd, action, data)
 
             Admin.audit(adminPd, action, who,
                 { before = before, after = pd.rp, reason = reason, details = { rank = rank.name } })
-            notifyUser(id, 'info', ('Your rank was set to %s — %s'):format(rank.name, reason), 'RANKED')
+            notifyUser(id, 'info', 'Your rank was set to %s — %s', 'RANKED', rank.name, reason)
             -- always logged: a grant that does not stick is the first thing to
             -- check in the console, and `m5rankinfo <userId>` shows the rest
             log('rank set: user %d -> %s (id %d, rp %d) by %s, season %d',
@@ -7194,7 +7224,7 @@ function Admin.handle(adminPd, action, data)
         if not id then return false, 'No player with that ID.' end
         if amount <= 0 then return false, 'Enter an amount.' end
         if amount > Config.AdminLimits.maxXPGrant then
-            return false, ('Maximum is %d XP per action.'):format(Config.AdminLimits.maxXPGrant)
+            return false, _Lf('Maximum is %d XP per action.', Config.AdminLimits.maxXPGrant)
         end
 
         return true, withPlayer(id, function(pd)
@@ -7202,7 +7232,7 @@ function Admin.handle(adminPd, action, data)
             Rewards.addXP(pd, amount)
             Admin.audit(adminPd, action, who,
                 { amount = amount, before = before, after = pd.level, reason = reason })
-            notifyUser(id, 'success', ('+%d XP — %s'):format(amount, reason), 'PROGRESSION')
+            notifyUser(id, 'success', '+%d XP — %s', 'PROGRESSION', amount, reason)
             return { level = pd.level, xp = pd.xp }
         end)
 
@@ -7220,7 +7250,7 @@ function Admin.handle(adminPd, action, data)
             TriggerClientEvent('m5rp:cl:boot', s, Server_BootPayload(fresh))
         end
         Admin.audit(adminPd, action, who, { reason = reason })
-        notifyUser(id, 'warning', ('Your season stats were reset — %s'):format(reason), 'RANKED')
+        notifyUser(id, 'warning', 'Your season stats were reset — %s', 'RANKED', reason)
         return true, { ok = true }
 
     -- ================================================== punishments
@@ -7764,8 +7794,8 @@ RegisterNetEvent('m5rp:sv:admin', function(action, data)
         -- A change that did not reach the database must be reported now, not
         -- discovered by the player after the next restart.
         if type(result) == 'table' and result.verifyError then
-            notify(src, 'error', 'NOT SAVED — ' .. result.verifyError ..
-                '. Check the server console.', 'ADMIN')
+            notify(src, 'error', 'NOT SAVED — %s. Check the server console.',
+                'ADMIN', result.verifyError)
         end
         -- Admin.audit already wrote the row and the webhook
         TriggerClientEvent('m5rp:cl:data', src, { what = 'admin', action = action, result = result })
@@ -7939,9 +7969,9 @@ end)
 registerCommand(Config.Commands.rank, function(pd, src)
     local rank = pd.placementDone and Rank.get(pd.rankId) or Rank.get(0)
     local progress = Rank.progress(pd.rp, pd.rankId, pd.placementDone)
-    notify(src, 'info', ('%s — %d RP%s'):format(
+    notify(src, 'info', '%s — %d RP%s', 'YOUR RANK',
         rank.name, pd.rp,
-        progress.next and (' • %d RP to %s'):format(progress.needed, progress.next) or ''), 'YOUR RANK')
+        progress.next and _Lf(' • %d RP to %s', progress.needed, progress.next) or '')
 end)
 
 registerCommand(Config.Commands.leaderboard, function(pd, src)
@@ -7968,7 +7998,7 @@ end)
 registerCommand(Config.Commands.rankban, function(pd, src, args)
     -- /rankban <userId|name> <minutes> <reason...>
     if #args < 3 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.rankban.name .. ' <userId> <minutes> <reason>', 'RANK BAN')
+        notify(src, 'warning', 'Usage: /%s <userId> <minutes> <reason>', 'RANK BAN', Config.Commands.rankban.name)
         return
     end
     local ok, result = Admin.handle(pd, 'ban', {
@@ -7983,7 +8013,7 @@ end)
 
 registerCommand(Config.Commands.rankunban, function(pd, src, args)
     if #args < 1 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.rankunban.name .. ' <userId>', 'RANK UNBAN')
+        notify(src, 'warning', 'Usage: /%s <userId>', 'RANK UNBAN', Config.Commands.rankunban.name)
         return
     end
     local ok, result = Admin.handle(pd, 'unban', { target = args[1] })
@@ -7993,7 +8023,7 @@ end)
 
 registerCommand(Config.Commands.setrank, function(pd, src, args)
     if #args < 3 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrank.name .. ' <userId> <rankId 0-23> <reason>', 'SET RANK')
+        notify(src, 'warning', 'Usage: /%s <userId> <rankId 0-23> <reason>', 'SET RANK', Config.Commands.setrank.name)
         return
     end
     local ok, result = Admin.handle(pd, 'setRank', {
@@ -8004,7 +8034,7 @@ end)
 
 registerCommand(Config.Commands.setrp, function(pd, src, args)
     if #args < 3 then
-        notify(src, 'warning', 'Usage: /' .. Config.Commands.setrp.name .. ' <userId> <rp> <reason>', 'SET RP')
+        notify(src, 'warning', 'Usage: /%s <userId> <rp> <reason>', 'SET RP', Config.Commands.setrp.name)
         return
     end
     local ok, result = Admin.handle(pd, 'setRP', {

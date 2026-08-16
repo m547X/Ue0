@@ -8,7 +8,8 @@
                     Config_Server.lua
                     Files/Client.lua
                     Files/Server.lua
-                 Plus one file that is yours:
+                 Plus two files that are yours:
+                    Locale.lua        every line of text the players see
                     Export.lua        your hooks, events and exports
     ============================================================================
 ]]
@@ -24,9 +25,12 @@ version     '1.0.0'
 
 ui_page 'Files/ui/index.html'
 
--- Your integration hooks. Loaded on both sides so M5.Client and M5.Server can
--- live in one file; it holds no settings and no secrets.
-shared_script 'Export.lua'
+-- Every user-facing line, and your integration hooks. Both are loaded on the
+-- client and the server; neither holds settings or secrets.
+shared_scripts {
+    'Locale.lua',
+    'Export.lua'
+}
 
 -- Client side only. Config_Server.lua is deliberately NOT listed here.
 client_scripts {

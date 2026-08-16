@@ -38,7 +38,59 @@
 -- 01. STATE
 -- ============================================================================
 
-local L = Config.Text[Config.Language] or Config.Text.en
+-- ---------------------------------------------------------------------------
+-- Text (Locale.lua)
+--
+-- The English line is the key. Everything the player reads — here, in the
+-- notifications the server sends, and in the interface — is resolved through
+-- this one table, so Locale.lua is the only file to edit to change wording.
+-- ---------------------------------------------------------------------------
+local Lang = Locale.default or 'en'
+
+local function localeTable(code)
+    return (Locale and Locale[code]) or (Locale and Locale[Locale.fallback or 'en']) or {}
+end
+
+--- Translates one line, or returns it unchanged when there is no translation.
+local function _L(str)
+    if type(str) ~= 'string' then return str end
+    return localeTable(Lang)[str] or str
+end
+
+--- Translates then formats. The pattern has to be translated before the
+--- values go in, or the placeholders would be filled into the English line.
+local function _Lf(str, ...)
+    local ok, res = pcall(string.format, _L(str), ...)
+    return ok and res or _L(str)
+end
+
+--- Legacy shim: Config.Text keys still work, but resolve through Locale.
+local L = setmetatable({}, { __index = function(_, key)
+    local legacy = (Config.Text and Config.Text.en and Config.Text.en[key]) or key
+    return _L(legacy)
+end })
+
+--- The bundle every NUI open() needs: the active language, its whole string
+--- table and whether it reads right to left. Sending the table means the
+--- interface never keeps a dictionary of its own — Locale.lua is the only
+--- source of wording anywhere in the resource.
+local function localePayload()
+    local langs, tables = {}, {}
+    for _, entry in ipairs(Locale.available or {}) do
+        langs[#langs + 1] = { id = entry.id, label = entry.label }
+        tables[entry.id]  = Locale[entry.id] or {}
+    end
+    return {
+        language  = Lang,
+        languages = langs,
+        -- every table, not just the active one: the interface can then switch
+        -- language instantly instead of waiting on a round trip to Lua, which
+        -- would leave it showing the previous language until the reply landed
+        strings   = tables,
+        rtl       = Locale.rtl or {}
+    }
+end
+
 
 local State = {
     booted     = false,
@@ -297,7 +349,7 @@ local function openMenu(page)
         theme  = Config.UI,
         sounds = Config.Sounds,
         text   = L,
-        language = Config.Language,
+        locale = localePayload(),
         defaults = Config.DefaultSettings,
         blur   = Config.UI.blurBackground
     })
@@ -365,9 +417,13 @@ end)
 RegisterNUICallback('settings', function(data, cb)
     if data and data.settings then
         TriggerServerEvent('m5rp:sv:settings', data.settings)
-        if data.settings.language and Config.Text[data.settings.language] then
-            Config.Language = data.settings.language
-            L = Config.Text[Config.Language]
+
+        -- Follow the player's choice here as well, so the notifications this
+        -- file and the server produce switch language with the interface.
+        local picked = data.settings.language
+        if picked and Locale[picked] and picked ~= Lang then
+            Lang = picked
+            SendNUIMessage({ action = 'locale', data = localePayload() })
         end
     end
     cb('ok')
@@ -422,7 +478,7 @@ RegisterNetEvent('m5rp:cl:matchFound', function(payload)
             State.menuOpen = true
             setFocus(true)
             nui({ action = 'open', page = 'ranked', theme = Config.UI, sounds = Config.Sounds,
-                  text = L, language = Config.Language, defaults = Config.DefaultSettings,
+                  text = L, locale = localePayload(), defaults = Config.DefaultSettings,
                   silent = true })
         end
         PlaySoundFrontend(-1, 'Beep_Red', 'DLC_HEIST_HACKING_SNAKE_SOUNDS', true)
@@ -435,7 +491,7 @@ RegisterNetEvent('m5rp:cl:mapVote', function(payload)
         State.menuOpen = true
         setFocus(true)
         nui({ action = 'open', page = 'ranked', theme = Config.UI, sounds = Config.Sounds,
-              text = L, language = Config.Language, defaults = Config.DefaultSettings,
+              text = L, locale = localePayload(), defaults = Config.DefaultSettings,
               silent = true })
     end
     if payload and payload.close then
@@ -822,7 +878,7 @@ RegisterNetEvent('m5rp:cl:end', function(data)
         State.menuOpen = true
         setFocus(true)
         nui({ action = 'open', page = 'matchEnd', theme = Config.UI, sounds = Config.Sounds,
-              text = L, language = Config.Language, defaults = Config.DefaultSettings,
+              text = L, locale = localePayload(), defaults = Config.DefaultSettings,
               silent = true })
     end
 end)
@@ -1815,8 +1871,12 @@ RegisterCommand('pvpclear', function()
 end, false)
 
 RegisterNetEvent('m5rp:cl:notify', function(data)
+    -- The server sends the English line plus any values to fill in; the swap
+    -- happens here because this is the side that knows the chosen language.
+    local message = data.args and _Lf(data.message, table.unpack(data.args))
+                    or _L(data.message)
     nui({ action = 'toast', kind = data.kind or 'info',
-          message = data.message, title = data.title })
+          message = message, title = _L(data.title) })
 end)
 
 -- Close the hub with ESC / BACKSPACE without needing NUI focus tricks

@@ -1079,3 +1079,13 @@ html[dir="rtl"] .sd-time,
 html[dir="rtl"] .hud-mid,
 html[dir="rtl"] .hscore,
 html[dir="rtl"] .code{direction:ltr}
+/* Mixed number/latin runs reverse under RTL — "0 / 1,000 XP" comes out as
+   "XP 1,000 / 0". These read left to right whatever the page direction is. */
+html[dir="rtl"] #id-xp-text,
+html[dir="rtl"] #id-lvl-text,
+html[dir="rtl"] .slot-nums,
+html[dir="rtl"] .hud-timer,
+html[dir="rtl"] .hud-ammo,
+html[dir="rtl"] .sd-time,
+html[dir="rtl"] .sb-score,
+html[dir="rtl"] .hud-scores{direction:ltr;unicode-bidi:isolate}

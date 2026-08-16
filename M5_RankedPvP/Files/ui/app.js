@@ -44,7 +44,7 @@ const DEFAULTS = {
 const S = {
   boot: null,
   theme: null,
-  lang: 'en',
+  lang: 'en', rtl: false,
   settings: {},
   page: 'ranked',
 
@@ -142,109 +142,44 @@ function tierColor(rankId) {
 }
 
 /* -------------------------------------------------------------------- i18n */
-const I18N = {
-  ar: {
-    // chrome
-    'MATCHMAKING': 'المطابقة', 'PROFILE': 'الملف الشخصي', 'MATCH HISTORY': 'سجل المباريات',
-    'REWARDS': 'المكافآت', 'TRAINING': 'التدريب', 'SETTINGS': 'الإعدادات',
-    'ADMIN CONTROL': 'لوحة الإدارة',
-    'Ranked': 'المصنّف', 'Leaderboard': 'المتصدرون', 'Custom Match': 'مباراة مخصصة',
-    'Profile': 'الملف', 'History': 'السجل', 'Rewards': 'المكافآت',
-    'Training': 'التدريب', 'Settings': 'الإعدادات', 'Admin': 'الإدارة',
-    'START': 'ابدأ', 'CANCEL': 'إلغاء', 'Cancel': 'إلغاء', 'Confirm': 'تأكيد',
-    'Back': 'رجوع', 'Close': 'إغلاق',
-
-    // ranked / queue
-    'SEARCHING': 'جاري البحث', 'READY': 'جاهز', 'NOT READY': 'غير جاهز',
-    'MATCH FOUND': 'تم إيجاد مباراة', 'ACCEPT': 'قبول', 'DECLINE': 'رفض',
-    'WAITING FOR OTHER PLAYERS…': 'بانتظار بقية اللاعبين…',
-    'READY': 'جاهز', 'MAP VOTE': 'تصويت الخريطة', 'SELECT A MAP': 'اختر خريطة',
-    'QUEUE': 'الطابور', 'PARTY': 'المجموعة', 'PARTY INVITE': 'دعوة مجموعة',
-    'Unranked': 'بدون رتبة',
-
-    // party slots
-    'INVITE PLAYER': 'دعوة لاعب', 'CLICK TO INVITE': 'اضغط للدعوة',
-    'OPEN SLOT': 'مقعد شاغر', 'SLOT LOCKED': 'مقعد مقفل',
-    'LEADER ONLY': 'القائد فقط', 'SEND INVITE': 'إرسال الدعوة',
-    'INVITE IN ORDER': 'املأ المقعد السابق أولًا',
-    'Enter the server ID of the player you want in your party.':
-      'أدخل رقم اللاعب في السيرفر لإضافته إلى مجموعتك.',
-    'Enter a player ID first.': 'أدخل رقم اللاعب أولًا.',
-
-    // custom match
-    'MATCH SETTINGS': 'إعدادات المباراة', 'GAME MODE': 'نمط اللعب', 'ROUNDS': 'الجولات',
-    'MATCH TYPE': 'نوع المباراة', 'WEAPONS': 'الأسلحة', 'ARMOR': 'الدرع',
-    'HEADSHOT ONLY': 'هيدشوت فقط', 'SELECT MAP': 'اختر الخريطة',
-    'Room Code': 'كود الغرفة', 'CREATE ROOM': 'إنشاء غرفة', 'JOIN CODE': 'دخول بكود',
-    'LEAVE ROOM': 'مغادرة الغرفة', 'START MATCH': 'ابدأ المباراة',
-    'APPLY SETTINGS': 'حفظ الإعدادات', 'LOCK': 'قفل', 'UNLOCK': 'فتح',
-    'SWAP': 'تبديل', 'KICK': 'طرد', 'EMPTY': 'فارغ', 'HOST': 'المضيف',
-    'TEAM A': 'الفريق أ', 'TEAM B': 'الفريق ب',
-    'ROOM CODE': 'كود الغرفة', 'CUSTOM GAME': 'مباراة مخصصة',
-    'Enter the room code': 'أدخل كود الغرفة',
-    'Share the room code with your friends.': 'شارك كود الغرفة مع أصدقائك.',
-
-    // leaderboard / profile
-    'YOUR STATISTICS': 'إحصائياتك', 'PLAYER': 'اللاعب', 'POINTS': 'النقاط',
-    'WIN': 'فوز', 'TOTAL KILL': 'مجموع القتل', 'DEATH': 'الوفيات', 'K/D': 'ن/و',
-    'WIN GAME': 'مباريات فائزة', 'TOTAL GAME': 'مجموع المباريات',
-    'KILL SCORE': 'نقاط القتل', 'DEATH SCORE': 'نقاط الوفاة', 'K/D RATIO': 'معدل ن/و',
-    'PAGE': 'صفحة', 'PREV': 'السابق', 'NEXT': 'التالي',
-    'CAREER STATISTICS': 'إحصائيات المسيرة', 'TITLES': 'الألقاب',
-    'ACHIEVEMENTS': 'الإنجازات', 'UNLOCKED': 'مفتوح', 'LOCKED': 'مقفل',
-    'VICTORY': 'فوز', 'DEFEAT': 'خسارة', 'DRAW': 'تعادل',
-
-    // training
-    'AIM TRAINING': 'تدريب التصويب', 'HEADSHOT TRAINING': 'تدريب الهيدشوت',
-    'FREE RANGE': 'ميدان حر', 'ENTER': 'دخول', 'SWITCH': 'تبديل',
-    'EXIT TRAINING': 'الخروج من التدريب', 'HITS': 'إصابات', 'HEADSHOTS': 'هيدشوت',
-
-    // admin
-    'MONITOR': 'مراقبة', 'MATCHES': 'المباريات', 'POINTS': 'النقاط',
-    'PUNISH': 'العقوبات', 'SYSTEM': 'النظام', 'REFRESH': 'تحديث',
-    'TARGET PLAYER': 'اللاعب المستهدف', 'PLAYER ID': 'رقم اللاعب',
-    'REASON': 'السبب', 'STATUS': 'الحالة',
-    'No player with that ID.': 'لا يوجد لاعب بهذا الرقم.',
-    'LOAD': 'تحميل', 'no player loaded': 'لم يُحمَّل لاعب',
-    'ADMIN': 'الإدارة', 'APPLY': 'تنفيذ',
-
-    // bot match
-    'Start Bot Match': 'بدء مباراة ضد بوت', 'Stop Bot Match': 'إيقاف مباراة البوت',
-    'BOT': 'بوت', 'BOTS': 'بوتات', 'RANDOM MAP': 'خريطة عشوائية', 'STOP': 'إيقاف',
-    'Ends your practice session and returns you to the world.':
-      'ينهي جلسة التدريب ويعيدك إلى العالم.',
-    'Practice duel against AI on your own screen. Always unranked — no RP, MMR or stats.':
-      'مبارزة تدريبية ضد الذكاء الاصطناعي على شاشتك. غير مصنفة دائمًا — بلا نقاط أو MMR أو إحصائيات.',
-
-    // toasts
-    'A reason is required for this action.': 'هذا الإجراء يتطلب سببًا.',
-    'Action applied.': 'تم تنفيذ الإجراء.',
-    'ELIMINATED': 'تم إقصاؤك', 'SURRENDER': 'استسلام',
-
-    // in-match HUD and scoreboard
-    'ROUND': 'الجولة', 'OVERTIME': 'وقت إضافي', 'FREE FOR ALL': 'الكل ضد الكل',
-    'TEAM A': 'الفريق أ', 'TEAM B': 'الفريق ب', 'ALIVE': 'على قيد الحياة',
-    'NO PLAYERS': 'لا يوجد لاعبون', 'RANKED': 'مصنّف', 'PLAYER': 'اللاعب',
-    'K': 'قتل', 'D': 'موت', 'A': 'مساعدة', 'HS': 'هيد', 'DMG': 'ضرر',
-    'PING': 'البنق', 'HOLD': 'استمر بالضغط على',
-    'HOLD TO SURRENDER': 'استمر بالضغط للانسحاب'
-  }
-};
+/* ---------------------------------------------------------------- strings */
+/* Every line of text comes from Locale.lua and is pushed in with the open
+   payload, so this file keeps no dictionary of its own. STRINGS is that table
+   for the active language; the English line is the key, and anything without
+   a translation falls through unchanged. */
+let LOCALE = { strings: {}, rtl: {} };          // every table, from Locale.lua
+let STRINGS = {};                                // the active one
+let LANGUAGES = [{ id: 'en', label: 'English' }];
 
 function tx(str) {
-  if (S.lang !== 'ar') return str;
-  const d = I18N.ar;
-  return (d && d[str]) || str;
+  if (typeof str !== 'string') return str;
+  return STRINGS[str] || str;
+}
+
+/** Stores what Locale.lua sent. Called on every open and on a language change. */
+function applyLocale(payload) {
+  if (!payload) return;
+  LOCALE = { strings: payload.strings || {}, rtl: payload.rtl || {} };
+  if (Array.isArray(payload.languages) && payload.languages.length) {
+    LANGUAGES = payload.languages;
+  }
+  applyLanguage(payload.language || 'en');
 }
 
 /** Re-labels the static markup, flips direction, and redraws dynamic text. */
 function applyLanguage(lang) {
-  const next = (lang === 'ar') ? 'ar' : 'en';
+  const next = lang || 'en';
   const changed = next !== S.lang;
   S.lang = next;
 
+  // pick the table for this language out of the bundle Locale.lua sent
+  STRINGS = LOCALE.strings[next] || {};
+  // Locale.rtl says which languages read right to left; 'ar' covers the case
+  // where this runs before the bundle has arrived
+  S.rtl = (LOCALE.rtl[next] !== undefined) ? LOCALE.rtl[next] === true : (next === 'ar');
+
   document.documentElement.setAttribute('lang', S.lang);
-  document.documentElement.setAttribute('dir', S.lang === 'ar' ? 'rtl' : 'ltr');
+  document.documentElement.setAttribute('dir', S.rtl ? 'rtl' : 'ltr');
 
   document.querySelectorAll('[data-i18n]').forEach((n) => {
     n.textContent = tx(n.dataset.i18n);
@@ -1218,7 +1153,7 @@ const SETTING_DEFS = [
   { key: 'lowSpecMode', label: 'LOW SPEC MODE', type: 'bool' },
   { key: 'spectatorAuto', label: 'AUTO SPECTATE', type: 'bool' },
   { key: 'killFeedPos', label: 'KILL FEED SIDE', type: 'select', options: ['right', 'left'] },
-  { key: 'language', label: 'LANGUAGE', type: 'select', options: ['en', 'ar'] },
+  { key: 'language', label: 'LANGUAGE', type: 'select', options: null },
   { key: 'teamColorA', label: 'TEAM A COLOUR', type: 'color' },
   { key: 'teamColorB', label: 'TEAM B COLOUR', type: 'color' }
 ];
@@ -1227,16 +1162,24 @@ function renderSettings() {
   const host = $('settings-root');
   const rows = SETTING_DEFS.map((d) => {
     const v = S.settings[d.key];
-    if (d.type === 'range') return `<div class="srow"><label>${d.label}</label>
+    if (d.type === 'range') return `<div class="srow"><label>${esc(tx(d.label))}</label>
       <div style="display:flex;align-items:center;gap:10px">
         <input type="range" min="${d.min}" max="${d.max}" value="${v}" data-set="${d.key}"/>
         <span class="val" data-val="${d.key}">${v}</span></div></div>`;
-    if (d.type === 'bool') return `<div class="srow"><label>${d.label}</label>
+    if (d.type === 'bool') return `<div class="srow"><label>${esc(tx(d.label))}</label>
       <label class="sw"><input type="checkbox" data-set="${d.key}" ${v ? 'checked' : ''}/><i></i></label></div>`;
-    if (d.type === 'select') return `<div class="srow"><label>${d.label}</label>
-      <select class="sel" data-set="${d.key}">${d.options.map((o) =>
-        `<option value="${o}" ${o === v ? 'selected' : ''}>${o.toUpperCase()}</option>`).join('')}</select></div>`;
-    return `<div class="srow"><label>${d.label}</label>
+    if (d.type === 'select') {
+      // the language row is built from Locale.available, so adding a language
+      // to Locale.lua is enough to make it appear here
+      const opts = d.options
+        ? d.options.map((o) => ({ id: o, label: String(o).toUpperCase() }))
+        : LANGUAGES;
+      return `<div class="srow"><label>${esc(tx(d.label))}</label>
+        <select class="sel" data-set="${d.key}">${opts.map((o) =>
+          `<option value="${esc(o.id)}" ${o.id === v ? 'selected' : ''}>${esc(o.label)}</option>`
+        ).join('')}</select></div>`;
+    }
+    return `<div class="srow"><label>${esc(tx(d.label))}</label>
       <input class="swatch" type="color" value="${v}" data-set="${d.key}"/></div>`;
   });
   const half = Math.ceil(rows.length / 2);
@@ -2016,11 +1959,17 @@ window.addEventListener('message', (e) => {
     case 'open':
       if (!Object.keys(S.settings).length) loadSettings();
       if (d.theme) applyTheme(d.theme);
-      // the client config supplies the default language until the player
-      // chooses one in Settings
-      if (d.language && !S.langPinned) {
-        S.settings.language = d.language;
-        applyLanguage(d.language);
+      // Locale.lua arrives with every open: it carries the string table, the
+      // language list and which way the text reads.
+      if (d.locale) {
+        LOCALE = { strings: d.locale.strings || {}, rtl: d.locale.rtl || {} };
+        if (Array.isArray(d.locale.languages) && d.locale.languages.length) {
+          LANGUAGES = d.locale.languages;
+        }
+        // Locale.default wins until the player pins a choice in Settings
+        const lang = (S.langPinned && S.settings.language) || d.locale.language;
+        S.settings.language = lang;
+        applyLanguage(lang);
       }
       $('app').classList.remove('hidden');
       if (!d.silent) Sfx.play('open');
@@ -2085,6 +2034,8 @@ window.addEventListener('message', (e) => {
       toggleScoreboard(false);
       break;
     }
+
+    case 'locale': applyLocale(d.data); break;
 
     case 'scoreboard': toggleScoreboard(d.show === true); break;
 

@@ -9,12 +9,15 @@ custom games, matchmaking, penalties, anti-boosting, spectator, and a premium NU
 
 ## 1. File structure
 
-Exactly four Lua files, as required:
+Four system files you never need to edit, plus two that are yours:
 
 ```
 M5_RankedPvP/
 │
 ├── fxmanifest.lua
+│
+├── Locale.lua             ← YOURS: every line of text the players see
+├── Export.lua             ← YOURS: your hooks, events and exports
 │
 ├── Config_Client.lua      ← client settings only (safe to be public)
 ├── Config_Server.lua      ← server settings only (never sent to a client)
@@ -463,6 +466,56 @@ no second setting can disagree with the one you picked.
 Each session takes its own routing bucket from `Config.BotMatch.bucket`
 upwards (64 are reserved), so two admins practising at the same time never land
 in each other's world.
+
+---
+
+## 7c-bis. Locale.lua — every line of text
+
+`Locale.lua` holds every word the script shows a player: notifications, errors,
+the whole menu, the match HUD and the scoreboard. Nothing user-facing is
+written anywhere else, so it is the only file to touch to change wording or add
+a language.
+
+**The English line is the key.** There is no separate id to keep in sync:
+
+```lua
+Locale.ar['Party is full.'] = 'المجموعة ممتلئة.'
+```
+
+Anything without a translation falls through to the English key unchanged, so a
+missing line is never a blank screen and a language can be filled in a few
+lines at a time.
+
+```lua
+Locale.default  = 'ar'                -- language before a player picks one
+Locale.fallback = 'en'
+Locale.available = { { id = 'en', label = 'English' }, { id = 'ar', label = 'العربية' } }
+Locale.rtl = { ar = true }            -- these mirror the interface
+```
+
+`%s` and `%d` are filled in by the script — keep them, in the same order as the
+English line. The pattern is always translated **before** the values go in, so
+`'You reached level %d'` becomes `'وصلت إلى المستوى %d'` and then `12` lands in
+the right place.
+
+### Adding a language
+
+1. Copy the `ar` block and rename it, e.g. `Locale.fr = { ... }`.
+2. Add `{ id = 'fr', label = 'Français' }` to `Locale.available`.
+3. That is all — it appears in **Settings → Language** by itself, and the
+   interface, the notifications and the server messages all follow it.
+
+### How one file reaches all three sides
+
+`Locale.lua` is a `shared_script`, so the client and the server both hold it.
+The client also hands every table to the interface with each menu open, which
+is why switching language is instant instead of waiting on a round trip.
+
+Server notifications are the part worth understanding: the server does not know
+which language a player chose, so it sends the **English key plus the values**,
+and the player's own client does the swap. That is why a translated
+notification is correct even when two players on the same server read different
+languages.
 
 ---
 
