@@ -287,20 +287,28 @@
   </div>
 
   <!-- Result -->
-  <div id="modal-result" class="modal hidden">
+  <!-- Match result. An overlay, not a modal: it never takes focus, so it
+       cannot trap the cursor the moment a match ends. -->
+  <div id="modal-result" class="resultwrap hidden">
+    <div class="res-wash" id="result-wash"></div>
     <div class="result" id="result-root">
-      <div class="res-tag" id="result-tag">VICTORY</div>
-      <div class="res-score"><span id="result-a">0</span><i>-</i><span id="result-b">0</span></div>
+      <div class="res-head">
+        <div class="res-tag" id="result-tag">VICTORY</div>
+        <div class="res-score"><span id="result-a">0</span><i></i><span id="result-b">0</span></div>
+      </div>
+
       <div class="res-rp" id="result-rp">
-        <div class="rp-rank" id="rp-rank">IRON I</div>
+        <div class="rp-top">
+          <div class="rp-rank" id="rp-rank">IRON I</div>
+          <div class="rp-delta" id="rp-delta">+0 RP</div>
+        </div>
         <div class="rp-nums"><span id="rp-before">0</span><svg class="rp-arrow"><use href="#i-back"/></svg><span id="rp-after">0</span></div>
-        <div class="rp-delta" id="rp-delta">+0 RP</div>
         <div class="rp-bar"><i id="rp-bar-fill"></i></div>
         <div class="rp-break" id="rp-breakdown"></div>
       </div>
+
       <div class="res-stats" id="result-stats"></div>
       <div class="res-board" id="result-scoreboard"></div>
-      <div class="res-actions"><button class="btn ghost" data-action="result-close">CONTINUE</button></div>
     </div>
   </div>
 

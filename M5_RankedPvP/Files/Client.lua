@@ -791,6 +791,9 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         State.roundLive = true
         State.frozen    = false
         FreezeEntityPosition(playerPed(), false)
+        -- release the freeze restrictions
+        DisablePlayerFiring(PlayerId(), false)
+        SetPlayerCanDoDriveBy(PlayerId(), true)
         nui({ action = 'round', data = { phase = 'live', round = data.round, time = data.time } })
         hook('onRoundStart', { matchId = State.matchId, round = data.round, time = data.time })
 
@@ -874,13 +877,9 @@ RegisterNetEvent('m5rp:cl:end', function(data)
         scores = data.scores, rp = data.rp
     })
 
-    if not State.menuOpen then
-        State.menuOpen = true
-        setFocus(true)
-        nui({ action = 'open', page = 'matchEnd', theme = Config.UI, sounds = Config.Sounds,
-              text = L, locale = localePayload(), defaults = Config.DefaultSettings,
-              silent = true })
-    end
+    -- The result is an overlay, not a menu: no NUI focus, no cursor, nothing
+    -- for the player to dismiss. Taking focus here used to lock the mouse the
+    -- instant a match ended, which is the worst possible moment for it.
 end)
 
 RegisterNetEvent('m5rp:cl:cleanup', function(data)
@@ -1260,7 +1259,10 @@ startMatchThread = function()
 
         while State.inMatch do
             local liveCombat = State.roundLive and State.alive and not State.spectating
-            local wait = liveCombat and 0 or 200
+            -- The freeze also has to run per frame: DisablePlayerFiring and
+            -- DisableControlAction only hold for the frame they are called on,
+            -- so at 200ms the trigger would work between checks.
+            local wait = (liveCombat or State.frozen) and 0 or 200
 
             if liveCombat then
                 combatScan()
@@ -1303,7 +1305,25 @@ startMatchThread = function()
             else
                 -- non combat states: keep the restrictions but stay cheap
                 if State.frozen then
-                    FreezeEntityPosition(playerPed(), true)
+                    local ped = playerPed()
+                    FreezeEntityPosition(ped, true)
+
+                    -- No shooting before the round goes live. The server
+                    -- already refuses damage while the match is not LIVE, so
+                    -- this is the half that stops the weapon firing at all —
+                    -- no wasted magazine, no shot into a frozen opponent.
+                    DisablePlayerFiring(PlayerId(), true)
+                    SetPlayerCanDoDriveBy(PlayerId(), false)
+                    DisableControlAction(0, 24,  true)   -- attack
+                    DisableControlAction(0, 25,  true)   -- aim
+                    DisableControlAction(0, 47,  true)   -- throw / detonate
+                    DisableControlAction(0, 58,  true)   -- throw grenade
+                    DisableControlAction(0, 140, true)   -- melee light
+                    DisableControlAction(0, 141, true)   -- melee heavy
+                    DisableControlAction(0, 142, true)   -- melee alternate
+                    DisableControlAction(0, 257, true)   -- attack 2
+                    DisableControlAction(0, 263, true)   -- melee attack 1
+                    DisableControlAction(0, 264, true)   -- melee attack 2
                 end
                 if State.inMatch and not State.alive and not State.spectating then
                     boundaryCheck()

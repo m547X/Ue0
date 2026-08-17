@@ -1851,12 +1851,13 @@ function renderRound(d) {
 
 function renderMatchEnd(d) {
   if (!d) return;
-  const modal = $('modal-result'), root = $('result-root');
+  const modal = $('modal-result');
   modal.classList.remove('hidden');
-  root.classList.toggle('defeat', d.result === 'DEFEAT');
-  root.classList.toggle('draw', d.result === 'DRAW');
+  // the colour lives on the wrapper now, so the wash and the top rule follow it
+  modal.classList.toggle('defeat', d.result === 'DEFEAT');
+  modal.classList.toggle('draw', d.result === 'DRAW');
 
-  $('result-tag').textContent = d.result;
+  $('result-tag').textContent = tx(d.result || '');
   $('result-a').textContent = d.yourTeam === 2 ? d.scores.b : d.scores.a;
   $('result-b').textContent = d.yourTeam === 2 ? d.scores.a : d.scores.b;
 
@@ -1887,20 +1888,34 @@ function renderMatchEnd(d) {
 
   const s = d.stats || {};
   $('result-stats').innerHTML = `
-    <div><b>${s.kills || 0}</b><span>KILLS</span></div>
-    <div><b>${s.deaths || 0}</b><span>DEATHS</span></div>
-    <div><b>${s.assists || 0}</b><span>ASSISTS</span></div>
-    <div><b>${s.headshots || 0}</b><span>HEADSHOTS</span></div>
-    <div><b>${num(s.damage || 0)}</b><span>DAMAGE</span></div>`;
+    <div><b>${s.kills || 0}</b><span>${esc(tx('KILLS'))}</span></div>
+    <div><b>${s.deaths || 0}</b><span>${esc(tx('DEATHS'))}</span></div>
+    <div><b>${s.assists || 0}</b><span>${esc(tx('ASSISTS'))}</span></div>
+    <div><b>${s.headshots || 0}</b><span>${esc(tx('HEADSHOTS'))}</span></div>
+    <div><b>${num(s.damage || 0)}</b><span>${esc(tx('DAMAGE'))}</span></div>`;
 
+  // same row shape as the TAB scoreboard, so the two read as one thing
+  const meId = S.boot && S.boot.player && S.boot.player.userId;
   const board = d.scoreboard || [];
-  const rows = (t) => board.filter((p) => p.team === t).map((p) => `
-    <div class="arow"><b>${esc(p.name)}</b>
-      <span class="grow">${p.kills}/${p.deaths}/${p.assists} · ${p.headshots} HS · ${num(p.damage)} DMG</span>
-      <span>${p.score}</span></div>`).join('');
+  const rows = (t) => board
+    .filter((p) => p.team === t)
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .map((p) => `
+      <div class="rb-row${p.userId === meId ? ' me' : ''}">
+        <span class="rb-who">${avatarCell(p, 'rb-av')}<b>${esc(p.name)}</b></span>
+        <span class="rb-kda">${p.kills}/${p.deaths}/${p.assists}</span>
+        <span class="rb-hs">${p.headshots} HS</span>
+        <span class="rb-dmg">${num(p.damage)}</span>
+        <span class="rb-score">${num(p.score)}</span>
+      </div>`).join('');
+
+  const teamName = (t) => (t === 1)
+    ? ((d.teamA || (S.hud && S.hud.teamA)) || tx('TEAM A'))
+    : ((d.teamB || (S.hud && S.hud.teamB)) || tx('TEAM B'));
+
   $('result-scoreboard').innerHTML = `
-    <div class="card-tag" style="color:var(--team-a)">TEAM A</div>${rows(1)}
-    <div class="card-tag" style="color:var(--team-b);margin-top:10px">TEAM B</div>${rows(2)}`;
+    <div class="rb-team a">${esc(teamName(1))}</div>${rows(1)}
+    <div class="rb-team b">${esc(teamName(2))}</div>${rows(2)}`;
 
   Sfx.play(d.result === 'DEFEAT' ? 'defeat' : 'victory');
   setTimeout(() => { if (d.mvp) showMVP(d.mvp, () => maybeRankChange(d)); else maybeRankChange(d); }, 2600);
@@ -1942,13 +1957,29 @@ function countUp(node, from, to, duration) {
 }
 
 /* ================================================================ TOASTS */
+const TOAST_ICON = {
+  info: '#i-ranked', success: '#i-check', warning: '#i-shield', error: '#i-x'
+};
+
 function toast(kind, message, title, ttl) {
-  const node = el('div', 'toast ' + (kind || 'info'),
-    `${title ? `<b>${esc(title)}</b>` : ''}<span>${esc(message)}</span>`);
+  const k = kind || 'info';
+  const life = ttl || 5200;
+  const node = el('div', 'toast ' + k, `
+    <span class="tico"><svg><use href="${TOAST_ICON[k] || TOAST_ICON.info}"/></svg></span>
+    ${title ? `<b>${esc(title)}</b>` : ''}
+    <span>${esc(message)}</span>
+    <i class="tbar" style="animation-duration:${life}ms"></i>`);
   $('toasts').appendChild(node);
-  setTimeout(() => { if (node.parentNode) node.remove(); }, ttl || 5200);
-  if (kind === 'error') Sfx.play('error');
-  else if (kind === 'warning') Sfx.play('warning');
+
+  // fade out rather than vanish, and only then leave the column
+  setTimeout(() => {
+    if (!node.parentNode) return;
+    node.classList.add('out');
+    setTimeout(() => { if (node.parentNode) node.remove(); }, 200);
+  }, life);
+
+  if (k === 'error') Sfx.play('error');
+  else if (k === 'warning') Sfx.play('warning');
   return node;
 }
 
@@ -2056,10 +2087,14 @@ window.addEventListener('message', (e) => {
       const n = $('surrender');
       const s = d.data || {};
       if (!s.active) { n.classList.add('hidden'); break; }
-      $('sr-key').textContent = s.key || 'X';
-      // 2 * PI * r, r = 44
-      const C = 276.5;
-      $('sr-arc').style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, s.progress || 0)));
+
+      const p = Math.max(0, Math.min(1, s.progress || 0));
+      const total = s.seconds || 5;
+      const left = Math.max(1, Math.ceil(total * (1 - p)));
+      // the key first, then it counts down — the ring alone does not say how
+      // much longer the key has to stay down
+      $('sr-key').textContent = p > 0.04 ? String(left) : (s.key || 'X');
+      $('sr-arc').style.strokeDashoffset = 276.5 * (1 - p);   // 2 * PI * 44
       n.classList.remove('hidden');
       break;
     }
@@ -2071,11 +2106,16 @@ window.addEventListener('message', (e) => {
     case 'matchEnd': renderMatchEnd(d.data); break;
 
     case 'matchCleanup':
-      ['hud', 'killfeed', 'phase', 'boundary', 'spectate', 'combat-banner'].forEach((id) => {
+      // the result overlay goes with everything else: nothing survives the
+      // match it belonged to
+      ['hud', 'killfeed', 'phase', 'boundary', 'spectate', 'combat-banner',
+       'modal-result', 'modal-mvp', 'surrender'].forEach((id) => {
         const n = $(id); if (n) n.classList.add('hidden');
       });
+      toggleScoreboard(false);
       $('killfeed').innerHTML = '';
       S.hud = null;
+      S.matchInfo = null;
       break;
 
     case 'hudVisible':
