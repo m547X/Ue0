@@ -44,6 +44,14 @@ Locale.available = {
 -- Right to left languages. The interface mirrors itself for these.
 Locale.rtl = { ar = true }
 
+-- Language for notifications only (the toasts in the corner), whatever the
+-- player has the interface set to. Useful when the server is Arabic speaking
+-- but you still want the menu available in English.
+--
+--   'ar'  every notification is Arabic, always
+--   nil   notifications follow the player's chosen language
+Locale.notifications = 'ar'
+
 -- ============================================================================
 -- ENGLISH — the keys. Change the text here only if you want different English;
 -- if you rename a key you must rename it in every other language too.

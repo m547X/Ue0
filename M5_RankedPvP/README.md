@@ -491,7 +491,15 @@ Locale.default  = 'ar'                -- language before a player picks one
 Locale.fallback = 'en'
 Locale.available = { { id = 'en', label = 'English' }, { id = 'ar', label = 'العربية' } }
 Locale.rtl = { ar = true }            -- these mirror the interface
+Locale.notifications = 'ar'           -- notifications only; nil = follow the player
 ```
+
+`Locale.notifications` pins the corner notifications to one language whatever
+the player set the menu to — an Arabic speaking server can keep the menu
+available in English and still have every notification read Arabic. Each toast
+carries its own direction, so a pinned Arabic notification reads right to left
+on an otherwise left to right screen. Set it to `nil` to have notifications
+follow the player's choice like everything else.
 
 `%s` and `%d` are filled in by the script — keep them, in the same order as the
 English line. The pattern is always translated **before** the values go in, so

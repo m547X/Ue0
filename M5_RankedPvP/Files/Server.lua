@@ -5492,7 +5492,8 @@ local function botScoreboard(sess)
             userId = sess.userId, serverId = srcOf(sess.userId),
             name = pd and pd.name or 'PLAYER', team = 1,
             kills = sess.kills, deaths = sess.deaths, assists = 0,
-            headshots = sess.headshots, damage = 0, score = sess.kills * 100,
+            headshots = sess.headshots, damage = sess.damage or 0,
+            score = sess.kills * 100,
             rank = pd and Rank.get(pd.rankId).name or '',
             avatar = avatarFor(sess.userId),
             alive = sess.alive, connected = true, ping = 0
@@ -5502,7 +5503,9 @@ local function botScoreboard(sess)
             name = Config.BotMatch.bots.namePrefix .. ' TEAM', team = 2,
             kills = sess.deaths, deaths = sess.kills, assists = 0,
             headshots = 0, damage = 0, score = sess.deaths * 100,
-            rank = sess.difficulty.label, avatar = Config.Avatars.default,
+            -- no avatar for the bot side: the initial reads better than the
+            -- default Discord logo repeated on every row
+            rank = sess.difficulty.label, avatar = nil,
             alive = sess.botsAlive > 0, connected = true, ping = 0
         }
     }
@@ -5624,18 +5627,31 @@ function BotMatch.finish(sess, reason)
     local winner = sess.scores[1] > sess.scores[2] and 1
                 or (sess.scores[2] > sess.scores[1] and 2 or 0)
 
+    local pd = Players[sess.userId]
+
     botPush(sess, 'm5rp:cl:bots', { matchId = sess.id, clear = true })
+    -- Exactly the shape a real match sends. It used to differ in three ways —
+    -- WIN/LOSS instead of VICTORY/DEFEAT, scores as {[1],[2]} instead of
+    -- {a,b}, and no stats block — so the result screen showed an untranslated
+    -- word, an empty score and five zeroes.
     botPush(sess, 'm5rp:cl:end', {
-        matchId = sess.id,
-        winner  = winner,
-        myTeam  = 1,
-        result  = winner == 1 and 'WIN' or (winner == 2 and 'LOSS' or 'DRAW'),
-        reason  = reason or 'COMPLETE',
-        ranked  = false,
+        matchId  = sess.id,
+        winner   = winner,
+        yourTeam = 1,
+        result   = winner == 1 and 'VICTORY' or (winner == 2 and 'DEFEAT' or 'DRAW'),
+        reason   = reason or 'COMPLETE',
+        ranked   = false,
         practice = true,
-        scores  = sess.scores,
+        scores   = { a = sess.scores[1], b = sess.scores[2] },
+        teamA    = pd and pd.name or 'YOU',
+        teamB    = ('%s x%d'):format(Config.BotMatch.bots.namePrefix, sess.botCount),
+        stats    = {
+            kills = sess.kills, deaths = sess.deaths, assists = 0,
+            headshots = sess.headshots, damage = sess.damage or 0,
+            score = sess.kills * 100, clutches = 0
+        },
         scoreboard = botScoreboard(sess),
-        rp = { delta = 0, before = 0, after = 0 },
+        rp  = nil,
         mvp = nil
     })
 end
@@ -5717,7 +5733,7 @@ function BotMatch.start(pd, opts)
         difficulty = botDifficulty(diffKey),
         round     = 0,
         scores    = { [1] = 0, [2] = 0 },
-        kills = 0, deaths = 0, headshots = 0,
+        kills = 0, deaths = 0, headshots = 0, damage = 0,
         alive     = false,
         state     = 'WAITING',
         stateEnd  = now() + 2,
@@ -5799,6 +5815,11 @@ function BotMatch.botDown(userId, headshot)
     sess.botsAlive = sess.botsAlive - 1
     sess.kills     = sess.kills + 1
     if headshot then sess.headshots = sess.headshots + 1 end
+    -- The server cannot measure damage to a ped that lives on one client, so
+    -- this counts the health pool actually destroyed rather than inventing a
+    -- number. It is a practice session; nothing is recorded from it.
+    sess.damage = (sess.damage or 0)
+                + (sess.difficulty.health or 0) + (sess.difficulty.armor or 0)
 
     botPush(sess, 'm5rp:cl:killfeed', {
         killer = Players[userId] and Players[userId].name or 'YOU', killerTeam = 1,

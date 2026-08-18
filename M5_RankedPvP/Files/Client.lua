@@ -64,6 +64,22 @@ local function _Lf(str, ...)
     return ok and res or _L(str)
 end
 
+--- Notifications can be pinned to one language with Locale.notifications,
+--- independently of the language the player set the interface to.
+local function notifyLang()
+    return Locale.notifications or Lang
+end
+
+local function _Ln(str)
+    if type(str) ~= 'string' then return str end
+    return localeTable(notifyLang())[str] or str
+end
+
+local function _Lnf(str, ...)
+    local ok, res = pcall(string.format, _Ln(str), ...)
+    return ok and res or _Ln(str)
+end
+
 --- Legacy shim: Config.Text keys still work, but resolve through Locale.
 local L = setmetatable({}, { __index = function(_, key)
     local legacy = (Config.Text and Config.Text.en and Config.Text.en[key]) or key
@@ -82,6 +98,8 @@ local function localePayload()
     end
     return {
         language  = Lang,
+        -- toasts raised inside the interface follow this, not `language`
+        notifyLanguage = notifyLang(),
         languages = langs,
         -- every table, not just the active one: the interface can then switch
         -- language instantly instead of waiting on a round trip to Lua, which
@@ -1893,10 +1911,10 @@ end, false)
 RegisterNetEvent('m5rp:cl:notify', function(data)
     -- The server sends the English line plus any values to fill in; the swap
     -- happens here because this is the side that knows the chosen language.
-    local message = data.args and _Lf(data.message, table.unpack(data.args))
-                    or _L(data.message)
+    local message = data.args and _Lnf(data.message, table.unpack(data.args))
+                    or _Ln(data.message)
     nui({ action = 'toast', kind = data.kind or 'info',
-          message = message, title = _L(data.title) })
+          message = message, title = _Ln(data.title) })
 end)
 
 -- Close the hub with ESC / BACKSPACE without needing NUI focus tricks

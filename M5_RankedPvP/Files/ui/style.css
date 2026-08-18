@@ -1183,10 +1183,15 @@ html[dir="rtl"] .searchdock{flex-direction:row-reverse;padding:10px 16px 10px 12
 html[dir="rtl"] .sd-text{align-items:flex-end}
 html[dir="rtl"] .killfeed{left:30px;right:auto;align-items:flex-start}
 html[dir="rtl"] .killfeed.left{right:30px;left:auto;align-items:flex-end}
-html[dir="rtl"] .toast{padding:11px 46px 12px 14px;text-align:right}
-html[dir="rtl"] .toast::before{left:auto;right:0}
-html[dir="rtl"] .toast .tico{left:auto;right:14px}
-html[dir="rtl"] .toast .tbar{transform-origin:right center}
+/* A toast carries its own direction: Locale.notifications can pin them to
+   Arabic while the menu stays English, so the page direction is not the
+   thing to key off here. */
+.toast.rtl{direction:rtl;padding:11px 46px 12px 14px;text-align:right;
+  font-family:var(--f-ar);letter-spacing:normal}
+.toast.rtl::before{left:auto;right:0}
+.toast.rtl .tico{left:auto;right:14px}
+.toast.rtl .tbar{transform-origin:right center}
+.toast.rtl b{letter-spacing:normal}
 
 html[dir="rtl"] .act{grid-template-columns:auto 1fr 210px}
 html[dir="rtl"] .adm-target{direction:rtl}

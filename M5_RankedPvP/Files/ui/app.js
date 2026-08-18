@@ -149,6 +149,7 @@ function tierColor(rankId) {
    a translation falls through unchanged. */
 let LOCALE = { strings: {}, rtl: {} };          // every table, from Locale.lua
 let STRINGS = {};                                // the active one
+let NOTIFY_LANG = 'en';                          // Locale.notifications, or the active one
 let LANGUAGES = [{ id: 'en', label: 'English' }];
 
 function tx(str) {
@@ -156,10 +157,19 @@ function tx(str) {
   return STRINGS[str] || str;
 }
 
+/** Text for a notification. Locale.notifications can pin these to one
+ *  language while the rest of the interface follows the player's choice. */
+function tn(str) {
+  if (typeof str !== 'string') return str;
+  const table = LOCALE.strings[NOTIFY_LANG] || STRINGS;
+  return table[str] || str;
+}
+
 /** Stores what Locale.lua sent. Called on every open and on a language change. */
 function applyLocale(payload) {
   if (!payload) return;
   LOCALE = { strings: payload.strings || {}, rtl: payload.rtl || {} };
+  NOTIFY_LANG = payload.notifyLanguage || payload.language || 'en';
   if (Array.isArray(payload.languages) && payload.languages.length) {
     LANGUAGES = payload.languages;
   }
@@ -589,7 +599,7 @@ function sendInvite() {
     wrap.classList.remove('bad');
     void wrap.offsetWidth;                    // restart the shake
     wrap.classList.add('bad');
-    toast('warning', tx('Enter a player ID first.'), tx('INVITE PLAYER'), 3200);
+    toast('warning', tn('Enter a player ID first.'), tn('INVITE PLAYER'), 3200);
     input.focus();
     return;
   }
@@ -1594,7 +1604,7 @@ function admAction(btn) {
 
     case 'lookup':        post('admin', { action: 'playerLookup', target: btn.dataset.target }); break;
     case 'lookupInput':
-      if (!target) { toast('warning', tx('Enter a player ID first.'), tx('ADMIN')); break; }
+      if (!target) { toast('warning', tn('Enter a player ID first.'), tn('ADMIN')); break; }
       post('admin', { action: 'playerLookup', target });
       break;
 
@@ -1853,13 +1863,25 @@ function renderMatchEnd(d) {
   if (!d) return;
   const modal = $('modal-result');
   modal.classList.remove('hidden');
-  // the colour lives on the wrapper now, so the wash and the top rule follow it
-  modal.classList.toggle('defeat', d.result === 'DEFEAT');
-  modal.classList.toggle('draw', d.result === 'DRAW');
+  // nothing else should be on screen behind the result
+  toggleScoreboard(false);
 
-  $('result-tag').textContent = tx(d.result || '');
-  $('result-a').textContent = d.yourTeam === 2 ? d.scores.b : d.scores.a;
-  $('result-b').textContent = d.yourTeam === 2 ? d.scores.a : d.scores.b;
+  /* Accept either wording. A real match reports VICTORY/DEFEAT and a practice
+     one used to report WIN/LOSS, which matched neither the colour test nor a
+     locale key — the panel came out green with an untranslated word on it. */
+  const RESULT = { WIN: 'VICTORY', LOSS: 'DEFEAT', LOSE: 'DEFEAT', TIE: 'DRAW' };
+  const result = RESULT[d.result] || d.result || 'DRAW';
+
+  modal.classList.toggle('defeat', result === 'DEFEAT');
+  modal.classList.toggle('draw', result === 'DRAW');
+
+  $('result-tag').textContent = tx(result);
+  // Lua's {[1]=x,[2]=y} arrives as {"1":x,"2":y}; accept both shapes
+  const sc = d.scores || {};
+  const sa = (sc.a !== undefined) ? sc.a : (sc['1'] || 0);
+  const sb = (sc.b !== undefined) ? sc.b : (sc['2'] || 0);
+  $('result-a').textContent = d.yourTeam === 2 ? sb : sa;
+  $('result-b').textContent = d.yourTeam === 2 ? sa : sb;
 
   const rp = $('result-rp');
   if (d.rp && d.ranked) {
@@ -1964,7 +1986,9 @@ const TOAST_ICON = {
 function toast(kind, message, title, ttl) {
   const k = kind || 'info';
   const life = ttl || 5200;
-  const node = el('div', 'toast ' + k, `
+  // pinned notifications may read the other way round from the page
+  const rtl = LOCALE.rtl[NOTIFY_LANG] === true;
+  const node = el('div', 'toast ' + k + (rtl ? ' rtl' : ''), `
     <span class="tico"><svg><use href="${TOAST_ICON[k] || TOAST_ICON.info}"/></svg></span>
     ${title ? `<b>${esc(title)}</b>` : ''}
     <span>${esc(message)}</span>
@@ -1994,6 +2018,7 @@ window.addEventListener('message', (e) => {
       // language list and which way the text reads.
       if (d.locale) {
         LOCALE = { strings: d.locale.strings || {}, rtl: d.locale.rtl || {} };
+        NOTIFY_LANG = d.locale.notifyLanguage || d.locale.language || 'en';
         if (Array.isArray(d.locale.languages) && d.locale.languages.length) {
           LANGUAGES = d.locale.languages;
         }
@@ -2050,7 +2075,7 @@ window.addEventListener('message', (e) => {
           }
           if (S.page === 'admin') renderAdmin(S.admin); else showPage('profile');
         }
-        else { toast('success', tx('Action applied.'), tx('ADMIN')); post('admin', { action: 'dashboard' }); }
+        else { toast('success', tn('Action applied.'), tn('ADMIN')); post('admin', { action: 'dashboard' }); }
       }
       break;
     }
@@ -2297,12 +2322,12 @@ document.addEventListener('click', (e) => {
         toast('success', `Code ${S.room.code} copied`, 'ROOM CODE');
       }
       break;
-    case 'cm-chat': toast('info', tx('Share the room code with your friends.'), tx('ROOM CODE')); break;
+    case 'cm-chat': toast('info', tn('Share the room code with your friends.'), tn('ROOM CODE')); break;
     case 'cm-create': post('custom', Object.assign({ action: 'create' }, customPayload())); break;
     case 'cm-leave': post('custom', { action: 'leave' }); break;
     case 'cm-joincode':
       askInput('JOIN CODE', 'Enter the room code', (code) => {
-        if (!code) { toast('warning', tx('Enter the room code'), tx('ROOM CODE')); return; }
+        if (!code) { toast('warning', tn('Enter the room code'), tn('ROOM CODE')); return; }
         post('custom', { action: 'joinCode', code: code.toUpperCase() });
       });
       break;
