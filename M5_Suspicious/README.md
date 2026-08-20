@@ -173,6 +173,36 @@ Config.Theme["accent-2"] = "#ff8a3d"
 
 ---
 
+## vRP integration — لماذا لا نستخدم الـ Proxy إلا للصلاحيات
+
+vRP 0.5 ينفّذ استدعاءات الـ Proxy عبر متغيّر **مشترك**:
+
+```lua
+local proxy_rdata = {}
+local function proxy_callback(rvalues) proxy_rdata = rvalues end
+...
+TriggerEvent(iname..":proxy", key, args, proxy_callback)
+return table.unpack(proxy_rdata)   -- ← نتيجة الاستدعاء السابق إن فشل الحالي
+```
+
+إذا فشل الـ handler (وهذا يحدث فعلاً أثناء `playerConnecting`) لا يُستدعى
+`proxy_callback` إطلاقاً، فيستلم المُنادي **نتيجة آخر استدعاء ناجح** — أي
+`user_id` لاعب آخر. و `pcall` لا يلتقط ذلك لأن الخطأ يقع داخل مورد vrp لا داخل
+هذا المورد.
+
+لذلك:
+
+* `user_id`، الـ source، والهوية تُقرأ **من جداول vRP مباشرة** عبر oxmysql
+  (`Config.VRP.*` لتغيير أسماء الجداول لو كان لديك fork).
+* الشيء الوحيد الذي يمر عبر الـ Proxy هو `hasPermission`، ومحمي بفحص سلامة:
+  يُسأل أولاً عن صلاحية وهمية لا يملكها أحد (`Config.VRP.ProbePermission`)؛
+  لو رجعت `true` فهذا دليل على أن الـ Proxy يعيد بيانات قديمة، فتُرفض العملية
+  ويُسجّل الخطأ.
+
+عند الإقلاع يتحقق النظام من وجود `vrp_user_ids` ويطبع خطأً واضحاً إن لم يجده.
+
+---
+
 ## Security model
 
 * Every decision is server-side. The client sends only a record id, an action name, a duration **index** and a reason string — through NUI callbacks that go straight to a permission-checked server event.

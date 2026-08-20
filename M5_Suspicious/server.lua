@@ -6,8 +6,8 @@
      ويُعاد التحقق منهما بالكامل في الأسفل.
      ============================================================ ]]
 
-local Tunnel = module("vrp", "lib/Tunnel")
-local Proxy  = module("vrp", "lib/Proxy")
+-- الـ Proxy مستخدم فقط لفحص الصلاحيات. كل ما عداه يُقرأ من SQL مباشرة.
+local Proxy = module("vrp", "lib/Proxy")
 vRP = Proxy.getInterface("vRP")
 
 --- Locale lookup with a safe fallback chain: requested -> default -> en.
@@ -347,6 +347,62 @@ function DB.gatherIntel(userId, license, ip, tokenHashes)
     return out
 end
 
+-- ---------- vRP identity, resolved from SQL ---------------------------
+-- vRP 0.5 answers proxy calls through a SHARED upvalue (proxy_rdata). When
+-- the proxy handler errors, the caller silently receives the PREVIOUS call's
+-- return value - i.e. another player's user_id. During playerConnecting that
+-- handler does error, so identity is read straight from vRP's own tables.
+
+local srcUserId = {}   -- [src] = user_id | false (resolved, none found)
+
+function DB.userIdByIdentifiers(identifiers)
+    if type(identifiers) ~= "table" or #identifiers == 0 then return nil end
+
+    local holes, params = {}, {}
+    for _, id in ipairs(identifiers) do
+        holes[#holes + 1] = "?"
+        params[#params + 1] = id
+    end
+
+    local rows = query(("SELECT %s AS uid FROM %s WHERE %s IN (%s) LIMIT 1"):format(
+        Config.VRP.UserIdColumn, Config.VRP.IdentifiersTable,
+        Config.VRP.IdentifierColumn, table.concat(holes, ",")), params)
+
+    return rows and rows[1] and tonumber(rows[1].uid) or nil
+end
+
+--- Cached per source. Cleared on drop.
+function DB.userIdOf(src)
+    local cached = srcUserId[src]
+    if cached ~= nil then return cached or nil end
+
+    local userId = DB.userIdByIdentifiers(GetPlayerIdentifiers(src) or {})
+    srcUserId[src] = userId or false
+    return userId
+end
+
+--- Replacement for vRP.getUserSource, without the proxy.
+function DB.sourceOf(userId)
+    if not userId then return nil end
+    for _, src in ipairs(GetPlayers()) do
+        src = tonumber(src)
+        if DB.userIdOf(src) == userId then return src end
+    end
+    return nil
+end
+
+--- Replacement for vRP.getUserIdentity, without the proxy.
+function DB.identityOf(userId)
+    if not userId then return nil end
+    local rows = query(("SELECT firstname, name FROM %s WHERE user_id = ? LIMIT 1"):format(
+        Config.VRP.IdentitiesTable), { userId })
+    return rows and rows[1] or nil
+end
+
+AddEventHandler("playerDropped", function()
+    srcUserId[source] = nil
+end)
+
 function DB.logAction(action, target, admin, details)
     insert([[
         INSERT INTO suspicious_actions (action, target_user, target_name, admin_user, admin_name, details)
@@ -575,11 +631,29 @@ end
 
 local adminCache = { list = {}, at = 0 }
 
+--- Permission is the one thing that genuinely has to go through vRP.
+--- Guard it: ask for a permission nobody can hold first. A `true` there means
+--- the proxy is replaying a stale result, so refuse everything this call.
+local function vrpHasPermission(userId, permission)
+    local ok, probe = pcall(function()
+        return vRP.hasPermission({ userId, Config.VRP.ProbePermission })
+    end)
+    if not ok or probe == true then
+        err("vRP proxy returned a stale/invalid result - permission denied for safety")
+        return false
+    end
+
+    local ok2, granted = pcall(function()
+        return vRP.hasPermission({ userId, permission })
+    end)
+    return ok2 and granted == true
+end
+
 local function isAdmin(src, permission)
     if not src or src <= 0 then return false end
-    local userId = vRP.getUserId({ src })
+    local userId = DB.userIdOf(src)
     if not userId then return false end
-    return vRP.hasPermission({ userId, permission or Config.AdminPermission }) == true, userId
+    return vrpHasPermission(userId, permission or Config.AdminPermission), userId
 end
 
 local function getAdmins()
@@ -653,12 +727,10 @@ local function analyse(src, name)
     local license = idValue(ids.license)
     local ip      = ids.ip
 
-    -- vRP user id, if the player already exists
-    local userId
-    local ok, res = pcall(function()
-        return vRP.getUserIdByIdentifiers({ ids.raw })
-    end)
-    if ok then userId = res end
+    -- vRP user id, if the player already exists. Read from SQL, never through
+    -- the vRP proxy: during playerConnecting the proxy handler errors and the
+    -- caller silently gets the previous player's id.
+    local userId = DB.userIdByIdentifiers(ids.raw)
 
     DB.refreshBanCache(false)
 
@@ -880,11 +952,7 @@ end
 local function tokensForTarget(target)
     local out = {}
 
-    local src = target.source
-    if not src and target.user_id then
-        local ok, s = pcall(function() return vRP.getUserSource({ target.user_id }) end)
-        if ok then src = s end
-    end
+    local src = target.source or DB.sourceOf(target.user_id)
 
     if src and GetPlayerName(src) then
         for _, raw in ipairs(GetPlayerTokens(src)) do
@@ -975,11 +1043,7 @@ applyBan = function(target, kind, minutes, reason, admin)
     })
 
     -- Drop the player if they are still connected.
-    local src = target.source
-    if not src and target.user_id then
-        local ok, s = pcall(function() return vRP.getUserSource({ target.user_id }) end)
-        if ok then src = s end
-    end
+    local src = target.source or DB.sourceOf(target.user_id)
     if src and GetPlayerName(src) then
         DropPlayer(src, LK.banned_hwid:format(reason, banned.ids[1] or "-", expires or LK.ban_permanent))
     end
@@ -1073,9 +1137,7 @@ local function guarded(permissionKey, handler)
             TriggerClientEvent("M5_Suspicious:notify", src, LM.no_permission, "error")
             return
         end
-        local identity = nil
-        local ok, res = pcall(function() return vRP.getUserIdentity({ userId }) end)
-        if ok then identity = res end
+        local identity = DB.identityOf(userId)
         local adminName = identity and ("%s %s"):format(identity.firstname or "", identity.name or "")
                           or (GetPlayerName(src) or "admin")
         handler(src, userId, sanitize(adminName, 90), ...)
@@ -1107,11 +1169,7 @@ local function buildMenu(force)
         local okDec, reasons = pcall(json.decode, row.reasons or "[]")
         if not okDec or type(reasons) ~= "table" then reasons = {} end
 
-        local online = false
-        if row.user_id then
-            local okSrc, s = pcall(function() return vRP.getUserSource({ row.user_id }) end)
-            online = okSrc and s ~= nil and GetPlayerName(s) ~= nil
-        end
+        local online = row.user_id ~= nil and DB.sourceOf(row.user_id) ~= nil
 
         list[#list + 1] = {
             id       = row.id,
@@ -1155,11 +1213,7 @@ local function targetFromRecord(recordId)
     if not rows or not rows[1] then return nil end
     local row = rows[1]
 
-    local src
-    if row.user_id then
-        local ok, s = pcall(function() return vRP.getUserSource({ row.user_id }) end)
-        if ok and s and GetPlayerName(s) then src = s end
-    end
+    local src = DB.sourceOf(row.user_id)
 
     return {
         recordId = row.id,
@@ -1320,6 +1374,14 @@ CreateThread(function()
     end
     if Config.Webhook == "YOUR_WEBHOOK" and Config.EnableDiscordLogs then
         warn("Discord logs are enabled but no webhook is configured.")
+    end
+
+    -- Fail loudly if the vRP tables are named differently in this fork:
+    -- without them every player looks like a brand new account.
+    local probe = query(("SELECT 1 AS ok FROM %s LIMIT 1"):format(Config.VRP.IdentifiersTable), {})
+    if probe == nil then
+        err(("cannot read %s - set Config.VRP.* to match your vRP tables, "):format(Config.VRP.IdentifiersTable)
+            .. "user_id will be NULL for everyone until then")
     end
 
     DB.refreshBanCache(true)
