@@ -1,5 +1,5 @@
 /* ============================================================
-   m5_suspicious - M5 style
+   M5_Suspicious  |  M5 theme
    Dark glass panel, red accent, RTL-aware.
    Every colour is driven by the CSS variables below, which
    client.lua overwrites from Config.Theme in config_client.lua.
@@ -146,6 +146,34 @@ html, body {
     animation: drain linear forwards;
 }
 @keyframes drain { from { width: 100%; } to { width: 0%; } }
+
+/* ---------- toast (server notifications) ---------- */
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(180deg, rgba(27,30,39,.97), rgba(15,17,23,.97));
+    border: 1px solid var(--line);
+    border-inline-start: 3px solid var(--tone, var(--accent));
+    border-radius: 12px;
+    padding: 11px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 12px 30px rgba(0,0,0,.5);
+    animation: slide-in .24s cubic-bezier(.2,.9,.3,1.2);
+}
+.toast.out { animation: slide-out .22s ease forwards; }
+.toast .mark {
+    width: 8px; height: 8px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--tone, var(--accent));
+    box-shadow: 0 0 10px var(--tone, var(--accent));
+}
+.toast.success { --tone: var(--low); }
+.toast.error   { --tone: var(--critical); }
+.toast.info    { --tone: var(--medium); }
 
 /* ============================================================
    Panel

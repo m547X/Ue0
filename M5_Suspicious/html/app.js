@@ -1,5 +1,5 @@
 /* ============================================================
-   m5_suspicious - NUI controller
+   M5_Suspicious  |  NUI controller
 
    SECURITY NOTE
    Player names, licenses and Discord tags are attacker-controlled
@@ -10,7 +10,7 @@
    ============================================================ */
 
 const RES = (typeof GetParentResourceName === 'function')
-    ? GetParentResourceName() : 'm5_suspicious';
+    ? GetParentResourceName() : 'M5_Suspicious';
 
 const post = (name, data = {}) =>
     fetch(`https://${RES}/${name}`, {
@@ -95,6 +95,21 @@ function renderAlert(d, seconds) {
     }, seconds * 1000);
 
     // Never let a flood of alerts cover the screen.
+    while (box.children.length > 5) box.firstChild.remove();
+}
+
+function renderToast(text, kind, seconds) {
+    const box = $('alerts');
+    const card = el('div', 'toast ' + (kind || 'info'));
+    card.appendChild(el('span', 'mark'));
+    card.appendChild(el('span', null, text));
+    box.appendChild(card);
+
+    setTimeout(() => {
+        card.classList.add('out');
+        setTimeout(() => card.remove(), 240);
+    }, (seconds || 5) * 1000);
+
     while (box.children.length > 5) box.firstChild.remove();
 }
 
@@ -432,6 +447,11 @@ window.addEventListener('message', (ev) => {
     if (msg.action === 'close') {
         $('panel').classList.add('hidden');
         closeModal();
+        return;
+    }
+
+    if (msg.action === 'notify') {
+        renderToast(String(msg.text || ''), msg.kind, msg.seconds);
         return;
     }
 

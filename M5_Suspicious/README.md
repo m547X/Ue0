@@ -1,4 +1,4 @@
-# m5_suspicious
+# M5_Suspicious
 
 Suspicious player detection, risk scoring and permanent HWID bans for **FiveM**, built for **vRP 0.5** and **oxmysql**.
 
@@ -9,13 +9,17 @@ When a player connects, the server collects every identifier and token FiveM exp
 ## Contents
 
 ```
-m5_suspicious/
+M5_Suspicious/
 ├── fxmanifest.lua
-├── config_server.lua   -- permissions, weights, HWID salt, VPN key, webhooks  (never sent to a client)
-├── config_client.lua   -- language, colours, menu key, labels                 (downloaded by players)
-├── server.lua          -- all security logic: analysis, scoring, bans, admin API
-├── client.lua          -- rendering only (alerts + menu)
-├── sql.sql             -- database schema
+├── config_server.lua   -- الصلاحيات، الأوزان، Salt، مفتاح VPN، الويبهوكس  (لا يُرسل للكلاينت)
+├── config_client.lua   -- اللغة، الثيم، مفتاح الفتح، النصوص             (يُحمّل عند اللاعبين)
+├── server.lua          -- كل المنطق الأمني: التحليل، النقاط، الحظر، واجهة الإدارة
+├── client.lua          -- جسر NUI فقط
+├── html/
+│   ├── index.html
+│   ├── style.css       -- ثيم M5 (كل الألوان من Config.Theme)
+│   └── app.js
+├── sql.sql
 └── README.md
 ```
 
@@ -35,7 +39,7 @@ downloadable.
    * `Config.HWID.Salt` — **change this once, before the first launch.** Changing it later invalidates every stored hash and existing bans stop matching.
    * `Config.Webhook` — your Discord webhook (or set `Config.EnableDiscordLogs = false`).
 4. Open `config_client.lua` and set `Config.Language` (see *Language* below).
-5. Add `ensure m5_suspicious` to `server.cfg`, **after** `vrp` and `oxmysql`.
+5. Add `ensure M5_Suspicious` to `server.cfg`, **after** `vrp` and `oxmysql`.
 
 The resource warns in the console on startup if the salt or the webhook is still at its default value.
 
@@ -43,27 +47,20 @@ The resource warns in the console on startup if the salt or the webhook is still
 
 ## Language / اللغة
 
-English and Arabic are both included. The switches are independent because the
-surfaces do **not** all have the same font support:
+الواجهة **NUI**، لذلك العربية تعمل في كل مكان بلا استثناء — اللوحة، التنبيهات،
+الإشعارات، شاشة الحظر، وسجلات Discord. الاتجاه RTL يُضبط تلقائياً.
 
-| Setting | File | Surface | Arabic? |
-|---|---|---|---|
-| `Config.KickLanguage` | `config_server.lua` | connection screen, ban/kick messages | ✅ rendered by CEF |
-| `Config.LogLanguage` | `config_server.lua` | Discord embeds | ✅ |
-| `Config.Language` | `config_server.lua` | strings stored in the database | ✅ |
-| `Config.Language` | `config_client.lua` | in-game menu and alerts | ⚠️ see below |
-| `Config.MenuLanguage` | `config_server.lua` | notifications pushed to an admin | ⚠️ must match the line above |
+| الإعداد | الملف | السطح |
+|---|---|---|
+| `Config.Language` | `config_client.lua` | اللوحة والتنبيهات |
+| `Config.Direction` | `config_client.lua` | `auto` / `rtl` / `ltr` |
+| `Config.KickLanguage` | `config_server.lua` | شاشة الاتصال والحظر |
+| `Config.MenuLanguage` | `config_server.lua` | إشعارات الأدمن + أسباب الاشتباه — **يجب أن تطابق** لغة الكلاينت |
+| `Config.LogLanguage` | `config_server.lua` | Discord |
+| `Config.Language` | `config_server.lua` | النصوص المخزنة في قاعدة البيانات |
 
-**The in-game menu is the one limitation.** It is drawn with `DrawText` and the
-native GTA V fonts, which contain no Arabic glyphs — Arabic there renders as
-boxes. Keep the client-side `Config.Language` on `"en"` unless you run a resource
-that replaces the game fonts with an Arabic-capable one, or you rebuild the menu
-as a NUI page (HTML handles Arabic and RTL natively). The defaults ship as
-Arabic everywhere Arabic works, and English for the menu.
-
-Reason labels, Discord field names and every message are translated; add a
-language by copying an existing block in `Config.Locale`, `Config.ReasonLabels`
-and `Config.LogLabels`.
+الافتراضي عربي في كل الملفات. لإضافة لغة ثالثة انسخ أي بلوك موجود في
+`Config.Locale` و `Config.ReasonLabels` و `Config.LogLabels`.
 
 ---
 
@@ -143,43 +140,43 @@ The SHA-256 implementation is pure Lua 5.4 (no external dependency) and is verif
 
 ---
 
-## In-game alerts and menu
+## الواجهة  |  M5 Panel
 
-Alerts are sent only to sources the **server** has verified with `vRP.hasPermission`, re-checked every 15 seconds. Ordinary players receive nothing at all — not a filtered payload, no event.
+التنبيهات تُرسل فقط للمصادر التي تحقق **السيرفر** من صلاحيتها عبر
+`vRP.hasPermission` (يُعاد الفحص كل 15 ثانية). اللاعب العادي لا يستقبل الحدث أصلاً.
 
+**بطاقة التنبيه** تنزلق من الزاوية (الموضع من `Config.Alert.Position`) بلون
+مستوى الخطورة، وفيها الاسم، الأرقام، VPN، حساب جديد، IP/HWID المشترك، وشريط
+عدّ تنازلي.
+
+**اللوحة** — `/suspicious` أو مفتاح `Config.MenuKey`:
+
+* عمود قائمة بنقطة ملوّنة حسب المستوى، مؤشر اتصال أخضر، ودرجة الخطورة.
+* فلاتر: الكل / قيد المراجعة / خطورة عالية / حرِج / متصل — مع عدّاد لكل فلتر.
+* بحث فوري بالاسم أو رقم السيرفر أو المستخدم أو الديسكورد.
+* لوحة تفاصيل فيها **حلقة Risk Score**، شارات أسباب الاشتباه، وشبكة معلومات
+  كاملة (IP مقنّع، License مختصر، ديسكورد، FiveM، ستيم، عدد التوكنات، الموقع،
+  أول رصد، الحالة).
+* الأزرار: `حظر HWID` · `حظر License` · `حظر اللاعب` · `تجاهل` · `تحديث`.
+* أي حظر يفتح نافذة تأكيد فيها حقل السبب واختيار المدة.
+* `Esc` يغلق النافذة ثم اللوحة.
+
+### الثيم
+
+كل ألوان الواجهة تأتي من `Config.Theme` في `config_client.lua` وتُحقن كمتغيّرات
+CSS، فتغيير لون M5 الأساسي سطر واحد:
+
+```lua
+Config.Theme["accent"]   = "#e5484d"
+Config.Theme["accent-2"] = "#ff8a3d"
 ```
-⚠️ SUSPICIOUS PLAYER
-Name: wenestonhadron
-Server ID: 283
-User ID: 7975
-
-Risk Score: 85/100
-Risk Level: HIGH
-
-VPN/Proxy: YES
-New Account: NO
-Shared IP: 1
-Shared HWID: 1
-
-Discord: @alighanem21
-FiveM ID: 19236283
-```
-
-`/suspicious` (or the optional `Config.MenuKey` binding) opens the list. Arrow keys navigate, `Enter` opens details, `Backspace` goes back, `R` refreshes.
-
-The detail view shows the score, the reasons, masked IP, truncated license, Discord, FiveM ID, Steam, token count, first-detection time, VPN state, location, online state and the previous action taken — with the buttons:
-
-```
-[View Details] [Ban HWID] [Ban License] [Ban Player] [Ignore] [Refresh]
-```
-
-`←` / `→` cycle the ban duration; confirming a ban opens the on-screen keyboard for the reason.
 
 ---
 
 ## Security model
 
-* Every decision is server-side. The client sends only a record id, an action name, a duration **index** and a reason string.
+* Every decision is server-side. The client sends only a record id, an action name, a duration **index** and a reason string — through NUI callbacks that go straight to a permission-checked server event.
+* The NUI never writes server data with `innerHTML`; every value goes through `textContent`, so a player named `<img onerror=...>` cannot inject markup into an admin's panel.
 * Permissions are checked server-side on every event, per call — never cached into a client-trusted flag.
 * Server ID and User ID cannot be spoofed: the target is re-resolved from `suspicious_players` by record id, and the live source from `vRP.getUserSource`.
 * Duration is an index into `Config.BanDurations` (server side), so a crafted payload cannot invent an arbitrary value. The client only holds the *labels*, in `Config.BanDurationLabels` — keep the two lists in the same order.
@@ -239,9 +236,9 @@ Plus unban and internal-error logs. IPs are masked (`1.2.x.x`) and can be hidden
 ## Exports
 
 ```lua
-exports.m5_suspicious:banHWID(userId, reason, minutes, adminName)
-exports.m5_suspicious:banPlayer(userId, license, reason, minutes, adminName)
-exports.m5_suspicious:isHWIDBanned(source)  --> boolean, banId, reason
+exports.M5_Suspicious:banHWID(userId, reason, minutes, adminName)
+exports.M5_Suspicious:banPlayer(userId, license, reason, minutes, adminName)
+exports.M5_Suspicious:isHWIDBanned(source)  --> boolean, banId, reason
 ```
 
 ---

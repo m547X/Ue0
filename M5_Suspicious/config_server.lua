@@ -1,11 +1,11 @@
---[[
-    m5_suspicious - SERVER configuration
-    ---------------------------------------------------------------
-    This file is NEVER sent to a client. Everything sensitive lives
-    here: permissions, scoring weights, the HWID salt, the VPN API
-    key and the Discord webhooks.
-    Presentation settings are in config_client.lua.
-]]
+--[[ ============================================================
+     M5_Suspicious  |  Server Config
+     ------------------------------------------------------------
+     هذا الملف لا يُرسل إلى أي كلاينت إطلاقاً. كل ما هو حساس هنا:
+     الصلاحيات، أوزان الخطورة، Salt الخاص بالـ HWID، مفتاح الـ VPN
+     API، والـ Discord Webhooks.
+     إعدادات العرض في config_client.lua.
+     ============================================================ ]]
 
 Config = {}
 
@@ -27,10 +27,10 @@ Config.Language = "ar"
 -- These are rendered by CEF and display Arabic correctly.
 Config.KickLanguage = "ar"
 
--- Language of the notifications the server pushes to an admin's screen.
--- Must match Config.Language in config_client.lua. Note that the in-game
--- fonts have no Arabic glyphs, so "ar" here shows boxes - see config_client.lua.
-Config.MenuLanguage = "en"
+-- لغة الإشعارات التي يدفعها السيرفر لشاشة الأدمن، ولغة أسباب الاشتباه
+-- المعروضة في اللوحة. يجب أن تطابق Config.Language في config_client.lua.
+-- الواجهة NUI فالعربية تعمل بلا أي قيد.
+Config.MenuLanguage = "ar"
 
 -- Language used for the Discord embeds. Discord renders Arabic fine.
 Config.LogLanguage = "ar"
@@ -179,7 +179,7 @@ Config.Webhooks = {
     Error        = "",
 }
 
-Config.WebhookName   = "m5_suspicious"
+Config.WebhookName   = "M5_Suspicious"
 Config.WebhookAvatar = ""
 -- Ping this role id on CRITICAL detections ("" = no ping).
 Config.WebhookCriticalRole = ""
@@ -332,7 +332,7 @@ Config.LogLabels = {
         hwid_detect  = "Banned HWID Detected",
         hwid_unban   = "HWID Unban",
         license_unban = "License Unban",
-        error        = "m5_suspicious error",
+        error        = "M5_Suspicious error",
 
         name = "Name", server_id = "Server ID", user_id = "User ID",
         score = "Risk Score", level = "Risk Level", tokens = "Tokens",
@@ -355,7 +355,7 @@ Config.LogLabels = {
         hwid_detect  = "تم رصد HWID محظور",
         hwid_unban   = "فك حظر HWID",
         license_unban = "فك حظر License",
-        error        = "خطأ في m5_suspicious",
+        error        = "خطأ في M5_Suspicious",
 
         name = "الاسم", server_id = "رقم السيرفر", user_id = "رقم المستخدم",
         score = "درجة الخطورة", level = "مستوى الخطورة", tokens = "عدد التوكنات",

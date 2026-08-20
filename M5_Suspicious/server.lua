@@ -1,10 +1,10 @@
---[[
-    m5_suspicious - server side
-    ---------------------------------------------------------------
-    Every security decision is made here. The client is only ever a
-    renderer: it receives already-filtered data and sends nothing but
-    a menu action id, which is re-validated below.
-]]
+--[[ ============================================================
+     M5_Suspicious  |  Server
+     ------------------------------------------------------------
+     كل قرار أمني يُتخذ هنا. الكلاينت مجرد واجهة عرض: يستقبل
+     بيانات مفلترة مسبقاً، ولا يرسل إلا رقم سجل + اسم إجراء،
+     ويُعاد التحقق منهما بالكامل في الأسفل.
+     ============================================================ ]]
 
 local Tunnel = module("vrp", "lib/Tunnel")
 local Proxy  = module("vrp", "lib/Proxy")
@@ -26,16 +26,16 @@ local LG = Config.LogLabels[Config.LogLanguage] or Config.LogLabels.en   -- Disc
 
 local function dbg(...)
     if Config.Debug then
-        print(("[m5_suspicious] %s"):format(table.concat({ ... }, " ")))
+        print(("[M5_Suspicious] %s"):format(table.concat({ ... }, " ")))
     end
 end
 
 local function warn(msg)
-    print(("[m5_suspicious] ^3WARN^7 %s"):format(msg))
+    print(("[M5_Suspicious] ^3WARN^7 %s"):format(msg))
 end
 
 local function err(msg)
-    print(("[m5_suspicious] ^1ERROR^7 %s"):format(msg))
+    print(("[M5_Suspicious] ^1ERROR^7 %s"):format(msg))
 end
 
 --- Clamp a number into a range.
@@ -373,7 +373,7 @@ local function httpGet(url, timeout)
     PerformHttpRequest(url, function(status, body)
         result = { status = status, body = body }
         done = true
-    end, "GET", "", { ["User-Agent"] = "m5_suspicious" })
+    end, "GET", "", { ["User-Agent"] = "M5_Suspicious" })
 
     local waited = 0
     while not done and waited < timeout do
@@ -627,7 +627,7 @@ local function sendAlert(profile)
     }
 
     for _, src in ipairs(getAdmins()) do
-        TriggerClientEvent("m5_suspicious:alert", src, payload)
+        TriggerClientEvent("M5_Suspicious:alert", src, payload)
     end
 end
 
@@ -1064,13 +1064,13 @@ local function guarded(permissionKey, handler)
     return function(...)
         local src = source
         if rateLimited(src) then
-            TriggerClientEvent("m5_suspicious:notify", src, LM.rate_limited, "error")
+            TriggerClientEvent("M5_Suspicious:notify", src, LM.rate_limited, "error")
             return
         end
         local allowed, userId = isAdmin(src, permissionKey)
         if not allowed then
             warn(("unauthorized event from %s (%s)"):format(GetPlayerName(src) or "?", src))
-            TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
+            TriggerClientEvent("M5_Suspicious:notify", src, LM.no_permission, "error")
             return
         end
         local identity = nil
@@ -1144,8 +1144,8 @@ local function buildMenu(force)
     return list
 end
 
-RegisterNetEvent("m5_suspicious:requestList", guarded(Config.AdminPermission, function(src, _, _, force)
-    TriggerClientEvent("m5_suspicious:openMenu", src, buildMenu(force == true))
+RegisterNetEvent("M5_Suspicious:requestList", guarded(Config.AdminPermission, function(src, _, _, force)
+    TriggerClientEvent("M5_Suspicious:openMenu", src, buildMenu(force == true))
 end))
 
 -- ---------- resolve a menu row into a real target ---------------------
@@ -1176,7 +1176,7 @@ local function markHandled(recordId, adminName, status)
     menuCache.at = 0
 end
 
-RegisterNetEvent("m5_suspicious:action", guarded(Config.BanPermission, function(src, adminUserId, adminName, payload)
+RegisterNetEvent("M5_Suspicious:action", guarded(Config.BanPermission, function(src, adminUserId, adminName, payload)
     if type(payload) ~= "table" then return end
 
     local recordId = tonumber(payload.id)
@@ -1185,7 +1185,7 @@ RegisterNetEvent("m5_suspicious:action", guarded(Config.BanPermission, function(
 
     local target = targetFromRecord(recordId)
     if not target then
-        TriggerClientEvent("m5_suspicious:notify", src, LM.action_failed:format(LM.action_not_found), "error")
+        TriggerClientEvent("M5_Suspicious:notify", src, LM.action_failed:format(LM.action_not_found), "error")
         return
     end
 
@@ -1194,8 +1194,8 @@ RegisterNetEvent("m5_suspicious:action", guarded(Config.BanPermission, function(
     if action == "ignore" then
         markHandled(recordId, adminName, "ignored")
         DB.logAction("ignore", target, admin, "record #" .. recordId)
-        TriggerClientEvent("m5_suspicious:notify", src, LM.action_ok:format(LM.action_ignored), "success")
-        TriggerClientEvent("m5_suspicious:openMenu", src, buildMenu(true))
+        TriggerClientEvent("M5_Suspicious:notify", src, LM.action_ok:format(LM.action_ignored), "success")
+        TriggerClientEvent("M5_Suspicious:openMenu", src, buildMenu(true))
         return
     end
 
@@ -1216,10 +1216,10 @@ RegisterNetEvent("m5_suspicious:action", guarded(Config.BanPermission, function(
     local ok, message = applyBan(target, kind, minutes, payload.reason, admin)
     if ok then
         markHandled(recordId, adminName, "actioned")
-        TriggerClientEvent("m5_suspicious:notify", src, LM.action_ok:format(message), "success")
-        TriggerClientEvent("m5_suspicious:openMenu", src, buildMenu(true))
+        TriggerClientEvent("M5_Suspicious:notify", src, LM.action_ok:format(message), "success")
+        TriggerClientEvent("M5_Suspicious:openMenu", src, buildMenu(true))
     else
-        TriggerClientEvent("m5_suspicious:notify", src, LM.action_failed:format(message), "error")
+        TriggerClientEvent("M5_Suspicious:notify", src, LM.action_failed:format(message), "error")
     end
 end))
 
@@ -1229,14 +1229,14 @@ end))
 
 RegisterCommand(Config.Command, function(src)
     if src == 0 then
-        print("[m5_suspicious] this command is in-game only, use 'suspicious_list'")
+        print("[M5_Suspicious] this command is in-game only, use 'suspicious_list'")
         return
     end
     if not isAdmin(src) then
-        TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
+        TriggerClientEvent("M5_Suspicious:notify", src, LM.no_permission, "error")
         return
     end
-    TriggerClientEvent("m5_suspicious:openMenu", src, buildMenu(true))
+    TriggerClientEvent("M5_Suspicious:openMenu", src, buildMenu(true))
 end, false)
 
 RegisterCommand("suspicious_list", function(src)
@@ -1252,7 +1252,7 @@ RegisterCommand("unbanhwid", function(src, args)
     if src ~= 0 then
         local allowed, userId = isAdmin(src, Config.BanPermission)
         if not allowed then
-            TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
+            TriggerClientEvent("M5_Suspicious:notify", src, LM.no_permission, "error")
             return
         end
         admin = { user_id = userId, name = GetPlayerName(src) }
@@ -1264,7 +1264,7 @@ RegisterCommand("unbanhwid", function(src, args)
     end
     local ok, msg = unbanHWID(id, admin)
     if src == 0 then print(msg) else
-        TriggerClientEvent("m5_suspicious:notify", src, msg, ok and "success" or "error")
+        TriggerClientEvent("M5_Suspicious:notify", src, msg, ok and "success" or "error")
     end
 end, true)
 
@@ -1273,7 +1273,7 @@ RegisterCommand("unbanlicense", function(src, args)
     if src ~= 0 then
         local allowed, userId = isAdmin(src, Config.BanPermission)
         if not allowed then
-            TriggerClientEvent("m5_suspicious:notify", src, LM.no_permission, "error")
+            TriggerClientEvent("M5_Suspicious:notify", src, LM.no_permission, "error")
             return
         end
         admin = { user_id = userId, name = GetPlayerName(src) }
@@ -1285,7 +1285,7 @@ RegisterCommand("unbanlicense", function(src, args)
     end
     local ok, msg = unbanLicense(license, admin)
     if src == 0 then print(msg) else
-        TriggerClientEvent("m5_suspicious:notify", src, msg, ok and "success" or "error")
+        TriggerClientEvent("M5_Suspicious:notify", src, msg, ok and "success" or "error")
     end
 end, true)
 
