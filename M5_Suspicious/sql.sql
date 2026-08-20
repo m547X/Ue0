@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS `player_tokens` (
     `last_seen`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `seen_count`  INT UNSIGNED NOT NULL DEFAULT 1,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uniq_user_token` (`user_id`, `token_hash`),
+    -- المفتاح على license وليس user_id: الـ user_id قد يكون NULL (لاعب جديد
+    -- أو جدول vRP مختلف)، و MySQL يعتبر كل NULL قيمة مختلفة، فلا يعمل
+    -- ON DUPLICATE KEY وتتراكم صفوف مكررة عند كل دخول.
+    UNIQUE KEY `uniq_license_token` (`license`, `token_hash`),
     KEY `idx_token_hash` (`token_hash`),
     KEY `idx_user_id` (`user_id`),
     KEY `idx_license` (`license`)
@@ -42,7 +45,7 @@ CREATE TABLE IF NOT EXISTS `player_history` (
     `last_seen`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `join_count`   INT UNSIGNED NOT NULL DEFAULT 1,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uniq_user_license` (`user_id`, `license`),
+    UNIQUE KEY `uniq_license` (`license`),
     KEY `idx_ip` (`ip`),
     KEY `idx_license` (`license`),
     KEY `idx_user_id` (`user_id`)

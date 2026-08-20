@@ -33,6 +33,7 @@ downloadable.
 ## Installation
 
 1. Import `sql.sql` into your database.
+   *ترقية من نسخة سابقة؟* شغّل `sql_migrate_v2.sql` مرة واحدة بدلاً من إعادة الاستيراد — لا يحذف بياناتك ولا يمس جداول الحظر.
 2. Drop the folder into your `resources` directory.
 3. Open `config_server.lua` and set, at minimum:
    * `Config.AdminPermission` — the vRP permission your staff has.
@@ -170,6 +171,22 @@ CSS، فتغيير لون M5 الأساسي سطر واحد:
 Config.Theme["accent"]   = "#e5484d"
 Config.Theme["accent-2"] = "#ff8a3d"
 ```
+
+---
+
+## user_id قد يكون NULL — وهذا مقصود
+
+`user_id` يُقرأ من `vrp_user_ids`، وقد لا يوجد: لاعب لم يسجّله vRP بعد، أو fork
+بجداول مختلفة. لذلك:
+
+* البحث يستبعد `ip:` تماماً — الـ IP مشترك ومتغيّر، ومطابقته تربط اللاعب بحساب
+  شخص آخر. يُبحث بـ license / steam / discord / fivem / xbl / live فقط.
+* أي ناتج غير موجب (`0`، سالب، كسري) يُرفض ويُسجَّل تحذير، ويُعامل اللاعب
+  كمجهول بدل كتابة رقم خاطئ في كل الجداول.
+* المفاتيح الفريدة في `player_tokens` و `player_history` على **license** لا على
+  `user_id`، لأن MySQL يعتبر كل `NULL` قيمة مختلفة فلا يعمل
+  `ON DUPLICATE KEY UPDATE` وتتراكم الصفوف.
+* عدّ الـ Shared HWID / Shared IP يتم بـ `DISTINCT license` لنفس السبب.
 
 ---
 

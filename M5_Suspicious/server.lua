@@ -316,29 +316,31 @@ function DB.gatherIntel(userId, license, ip, tokenHashes)
             placeholders[#placeholders + 1] = "?"
             params[#params + 1] = t.hash
         end
-        params[#params + 1] = userId or -1
+        params[#params + 1] = license or ""
+        -- Counted by license, not user_id: user_id is NULL for anyone vRP has
+        -- not registered yet, and those rows would silently drop out.
         local rows = query(([[
-            SELECT COUNT(DISTINCT user_id) AS c
+            SELECT COUNT(DISTINCT license) AS c
             FROM player_tokens
-            WHERE token_hash IN (%s) AND user_id IS NOT NULL AND user_id <> ?
+            WHERE token_hash IN (%s) AND license IS NOT NULL AND license <> ?
         ]]):format(table.concat(placeholders, ",")), params)
         out.sharedHWID = (rows and rows[1] and tonumber(rows[1].c)) or 0
     end
 
     if ip and ip ~= "" then
         local rows = query([[
-            SELECT COUNT(DISTINCT user_id) AS c
+            SELECT COUNT(DISTINCT license) AS c
             FROM player_history
-            WHERE ip = ? AND user_id IS NOT NULL AND user_id <> ?
-        ]], { ip, userId or -1 })
+            WHERE ip = ? AND license IS NOT NULL AND license <> ?
+        ]], { ip, license or "" })
         out.sharedIP = (rows and rows[1] and tonumber(rows[1].c)) or 0
     end
 
     local rows = query([[
         SELECT MIN(first_seen) AS first_seen, SUM(join_count) AS joins
         FROM player_history
-        WHERE (user_id IS NOT NULL AND user_id = ?) OR license = ?
-    ]], { userId or -1, license })
+        WHERE license = ? OR (? IS NOT NULL AND user_id = ?)
+    ]], { license, userId, userId })
     if rows and rows[1] then
         out.firstSeen = rows[1].first_seen
         out.joinCount = tonumber(rows[1].joins) or 0
@@ -355,20 +357,44 @@ end
 
 local srcUserId = {}   -- [src] = user_id | false (resolved, none found)
 
+-- Identifier kinds that actually belong to one person. `ip:` is deliberately
+-- absent: IP addresses are shared and reassigned, so matching on one attaches
+-- the connection to a stranger's account.
+local LOOKUP_KINDS = {
+    license = true, license2 = true, steam = true,
+    discord = true, fivem = true, xbl = true, live = true,
+}
+
 function DB.userIdByIdentifiers(identifiers)
-    if type(identifiers) ~= "table" or #identifiers == 0 then return nil end
+    if type(identifiers) ~= "table" then return nil end
 
     local holes, params = {}, {}
     for _, id in ipairs(identifiers) do
-        holes[#holes + 1] = "?"
-        params[#params + 1] = id
+        local kind = type(id) == "string" and id:match("^([^:]+):")
+        if kind and LOOKUP_KINDS[kind] then
+            holes[#holes + 1] = "?"
+            params[#params + 1] = id
+        end
     end
+    if #holes == 0 then return nil end
 
     local rows = query(("SELECT %s AS uid FROM %s WHERE %s IN (%s) LIMIT 1"):format(
         Config.VRP.UserIdColumn, Config.VRP.IdentifiersTable,
         Config.VRP.IdentifierColumn, table.concat(holes, ",")), params)
 
-    return rows and rows[1] and tonumber(rows[1].uid) or nil
+    local uid = rows and rows[1] and tonumber(rows[1].uid)
+    if not uid then return nil end
+
+    -- A vRP user id is a positive auto-increment. Anything else means the
+    -- table holds rows this resource should not act on - treat the player as
+    -- unknown rather than writing a bad id into every table.
+    if uid <= 0 or uid ~= math.floor(uid) then
+        warn(("ignoring out-of-range user_id '%s' from %s"):format(
+            tostring(uid), Config.VRP.IdentifiersTable))
+        return nil
+    end
+
+    return uid
 end
 
 --- Cached per source. Cleared on drop.
