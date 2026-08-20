@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>m5_suspicious</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============================================================
+     Alerts - always mounted, never takes NUI focus
+     ============================================================ -->
+<div id="alerts" class="alerts"></div>
+
+<!-- ============================================================
+     Admin panel
+     ============================================================ -->
+<div id="panel" class="panel-wrap hidden">
+    <div class="panel">
+
+        <header class="panel-head">
+            <div class="brand">
+                <span class="brand-mark">M5</span>
+                <div class="brand-text">
+                    <h1 id="t-title">Suspicious Players</h1>
+                    <p id="t-subtitle" class="muted"></p>
+                </div>
+            </div>
+
+            <div class="head-tools">
+                <div class="search">
+                    <svg viewBox="0 0 24 24" class="ico"><path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm8.7 14.3-3.4-3.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    <input id="search" type="text" autocomplete="off">
+                </div>
+                <button id="btn-refresh" class="btn btn-ghost" title="Refresh">
+                    <svg viewBox="0 0 24 24" class="ico"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button id="btn-close" class="btn btn-ghost" title="Close">
+                    <svg viewBox="0 0 24 24" class="ico"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="filters" id="filters"></div>
+
+        <div class="panel-body">
+            <!-- list -->
+            <aside class="list-col">
+                <div id="list" class="list"></div>
+                <div class="pager">
+                    <button id="page-prev" class="btn btn-ghost btn-sm">‹</button>
+                    <span id="page-label" class="muted mono"></span>
+                    <button id="page-next" class="btn btn-ghost btn-sm">›</button>
+                </div>
+            </aside>
+
+            <!-- detail -->
+            <section id="detail" class="detail">
+                <div id="detail-empty" class="detail-empty">
+                    <div class="empty-mark">M5</div>
+                    <p id="t-empty" class="muted"></p>
+                </div>
+                <div id="detail-body" class="hidden"></div>
+            </section>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     Confirm / reason modal
+     ============================================================ -->
+<div id="modal" class="modal-wrap hidden">
+    <div class="modal">
+        <h2 id="modal-title"></h2>
+        <p id="modal-target" class="muted"></p>
+
+        <label id="t-reason-label" class="field-label"></label>
+        <input id="modal-reason" type="text" maxlength="200" autocomplete="off">
+
+        <label id="t-duration-label" class="field-label"></label>
+        <div id="modal-durations" class="chips"></div>
+
+        <div class="modal-actions">
+            <button id="modal-cancel" class="btn btn-ghost"></button>
+            <button id="modal-confirm" class="btn btn-danger"></button>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
