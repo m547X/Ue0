@@ -439,6 +439,12 @@ function IPIntel.lookup(ip)
         if data.status == "ok" and type(entry) == "table" then
             out.vpn = (entry.proxy == "yes" or (Config.VPN.FlagHosting and entry.type == "Hosting")) and 1 or 0
             out.country, out.region, out.city, out.isp = entry.country, entry.region, entry.city, entry.provider
+        else
+            -- "denied" = bad key or quota exhausted, "error" = malformed query.
+            -- Surface it: silently scoring every player as "unknown" hides a
+            -- broken key for weeks.
+            warn(("proxycheck returned status '%s'%s - check Config.VPN.ApiKey"):format(
+                tostring(data.status), data.message and (": " .. tostring(data.message)) or ""))
         end
     elseif provider == "vpnapi" then
         local sec, loc = data.security, data.location
