@@ -70,6 +70,7 @@ const S = {
   store: null, storeTab: 'cards',
   hud: null, hudTime: 0,
   matchInfo: null, sbOpen: false, dmgTimer: 0,
+  brand: null,
   training: null
 };
 
@@ -202,8 +203,33 @@ function applyLanguage(lang) {
   if (changed) redrawForLanguage();
 
   // pages carry translated titles too
-  const title = document.querySelector('.hd-title');
-  if (title) title.textContent = tx(PAGE_TITLES[S.page] || 'MATCHMAKING');
+  renderHeadTitle();
+}
+
+/** The server name, then the line under it. Config.Brand.subtitle pins that
+ *  line (the reference keeps it on MATCHMAKING); empty means follow the page. */
+function renderBrand(brand) {
+  if (brand) S.brand = brand;
+  const b = S.brand || {};
+  const name = $('hd-name');
+  if (!name) return;
+
+  if (b.enabled === false) {
+    name.classList.add('hidden');
+  } else {
+    name.classList.remove('hidden');
+    $('hd-name-a').textContent = b.name || '';
+    $('hd-name-b').textContent = b.accent || '';
+    $('hd-name-b').classList.toggle('hidden', !b.accent);
+  }
+  renderHeadTitle();
+}
+
+function renderHeadTitle() {
+  const node = $('hd-title');
+  if (!node) return;
+  const pinned = S.brand && S.brand.subtitle;
+  node.textContent = tx(pinned || PAGE_TITLES[S.page] || 'MATCHMAKING');
 }
 
 /** Rebuilds every rendered surface so a language switch reaches all of it. */
@@ -335,10 +361,14 @@ document.addEventListener('click', () => {
 });
 
 /* ---------------------------------------------------------------- routing */
+/* Used for the line under the server name when Config.Brand.subtitle is empty.
+   Several pages used to share MATCHMAKING and `store` was missing entirely,
+   so the line said the wrong thing on half the hub. */
 const PAGE_TITLES = {
-  ranked: 'MATCHMAKING', leaderboard: 'MATCHMAKING', custom: 'MATCHMAKING',
+  ranked: 'MATCHMAKING', leaderboard: 'LEADERBOARD', custom: 'CUSTOM MATCH',
   profile: 'PROFILE', history: 'MATCH HISTORY', rewards: 'REWARDS',
-  training: 'TRAINING', settings: 'SETTINGS', admin: 'ADMIN CONTROL'
+  training: 'TRAINING', store: 'STORE', settings: 'SETTINGS',
+  admin: 'ADMIN CONTROL'
 };
 
 function showPage(page) {
@@ -349,7 +379,7 @@ function showPage(page) {
   document.querySelectorAll('.ft .tab').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
   $('btn-settings').classList.toggle('on', page === 'settings');
 
-  document.querySelector('.hd-title').textContent = tx(PAGE_TITLES[page] || 'MATCHMAKING');
+  renderHeadTitle();
   $('btn-start').classList.toggle('hidden', page !== 'ranked');
   $('mode-tabs').classList.toggle('hidden', page !== 'ranked');
   $('btn-back').classList.toggle('hidden', !(page === 'custom' && S.room));
@@ -2111,6 +2141,7 @@ window.addEventListener('message', (e) => {
     case 'open':
       if (!Object.keys(S.settings).length) loadSettings();
       if (d.theme) applyTheme(d.theme);
+      if (d.brand) renderBrand(d.brand);
       // Locale.lua arrives with every open: it carries the string table, the
       // language list and which way the text reads.
       if (d.locale) {

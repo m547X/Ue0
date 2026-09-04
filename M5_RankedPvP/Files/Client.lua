@@ -501,7 +501,7 @@ RegisterNetEvent('m5rp:cl:matchFound', function(payload)
             -- the accept popup needs focus even if the hub was closed
             State.menuOpen = true
             setFocus(true)
-            nui({ action = 'open', page = 'ranked', theme = Config.UI, sounds = Config.Sounds,
+            nui({ action = 'open', page = 'ranked', theme = Config.UI, brand = Config.Brand, sounds = Config.Sounds,
                   text = L, locale = localePayload(), defaults = Config.DefaultSettings,
                   silent = true })
         end
@@ -514,7 +514,7 @@ RegisterNetEvent('m5rp:cl:mapVote', function(payload)
     if payload and payload.options and not State.menuOpen then
         State.menuOpen = true
         setFocus(true)
-        nui({ action = 'open', page = 'ranked', theme = Config.UI, sounds = Config.Sounds,
+        nui({ action = 'open', page = 'ranked', theme = Config.UI, brand = Config.Brand, sounds = Config.Sounds,
               text = L, locale = localePayload(), defaults = Config.DefaultSettings,
               silent = true })
     end

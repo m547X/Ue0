@@ -180,6 +180,26 @@ Config.Timing = {
 }
 
 -- ============================================================================
+-- 3b. BRAND — the name shown at the top of the hub
+-- ============================================================================
+--
+-- Drawn above the page title, exactly where "FUTURE RP / MATCHMAKING" sits in
+-- the reference. `name` is plain and `accent` is tinted with your accent
+-- colour, so "FUTURE" + "RP" reads as one name in two tones.
+--
+Config.Brand = {
+    enabled = true,
+
+    name   = 'FUTURE',   -- plain half
+    accent = 'RP',       -- tinted half; set to '' for a single-colour name
+
+    -- The small line underneath. Leave it as it is to always read
+    -- MATCHMAKING like the reference, or set it to '' to show the name of the
+    -- page you are on instead (LEADERBOARD, STORE, ...).
+    subtitle = 'MATCHMAKING'
+}
+
+-- ============================================================================
 -- 4. UI / THEME
 -- ============================================================================
 
