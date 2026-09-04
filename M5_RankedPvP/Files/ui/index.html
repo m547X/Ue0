@@ -91,7 +91,7 @@
         <div class="hud-scores">
           <span id="hud-score-a">0</span><i></i><span id="hud-score-b">0</span>
         </div>
-        <div class="hud-timer" id="hud-timer">0:00</div>
+        <div class="hud-timer" id="hud-timer"><b id="hud-clock">0:00</b></div>
       </div>
       <div class="hud-side b">
         <div class="hud-team">
@@ -106,6 +106,7 @@
     <div class="hud-sub">
       <span id="hud-round">ROUND 1</span><em></em>
       <span id="hud-ping">0 ms</span>
+      <span class="hud-flag hidden" id="hud-flag">MATCH POINT</span>
     </div>
     <div class="hud-bottom">
       <div class="hud-vitals">
@@ -129,13 +130,16 @@
   <div id="scoreboard" class="scoreboard hidden">
     <div class="sb-shell">
       <div class="sb-head">
-        <div class="sb-title"><span id="sb-mode">RANKED</span><em id="sb-map"></em></div>
+        <div class="sb-title">
+          <span class="sb-mode" id="sb-mode">RANKED</span>
+          <em id="sb-map"></em>
+        </div>
         <div class="sb-score"><b id="sb-score-a">0</b><i></i><b id="sb-score-b">0</b></div>
         <div class="sb-round" id="sb-round">ROUND 1</div>
       </div>
       <div class="sb-teams">
         <div class="sb-team a">
-          <div class="sb-team-head"><span id="sb-team-a">TEAM A</span><em id="sb-alive-a">0 ALIVE</em></div>
+          <div class="sb-team-head"><i class="sb-dot"></i><span id="sb-team-a">TEAM A</span><em id="sb-alive-a">0 ALIVE</em></div>
           <div class="sb-cols">
             <span class="grow" data-i18n="PLAYER">PLAYER</span>
             <span data-i18n="K">K</span><span data-i18n="D">D</span><span data-i18n="A">A</span>
@@ -144,7 +148,7 @@
           <div class="sb-rows" id="sb-rows-a"></div>
         </div>
         <div class="sb-team b">
-          <div class="sb-team-head"><span id="sb-team-b">TEAM B</span><em id="sb-alive-b">0 ALIVE</em></div>
+          <div class="sb-team-head"><i class="sb-dot"></i><span id="sb-team-b">TEAM B</span><em id="sb-alive-b">0 ALIVE</em></div>
           <div class="sb-cols">
             <span class="grow" data-i18n="PLAYER">PLAYER</span>
             <span data-i18n="K">K</span><span data-i18n="D">D</span><span data-i18n="A">A</span>
@@ -153,7 +157,7 @@
           <div class="sb-rows" id="sb-rows-b"></div>
         </div>
       </div>
-      <div class="sb-foot"><span id="sb-hint">HOLD TAB</span></div>
+      <div class="sb-foot"><span class="keycap" id="sb-hint">HOLD TAB</span></div>
     </div>
   </div>
 
@@ -173,9 +177,25 @@
 
   <div id="killfeed" class="killfeed"></div>
 
+  <!-- Round countdown, and the round result that replaces it between rounds -->
   <div id="phase" class="phase hidden">
-    <div class="phase-count" id="phase-count">3</div>
-    <div class="phase-label" id="phase-label"></div>
+    <div class="ph-round" id="phase-round"></div>
+
+    <div class="ph-dial" id="phase-dial">
+      <svg class="ph-ring" viewBox="0 0 120 120">
+        <circle class="ph-track" cx="60" cy="60" r="53"/>
+        <circle class="ph-arc" id="phase-arc" cx="60" cy="60" r="53"/>
+      </svg>
+      <div class="ph-num" id="phase-count">3</div>
+    </div>
+
+    <div class="ph-word hidden" id="phase-word"></div>
+
+    <div class="ph-label" id="phase-label"></div>
+
+    <div class="ph-score hidden" id="phase-score">
+      <b class="a" id="phase-score-a">0</b><i></i><b class="b" id="phase-score-b">0</b>
+    </div>
   </div>
 
   <div id="combat-banner" class="combat-banner hidden"><span id="combat-banner-text"></span></div>

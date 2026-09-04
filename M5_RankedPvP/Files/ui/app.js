@@ -1819,6 +1819,13 @@ function renderHud(d) {
     $('hud-pips').style.display = 'none';
   }
 
+  // one round from taking the match — worth calling out on the HUD
+  const point = need > 0 && !d.ffa
+             && (d.scores.a === need - 1 || d.scores.b === need - 1);
+  const flag = $('hud-flag');
+  flag.textContent = tx('MATCH POINT');
+  flag.classList.toggle('hidden', !point);
+
   const board = d.scoreboard || [];
   const meId  = S.boot && S.boot.player && S.boot.player.userId;
   renderFaces('hud-faces-a', board.filter((p) => p.team === 1), meId);
@@ -1852,9 +1859,10 @@ function renderScoreboard() {
   $('sb-alive-a').textContent = `${d.aliveA} ${tx('ALIVE')}`;
   $('sb-alive-b').textContent = `${d.aliveB} ${tx('ALIVE')}`;
 
-  const row = (p) => {
+  const row = (p, top) => {
     const cls = (p.connected === false ? ' gone' : (p.alive === false ? ' dead' : ''))
-              + (p.userId === meId ? ' me' : '');
+              + (p.userId === meId ? ' me' : '')
+              + (top ? ' top' : '');
     return `<div class="sb-row${cls}">
       <span class="sb-who">
         ${avatarCell(p, 'sb-av')}
@@ -1872,7 +1880,9 @@ function renderScoreboard() {
   const side = (team) => {
     const rows = board.filter((p) => p.team === team)
                       .sort((a, b) => (b.score || 0) - (a.score || 0));
-    return rows.length ? rows.map(row).join('')
+    // the top of a sorted side leads it, but only once someone has scored
+    const lead = rows.length && (rows[0].score || 0) > 0 ? rows[0] : null;
+    return rows.length ? rows.map((p) => row(p, p === lead)).join('')
                        : `<div class="sb-empty">${esc(tx('NO PLAYERS'))}</div>`;
   };
 
@@ -1888,9 +1898,8 @@ function toggleScoreboard(show) {
   else n.classList.add('hidden');
 }
 function updateTimer() {
-  const n = $('hud-timer');
-  n.textContent = clock(S.hudTime);
-  n.classList.toggle('low', S.hudTime <= 15 && S.hudTime > 0);
+  $('hud-clock').textContent = clock(S.hudTime);
+  $('hud-timer').classList.toggle('low', S.hudTime <= 15 && S.hudTime > 0);
 }
 function renderLocalHud(d) {
   if (!d) return;
@@ -1950,38 +1959,109 @@ function showEvent(d) {
   else if (d.type === 'AFK_WARNING') Sfx.play('warning');
 }
 
+/* circumference of the countdown dial (2πr, r=53 in the SVG viewBox) */
+const PH_CIRC = 333;
+
+/* Puts the phase block back to its neutral state. Every branch below starts
+   here, so nothing from the previous round can leak into the next one. */
+function phaseReset() {
+  clearInterval(renderRound._t);
+  clearTimeout(renderRound._h);
+  const phase = $('phase');
+  phase.classList.remove('go', 'last');
+  $('phase-dial').classList.remove('hidden');
+  $('phase-word').classList.add('hidden');
+  $('phase-score').classList.add('hidden');
+  $('phase-round').textContent = '';
+  $('phase-label').textContent = '';
+  const num = $('phase-count');
+  num.classList.remove('go', 'tick');
+  const arc = $('phase-arc');
+  arc.classList.remove('run');
+  arc.style.strokeDashoffset = '0';
+}
+
+/* Restarts a CSS animation that is already on the element. Re-adding the class
+   in the same frame is a no-op unless the layout is read in between. */
+function replay(node, cls) {
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+}
+
 function renderRound(d) {
   if (!d) return;
   const phase = $('phase');
+
   if (d.phase === 'countdown') {
-    let n = d.seconds || 3;
+    phaseReset();
     phase.classList.remove('hidden');
-    $('phase-label').textContent = `ROUND ${d.round}`;
+    $('phase-round').textContent = `${tx('ROUND')} ${d.round}`;
+    $('phase-label').textContent = tx('GET READY');
+
+    const num = $('phase-count');
+    const arc = $('phase-arc');
+    let n = d.seconds || 3;
+
     const step = () => {
-      const node = $('phase-count');
-      if (n > 0) { node.textContent = n; node.classList.remove('go'); Sfx.play('tick'); }
-      else {
-        node.textContent = 'GO'; node.classList.add('go'); Sfx.play('go');
-        setTimeout(() => phase.classList.add('hidden'), 900);
+      if (n > 0) {
+        // the final second turns the whole dial gold
+        phase.classList.toggle('last', n === 1);
+        num.textContent = n;
+        num.classList.remove('go');
+        replay(num, 'tick');
+        // drain the ring over the second this number is up
+        arc.classList.remove('run');
+        arc.style.strokeDashoffset = '0';
+        void arc.getBoundingClientRect();
+        arc.classList.add('run');
+        arc.style.strokeDashoffset = String(PH_CIRC);
+        Sfx.play('tick');
+      } else {
         clearInterval(renderRound._t);
+        phase.classList.remove('last');
+        phase.classList.add('go');
+        num.textContent = tx('GO');
+        num.classList.add('go');
+        replay(num, 'tick');
+        // ring snaps closed behind the word
+        arc.classList.remove('run');
+        arc.style.strokeDashoffset = '0';
+        $('phase-label').textContent = '';
+        Sfx.play('go');
+        renderRound._h = setTimeout(() => phase.classList.add('hidden'), 950);
       }
       n -= 1;
     };
-    clearInterval(renderRound._t); step();
+    step();
     renderRound._t = setInterval(step, 1000);
 
   } else if (d.phase === 'end') {
+    phaseReset();
     phase.classList.remove('hidden');
-    const won = d.winner === d.myTeam;
-    const node = $('phase-count');
-    node.textContent = d.winner === 0 ? 'DRAW' : (won ? 'ROUND WON' : 'ROUND LOST');
-    node.style.fontSize = '54px';
-    node.classList.toggle('go', won);
-    $('phase-label').textContent = `${d.scores.a} — ${d.scores.b}`;
+    $('phase-dial').classList.add('hidden');
+
+    const draw = !d.winner || d.winner === 0;
+    const won  = !draw && d.winner === d.myTeam;
+    const word = $('phase-word');
+    word.textContent = draw ? tx('DRAW') : (won ? tx('ROUND WON') : tx('ROUND LOST'));
+    word.className = 'ph-word ' + (draw ? 'draw' : (won ? 'win' : 'loss'))
+                   + (word.textContent.length > 6 ? ' long' : '');
+
+    $('phase-round').textContent = `${tx('ROUND')} ${d.round}`;
+    if (d.reason && d.reason !== 'DRAW') $('phase-label').textContent = tx(d.reason);
+
+    // Lua's {[1]=x,[2]=y} arrives as {"1":x,"2":y}; accept both shapes
+    const sc = d.scores || {};
+    $('phase-score-a').textContent = (sc.a !== undefined) ? sc.a : (sc['1'] || 0);
+    $('phase-score-b').textContent = (sc.b !== undefined) ? sc.b : (sc['2'] || 0);
+    $('phase-score').classList.remove('hidden');
+
     Sfx.play(won ? 'roundwin' : 'roundloss');
-    setTimeout(() => { phase.classList.add('hidden'); node.style.fontSize = ''; }, 4200);
+    renderRound._h = setTimeout(() => phase.classList.add('hidden'), 4200);
 
   } else if (d.phase === 'live') {
+    phaseReset();
     phase.classList.add('hidden');
   }
 }
