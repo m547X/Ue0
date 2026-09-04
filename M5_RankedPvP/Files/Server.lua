@@ -618,6 +618,29 @@ local SCHEMA = {
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_pen_user` (`user_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
+-- Store wallet and equipped cosmetics. Kept in its own table rather than as
+-- columns on m5_players, because the schema is created with CREATE TABLE IF
+-- NOT EXISTS — adding columns to a table that already exists would need an
+-- ALTER that never runs on a live server.
+[[CREATE TABLE IF NOT EXISTS `m5_player_store` (
+  `user_id` INT UNSIGNED NOT NULL,
+  `coins` BIGINT NOT NULL DEFAULT 0,
+  `card` VARCHAR(48) NOT NULL DEFAULT 'default',
+  `title` VARCHAR(48) NOT NULL DEFAULT 'none',
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
+[[CREATE TABLE IF NOT EXISTS `m5_player_items` (
+  `user_id` INT UNSIGNED NOT NULL,
+  `kind` VARCHAR(16) NOT NULL,
+  `item_id` VARCHAR(48) NOT NULL,
+  `price_paid` INT NOT NULL DEFAULT 0,
+  `acquired_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`,`kind`,`item_id`),
+  KEY `idx_items_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]]
 }
 
@@ -5863,6 +5886,186 @@ function BotMatch.tick()
 end
 
 -- ============================================================================
+-- 15c. STORE — cards and titles
+-- ============================================================================
+--
+-- Cosmetics only: a card is the banner behind the lobby slot, a title is a
+-- word beside the name. Neither touches gameplay.
+--
+-- Prices, ownership and the balance live here. The client sends nothing but
+-- "buy this id" / "equip this id" — it never sends a price, never sends a
+-- balance, and cannot equip something it does not own.
+
+local Store = { cache = {} }   -- [userId] = { coins, card, title, owned = { kind = {id=true} } }
+
+local CardById, TitleById = {}, {}
+for _, c in ipairs(Config.Store.cards  or {}) do CardById[c.id]  = c end
+for _, t in ipairs(Config.Store.titles or {}) do TitleById[t.id] = t end
+
+local function storeDef(kind, id)
+    if kind == 'card'  then return CardById[id]  end
+    if kind == 'title' then return TitleById[id] end
+    return nil
+end
+
+local function storeList(kind)
+    return kind == 'card' and (Config.Store.cards or {}) or (Config.Store.titles or {})
+end
+
+--- Anything priced at 0, and anything flagged default, belongs to everyone.
+local function isFree(def)
+    return def and (def.default == true or (tonumber(def.price) or 0) <= 0)
+end
+
+function Store.load(userId)
+    if Store.cache[userId] then return Store.cache[userId] end
+
+    local row = DB.single('SELECT coins, card, title FROM m5_player_store WHERE user_id = ?',
+        { userId })
+    if not row then
+        DB.insert('INSERT IGNORE INTO m5_player_store (user_id, coins) VALUES (?, ?)',
+            { userId, Config.Store.currency.starting or 0 })
+        row = { coins = Config.Store.currency.starting or 0, card = 'default', title = 'none' }
+    end
+
+    local owned = { card = {}, title = {} }
+    local rows = DB.query('SELECT kind, item_id FROM m5_player_items WHERE user_id = ?',
+        { userId }) or {}
+    for i = 1, #rows do
+        local k = tostring(rows[i].kind)
+        if owned[k] then owned[k][tostring(rows[i].item_id)] = true end
+    end
+
+    -- free items are never written to the table; they are simply always owned
+    for _, kind in ipairs({ 'card', 'title' }) do
+        for _, def in ipairs(storeList(kind)) do
+            if isFree(def) then owned[kind][def.id] = true end
+        end
+    end
+
+    local data = {
+        coins = math.max(0, tonumber(row.coins) or 0),
+        card  = CardById[row.card] and row.card or 'default',
+        title = TitleById[row.title] and row.title or 'none',
+        owned = owned
+    }
+    Store.cache[userId] = data
+    return data
+end
+
+function Store.forget(userId)
+    Store.cache[userId] = nil
+end
+
+--- The payload the Store page renders from. Prices come from here, never from
+--- the client, and `owned` is what decides whether BUY or EQUIP is shown.
+function Store.payload(userId)
+    local d = Store.load(userId)
+
+    local function pack(kind)
+        local out = {}
+        for _, def in ipairs(storeList(kind)) do
+            local rarity = Config.Store.rarities[def.rarity or 'common']
+                        or Config.Store.rarities.common
+            out[#out + 1] = {
+                id = def.id, name = def.name,
+                rarity = def.rarity or 'common',
+                rarityLabel = rarity and rarity.label or 'COMMON',
+                rarityColor = rarity and rarity.color or '#8B93A3',
+                price = tonumber(def.price) or 0,
+                image = def.image or '',
+                color = def.color,
+                owned = d.owned[kind][def.id] == true,
+                equipped = (kind == 'card' and d.card or d.title) == def.id
+            }
+        end
+        return out
+    end
+
+    return {
+        enabled  = Config.Store.enabled,
+        currency = Config.Store.currency.label or 'COINS',
+        coins    = d.coins,
+        cards    = pack('card'),
+        titles   = pack('title')
+    }
+end
+
+--- Writes the wallet and the equipped pair. Small and rare, so it goes
+--- straight through rather than waiting for the batch flush.
+local function storeSave(userId)
+    local d = Store.cache[userId]
+    if not d then return end
+    DB.write([[INSERT INTO m5_player_store (user_id, coins, card, title)
+               VALUES (?,?,?,?)
+               ON DUPLICATE KEY UPDATE coins = VALUES(coins),
+                                       card = VALUES(card), title = VALUES(title)]],
+        { userId, d.coins, d.card, d.title })
+end
+
+--- Adds (or removes, with a negative amount) coins. Returns the new balance.
+function Store.addCoins(userId, amount)
+    local d = Store.load(userId)
+    local max = Config.Store.currency.max or 10000000
+    d.coins = clamp(math.floor(d.coins + (tonumber(amount) or 0)), 0, max)
+    storeSave(userId)
+    return d.coins
+end
+
+function Store.buy(userId, kind, id)
+    if not Config.Store.enabled then return false, 'The store is closed.' end
+    if kind ~= 'card' and kind ~= 'title' then return false, 'Unknown item.' end
+
+    local def = storeDef(kind, id)
+    if not def then return false, 'Unknown item.' end
+
+    local d = Store.load(userId)
+    if d.owned[kind][id] then return false, 'You already own that.' end
+
+    local price = tonumber(def.price) or 0
+    if price <= 0 then return false, 'Unknown item.' end
+    if d.coins < price then return false, 'Not enough coins.' end
+
+    d.coins = d.coins - price
+    d.owned[kind][id] = true
+
+    DB.write([[INSERT IGNORE INTO m5_player_items (user_id, kind, item_id, price_paid)
+               VALUES (?,?,?,?)]], { userId, kind, id, price })
+    storeSave(userId)
+
+    log('store: user %d bought %s "%s" for %d', userId, kind, id, price)
+    return true, { coins = d.coins, kind = kind, id = id }
+end
+
+function Store.equip(userId, kind, id)
+    if kind ~= 'card' and kind ~= 'title' then return false, 'Unknown item.' end
+
+    local def = storeDef(kind, id)
+    if not def then return false, 'Unknown item.' end
+
+    local d = Store.load(userId)
+    if not d.owned[kind][id] then return false, 'You do not own that.' end
+
+    if kind == 'card' then d.card = id else d.title = id end
+    storeSave(userId)
+    return true, { kind = kind, id = id }
+end
+
+--- What other players see: the equipped cosmetics, resolved for display.
+function Store.cosmetics(userId)
+    local d = Store.cache[userId]
+    if not d then return nil end
+    local card  = CardById[d.card]
+    local title = TitleById[d.title]
+    return {
+        card      = d.card,
+        cardImage = card and card.image or '',
+        title     = (title and title.id ~= 'none') and title.name or nil,
+        titleColor= title and title.color or nil
+    }
+end
+
+-- ============================================================================
 -- 16. REWARDS / XP / MISSIONS / ACHIEVEMENTS
 -- ============================================================================
 
@@ -7239,6 +7442,35 @@ function Admin.handle(adminPd, action, data)
             return { rank = rank.name, rp = pd.rp }
         end)
 
+    elseif action == 'giveCoins' or action == 'takeCoins' then
+        local id, who = target()
+        local amount = math.floor(tonumber(data.amount) or 0)
+        if not id then return false, 'No player with that ID.' end
+        if amount <= 0 then return false, 'Enter an amount.' end
+
+        local cap = Config.AdminLimits.maxCoinGrant or 100000
+        if amount > cap then
+            return false, _Lf('Maximum is %d coins per action.', cap)
+        end
+
+        local delta = (action == 'giveCoins') and amount or -amount
+        local before = Store.load(id).coins
+        local after  = Store.addCoins(id, delta)
+
+        Admin.audit(adminPd, action, who,
+            { before = before, after = after, amount = delta, reason = reason })
+        notifyUser(id, action == 'giveCoins' and 'success' or 'warning',
+            '%s%d coins — %s', 'STORE',
+            delta > 0 and '+' or '', math.abs(delta), reason)
+
+        -- push the new balance so the store updates without a reconnect
+        local s2 = srcOf(id)
+        if s2 then
+            TriggerClientEvent('m5rp:cl:data', s2, { what = 'store', store = Store.payload(id) })
+        end
+        Player.pushUpdate(id)
+        return true, { coins = after, delta = delta }
+
     elseif action == 'addXP' then
         local id, who = target()
         local amount = math.floor(tonumber(data.amount) or 0)
@@ -7536,7 +7768,9 @@ function Server_BootPayload(pd)
             activeTitle = pd.activeTitle,
             frame     = pd.frame,
             settings  = pd.settings,
-            position  = Board.myPosition(pd.userId)
+            position  = Board.myPosition(pd.userId),
+            coins     = Store.load(pd.userId).coins,
+            cosmetics = Store.cosmetics(pd.userId)
         },
         stats   = Board.profile(pd.userId, showMMR),
         ranks   = rankTableForClient(),
@@ -7728,6 +7962,37 @@ RegisterNetEvent('m5rp:sv:bot', function(action, data)
     end
 end)
 
+--- Store. The client sends an id and nothing else: the price, the balance and
+--- whether the item is owned are all resolved here.
+RegisterNetEvent('m5rp:sv:store', function(action, kind, id)
+    local pd, src = caller('default')
+    if not pd then return end
+
+    action = tostring(action or '')
+    kind   = tostring(kind or '')
+    id     = tostring(id or '')
+
+    local ok, res
+    if action == 'buy' then
+        ok, res = Store.buy(pd.userId, kind, id)
+        if ok then
+            notify(src, 'success', 'Purchase complete.', 'STORE')
+        else
+            notify(src, 'error', res, 'STORE')
+        end
+    elseif action == 'equip' then
+        ok, res = Store.equip(pd.userId, kind, id)
+        if not ok then notify(src, 'error', res, 'STORE') end
+    else
+        return
+    end
+
+    -- always answer with the authoritative state, successful or not
+    TriggerClientEvent('m5rp:cl:data', src, {
+        what = 'store', store = Store.payload(pd.userId) })
+    if ok then Player.pushUpdate(pd.userId) end
+end)
+
 --- Activity heartbeat used by the AFK detector.
 RegisterNetEvent('m5rp:sv:activity', function()
     local src = source
@@ -7795,6 +8060,10 @@ RegisterNetEvent('m5rp:sv:fetch', function(what, data)
             achievements = Achievements.list(pd.userId),
             season = Config.Rewards.season
         })
+
+    elseif what == 'store' then
+        TriggerClientEvent('m5rp:cl:data', src, {
+            what = 'store', store = Store.payload(pd.userId) })
 
     elseif what == 'liveMatches' then
         TriggerClientEvent('m5rp:cl:data', src, { what = 'liveMatches', rows = Board.liveMatches() })
@@ -8195,6 +8464,7 @@ AddEventHandler('vRP:playerLeave', function(user_id, source)
     if CustomGames.of(user_id) then CustomGames.leave(user_id) end
     if Training.players[user_id] then Training.stop(user_id) end
     if BotMatch.sessions[user_id] then BotMatch.stop(user_id, 'disconnected') end
+    Store.forget(user_id)
 
     SrcToUser[pd.source or source] = nil
     UserToSrc[user_id] = nil

@@ -1,38 +1,48 @@
 /* ==========================================================================
    M5 Ranked PvP — NUI stylesheet
-   Centered window (never full bleed), near-black surfaces, thin red edges,
-   soft rounded corners and a single red accent.
+   Centered window (never full bleed), deep blue-black surfaces, thin lit
+   edges and a single accent. The --red-* names are historical: they are the
+   accent, whatever colour Config.UI.colors sets it to.
    ========================================================================== */
 
 :root{
   /* Defaults only — Config.UI.colors overrides every one of these at runtime. */
-  --bg:#0A0A0D;
-  --panel:#0E0E12;
-  --panel-2:#121218;
-  --panel-3:#17171E;
-  --panel-deep:#08080B;
-  --avatar-from:#5865F2;
-  --avatar-to:#3C45C4;
-  --red-3:#FF7A88;      /* light tip of accent gradients */
+  --bg:#080B10;
+  --panel:#0D131B;
+  --panel-2:#121A24;
+  --panel-3:#18222E;
+  --panel-deep:#070A0F;
+  --avatar-from:#2E9BE6;
+  --avatar-to:#1B6FB0;
+  --red-3:#7FD0FF;      /* light tip of accent gradients */
   --win-2:#8CF5CE;      /* light tip of the health bar */
-  --level:#7B4BFF;      /* level badge */
-  --ok:#2FBF4E;         /* leader star */
-  --edge:rgba(255,60,74,.22);
+  --level:#2E9BE6;      /* level badge */
+  --ok:#F5C542;         /* leader crown */
+  --edge:rgba(70,150,220,.24);
   --edge-soft:rgba(255,255,255,.07);
-  --text:#F2F3F5;
-  --dim:#8B8F98;
-  --dim-2:#5A5E67;
+  --text:#EAF1F8;
+  --dim:#8FA0B4;
+  --dim-2:#5C6B7D;
 
-  --red:#FF2E45;
-  --red-2:#C81028;
-  --red-soft:rgba(255,46,69,.16);
-  --red-glow:rgba(255,46,69,.42);
+  --red:#2E9BE6;
+  /* the accent as a bare triplet, so a translucent tint of it can be written
+     as rgba(var(--red-rgb), .2) and still follow Config.UI.colors */
+  --red-rgb:46,155,230;
+  --red-2:#1B6FB0;
+  --red-soft:rgba(46,155,230,.16);
+  --red-glow:rgba(46,155,230,.45);
 
   --win:#2FDD9B;
   --lose:#FF3B4E;
-  --gold:#FFC24A;
-  --team-a:#2ED9C3;
+  --gold:#F5C542;
+  --team-a:#3FA9FF;
   --team-b:#FF4757;
+
+  /* store rarities */
+  --rar-common:#8B93A3;
+  --rar-rare:#3FA9FF;
+  --rar-epic:#C158FF;
+  --rar-legendary:#F5C542;
 
   --r:10px;
   --f:'Rajdhani','Bahnschrift','DIN Alternate','Segoe UI',system-ui,sans-serif;
@@ -186,7 +196,7 @@ html[dir="rtl"] .vital span{text-align:left}
 /* ---------- kill feed ---------- */
 /* red vignette pulse when you take a hit */
 .dmg-flash{position:absolute;inset:0;pointer-events:none;opacity:0;
-  background:radial-gradient(ellipse at center,transparent 52%,rgba(255,46,69,.55) 100%);
+  background:radial-gradient(ellipse at center,transparent 52%,rgba(var(--red-rgb),.55) 100%);
   transition:opacity .22s ease-out}
 .dmg-flash.on{opacity:1;transition:opacity .05s ease-in}
 
@@ -207,6 +217,59 @@ html[dir="rtl"] .vital span{text-align:left}
   text-shadow:0 2px 8px #000;white-space:nowrap}
 .sr-key{font-variant-numeric:tabular-nums}
 html[dir="rtl"] .sr-text{letter-spacing:normal}
+
+/* ---------- STORE ---------- */
+.store-head{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:0 0 14px;border-bottom:1px solid var(--edge-soft);margin-bottom:12px}
+.store-title{display:flex;align-items:center;gap:12px;min-width:0}
+.store-title svg{width:22px;height:22px;color:var(--red);flex:none}
+.store-title b{display:block;font-size:17px;font-weight:700;letter-spacing:.16em}
+.store-title span{display:block;font-size:11px;color:var(--dim-2);margin-top:2px}
+.wallet{display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:10px;
+  background:var(--red-soft);border:1px solid var(--edge);flex:none}
+.wallet svg{width:15px;height:15px;color:var(--gold)}
+.wallet b{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+
+.store-tabs{display:flex;gap:8px;margin-bottom:14px}
+.stab{padding:9px 26px;border-radius:10px 10px 0 0;font-size:12px;font-weight:700;
+  letter-spacing:.14em;color:var(--dim);background:var(--panel-2);
+  border:1px solid var(--edge-soft);border-bottom:0;transition:.15s var(--ease)}
+.stab:hover{color:var(--text)}
+.stab.active{color:#fff;background:linear-gradient(180deg,var(--red),var(--red-2));
+  border-color:transparent}
+
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(146px,1fr));gap:12px}
+.title-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+
+.sitem{position:relative;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;
+  background:linear-gradient(180deg,var(--panel-2),var(--panel));
+  border:1px solid var(--edge-soft);transition:.18s var(--ease)}
+.sitem:hover{transform:translateY(-3px);border-color:var(--edge)}
+.sitem.on{border-color:var(--red);box-shadow:0 0 0 1px var(--red-soft)}
+/* the rarity tints the top rule, so a legendary reads at a glance */
+.sitem::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--rar-common)}
+.sitem.rare::before{background:var(--rar-rare)}
+.sitem.epic::before{background:var(--rar-epic)}
+.sitem.legendary::before{background:var(--rar-legendary)}
+
+.si-rar{position:absolute;top:8px;left:8px;z-index:2;font-size:8px;font-weight:700;
+  letter-spacing:.18em;padding:3px 7px;border-radius:5px;
+  background:rgba(0,0,0,.62);backdrop-filter:blur(2px)}
+
+.ci-art{position:relative;aspect-ratio:3/4;max-height:230px;background:var(--panel-deep);
+  background-size:cover;background-position:center;display:grid;place-items:center}
+.ci-blank{font-size:11px;letter-spacing:.16em;color:var(--dim-2);text-align:center;padding:0 12px}
+.ti-face{display:grid;place-items:center;min-height:74px;padding:22px 14px 12px;
+  font-size:19px;font-weight:700;letter-spacing:.12em;text-align:center;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.si-foot{display:flex;flex-direction:column;gap:9px;padding:11px 12px 12px}
+.si-name{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.si-btn{width:100%;justify-content:center;padding:9px 8px;font-size:11px;letter-spacing:.08em;white-space:nowrap}
+.si-btn svg{width:12px;height:12px;color:var(--gold)}
+.si-btn.poor{opacity:.45}
+.si-owned{padding:9px 10px;text-align:center;font-size:11px;font-weight:700;
+  letter-spacing:.14em;color:var(--dim);border:1px solid var(--edge-soft);border-radius:9px}
 
 /* ---------- SCOREBOARD (hold TAB) ---------- */
 .scoreboard{position:absolute;inset:0;display:grid;place-items:center;
@@ -267,7 +330,7 @@ html[dir="rtl"] .sb-team-head em{margin-left:0;margin-right:auto}
 .sb-team.b .sb-row::before{background:var(--team-b)}
 html[dir="rtl"] .sb-row::before{left:auto;right:0}
 .sb-row.me{background:linear-gradient(90deg,var(--red-soft),rgba(255,255,255,.02));
-  border-color:var(--red);box-shadow:0 0 0 1px rgba(255,46,69,.25)}
+  border-color:var(--red);box-shadow:0 0 0 1px rgba(var(--red-rgb),.25)}
 .sb-row.dead{opacity:.42}
 .sb-row.dead::before{background:var(--dim-2) !important}
 .sb-row.gone{opacity:.28;font-style:italic}
@@ -321,7 +384,7 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
 
 /* ---------- boundary ---------- */
 .boundary{position:absolute;inset:0}
-.boundary-frame{position:absolute;inset:0;border:13px solid rgba(255,46,69,.15);animation:blink 1s infinite}
+.boundary-frame{position:absolute;inset:0;border:13px solid rgba(var(--red-rgb),.15);animation:blink 1s infinite}
 .boundary-body{position:absolute;top:25%;left:50%;transform:translateX(-50%);text-align:center}
 .b-tag{font-size:13px;font-weight:700;letter-spacing:.5em;color:var(--red)}
 .b-title{margin-top:5px;font-size:35px;font-weight:700;letter-spacing:.1em}
@@ -618,7 +681,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
   height:min(880px,92vh);
   display:flex;flex-direction:column;
   background:
-    radial-gradient(120% 80% at 50% -10%,rgba(255,46,69,.07),transparent 60%),
+    radial-gradient(120% 80% at 50% -10%,rgba(var(--red-rgb),.07),transparent 60%),
     linear-gradient(180deg,var(--panel) 0%,var(--panel-deep) 100%);
   border:1px solid var(--edge);
   border-radius:calc(var(--r) + 4px);
@@ -674,27 +737,54 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .pg.active{opacity:1;pointer-events:auto;transform:none}
 .scroll{flex:1;min-height:0;overflow-y:auto;padding-right:6px}
 
-/* ---------- footer ---------- */
-.ft{display:flex;align-items:center;gap:8px;padding:12px 18px;
-  border-top:1px solid rgba(255,255,255,.05);background:rgba(0,0,0,.28)}
-.tab{position:relative;flex:1;display:flex;align-items:center;justify-content:center;gap:8px;height:44px;
-  border-radius:9px;overflow:hidden;
-  font-size:13px;font-weight:600;letter-spacing:.03em;color:var(--dim);
+/* ---------- footer ----------
+   Three zones: the modes on the left, the one action in the middle, the
+   navigation on the right. */
+.ft{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:14px;
+  padding:12px 18px;border-top:1px solid rgba(255,255,255,.05);background:rgba(0,0,0,.3)}
+
+/* Explicit columns. Hiding the button used to remove it from the grid, which
+   promoted the navigation into column 1 and parked it mid-footer. */
+.ft-modes{grid-column:1;display:flex;flex-wrap:wrap;gap:7px;justify-self:start}
+.ft-modes.hidden{display:none}
+
+/* the single call to action, sized so it is never mistaken for a tab */
+.findbtn{grid-column:2;display:flex;align-items:center;justify-content:center;gap:12px;
+  min-width:250px;height:58px;padding:0 30px;border-radius:11px;overflow:hidden;position:relative;
+  color:#fff;background:linear-gradient(180deg,var(--red),var(--red-2));
+  border:1px solid transparent;
+  box-shadow:0 14px 34px -16px var(--red-glow),inset 0 1px 0 rgba(255,255,255,.24);
+  transition:.16s var(--ease)}
+.findbtn::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.2),transparent 55%);pointer-events:none}
+.findbtn:hover{transform:translateY(-2px);filter:brightness(1.08)}
+.findbtn svg{width:18px;height:18px;flex:none}
+.fb-text{display:flex;flex-direction:column;align-items:flex-start;line-height:1.1}
+.fb-text b{font-size:16px;font-weight:700;letter-spacing:.14em}
+.fb-text em{font-style:normal;font-size:11px;letter-spacing:.2em;opacity:.8}
+.findbtn.searching{background:linear-gradient(180deg,rgba(0,0,0,.6),rgba(0,0,0,.85));
+  color:var(--red);border-color:var(--red);box-shadow:0 0 0 1px var(--red-soft)}
+
+/* navigation: icon over label, so eight of them still fit */
+.ft-nav{grid-column:3;display:flex;gap:6px;justify-self:end;flex-wrap:nowrap;justify-content:flex-end}
+.tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  min-width:64px;height:58px;padding:0 8px;border-radius:10px;overflow:hidden;
+  font-size:10px;font-weight:600;letter-spacing:.04em;color:var(--dim);
   background:linear-gradient(180deg,var(--panel-2),var(--panel));
   border:1px solid var(--edge-soft);transition:.16s var(--ease)}
-.tab svg{width:15px;height:15px;transition:.16s var(--ease)}
-.tab:hover{color:var(--text);border-color:var(--edge);transform:translateY(-1px)}
+.tab svg{width:17px;height:17px;transition:.16s var(--ease)}
+.tab:hover{color:var(--text);border-color:var(--edge);transform:translateY(-2px)}
 .tab.active{color:#fff;background:linear-gradient(180deg,var(--red),var(--red-2));border-color:transparent;
   box-shadow:0 10px 26px -14px var(--red-glow),inset 0 1px 0 rgba(255,255,255,.22)}
 .tab.active::after{content:'';position:absolute;inset:0;
   background:linear-gradient(180deg,rgba(255,255,255,.18),transparent 55%);pointer-events:none}
-.tab.more{flex:0 0 auto;padding:0 14px}
-/* START derives from the accent so a palette change stays coherent */
-.tab.start{flex:0 0 auto;padding:0 34px;color:#fff;
-  background:linear-gradient(180deg,var(--red-2),rgba(0,0,0,.8));border-color:var(--edge)}
-.tab.start:hover{background:linear-gradient(180deg,var(--red),var(--red-2))}
-.tab.start.searching{background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,.85));
-  color:var(--red);border-color:var(--red)}
+
+@media (max-width:1200px){
+  .ft{grid-template-columns:1fr auto;gap:10px}
+  .ft-modes{grid-column:1}
+  .findbtn{grid-column:2;min-width:190px}
+  .ft-nav{grid-column:1 / -1;justify-self:stretch;justify-content:center}
+}
 
 /* ==========================================================================
    RANKED — party slots
@@ -720,8 +810,8 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 /* dashed avatar ring holding the icon, sized exactly like a real avatar */
 .slot-av.ghost{
   background:radial-gradient(circle at 50% 38%,var(--red-soft),transparent 72%);
-  border:2px dashed rgba(255,46,69,.4);box-shadow:none;
-  color:rgba(255,46,69,.62);transition:.22s var(--ease)}
+  border:2px dashed rgba(var(--red-rgb),.4);box-shadow:none;
+  color:rgba(var(--red-rgb),.62);transition:.22s var(--ease)}
 .slot-av.ghost svg{width:34px;height:34px;transition:.22s var(--ease)}
 .slot.open .slot-name{color:var(--red);opacity:.82;transition:.22s var(--ease)}
 .slot.open .slot-ready{color:var(--dim-2)}
@@ -740,7 +830,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .slot.open:not(.noperm):hover .slot-av.ghost,
 .slot.open:not(.noperm):focus-visible .slot-av.ghost{
   border-color:var(--red);border-style:solid;color:var(--red);
-  box-shadow:0 0 0 3px rgba(255,46,69,.22),0 0 30px -6px var(--red-glow)}
+  box-shadow:0 0 0 3px rgba(var(--red-rgb),.22),0 0 30px -6px var(--red-glow)}
 .slot.open:not(.noperm):hover .slot-av.ghost svg{transform:scale(1.1)}
 .slot.open:not(.noperm):hover .slot-name{opacity:1}
 .slot.open:not(.noperm):hover .slot-ready{color:var(--red-3)}
@@ -748,8 +838,8 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 /* the dashed ring breathes so an empty seat reads as an invitation */
 .slot.open:not(.noperm) .slot-av.ghost{animation:seatPulse 2.6s var(--ease) infinite}
 @keyframes seatPulse{
-  0%,100%{box-shadow:0 0 0 0 rgba(255,46,69,.18)}
-  50%    {box-shadow:0 0 0 9px rgba(255,46,69,0)}}
+  0%,100%{box-shadow:0 0 0 0 rgba(var(--red-rgb),.18)}
+  50%    {box-shadow:0 0 0 9px rgba(var(--red-rgb),0)}}
 
 .slot.locked{opacity:.5}
 .slot.locked .slot-av.ghost{border-color:var(--edge);color:var(--dim-2);
@@ -768,7 +858,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .slot-top{padding:30px 14px 0;text-align:center;width:100%}
 .slot-av{position:relative;width:74px;height:74px;margin:0 auto;border-radius:50%;display:grid;place-items:center;
   font-size:28px;font-weight:700;background:linear-gradient(145deg,var(--avatar-from),var(--avatar-to));color:#fff;
-  box-shadow:0 0 0 3px rgba(255,46,69,.35),0 0 30px -6px var(--red-glow)}
+  box-shadow:0 0 0 3px rgba(var(--red-rgb),.35),0 0 30px -6px var(--red-glow)}
 .slot-flag{position:absolute;top:-8px;right:-6px;width:24px;height:24px;border-radius:6px;
   display:grid;place-items:center;font-size:11px;background:var(--ok);color:#06210E;font-weight:700}
 .slot-name{margin-top:12px;font-size:14px;font-weight:700;color:var(--red);letter-spacing:.04em;
@@ -789,6 +879,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .slot-kick svg{width:10px;height:10px}
 
 .modebar{display:flex;gap:9px;justify-content:center;margin-top:16px}
+.ft-modes .mtab{min-width:0;height:34px;padding:0 15px;font-size:12px;border-radius:8px}
 .modebar.wide{margin:0 0 16px}
 .mtab{position:relative;min-width:96px;height:40px;padding:0 20px;border-radius:9px;overflow:hidden;
   font-size:14px;font-weight:700;letter-spacing:.06em;color:var(--dim);
@@ -812,7 +903,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .lb-side{display:flex;flex-direction:column;gap:12px;min-height:0}
 .lb-side-head{padding:11px;text-align:center;font-size:11px;font-weight:700;letter-spacing:.24em;
   color:var(--dim);border:1px solid var(--edge);border-radius:9px;
-  background:linear-gradient(180deg,rgba(255,46,69,.08),transparent)}
+  background:linear-gradient(180deg,rgba(var(--red-rgb),.08),transparent)}
 .lb-me{display:flex;align-items:center;gap:12px;padding:14px;border-radius:11px;
   background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--edge)}
 .lb-me .av{width:48px;height:48px;border-radius:10px;display:grid;place-items:center;font-size:20px;
@@ -836,9 +927,9 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .brow{border-bottom:1px solid rgba(255,255,255,.04);font-size:14px;font-variant-numeric:tabular-nums;transition:.14s}
 .brow span:not(.who):not(.pos){text-align:center;color:var(--red)}
 .brow:hover{background:rgba(255,255,255,.03)}
-.brow.top1{background:linear-gradient(90deg,rgba(255,46,69,.16),rgba(255,46,69,.02));
+.brow.top1{background:linear-gradient(90deg,rgba(var(--red-rgb),.16),rgba(var(--red-rgb),.02));
   border:1px solid var(--red);border-radius:9px;margin:4px 6px;padding:11px 10px}
-.brow.you{background:rgba(255,46,69,.09)}
+.brow.you{background:rgba(var(--red-rgb),.09)}
 .brow .pos{font-size:17px;font-weight:700;text-align:center;color:var(--text)}
 .brow .who{display:flex;align-items:center;gap:10px;min-width:0}
 .brow .who .tier{display:flex;align-items:center;gap:6px;min-width:96px;font-size:12px;color:var(--dim)}
@@ -859,7 +950,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 
 .cm-title{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:9px;
   font-size:11px;font-weight:700;letter-spacing:.2em;color:var(--text);
-  background:linear-gradient(90deg,rgba(255,46,69,.14),transparent);border:1px solid var(--edge)}
+  background:linear-gradient(90deg,rgba(var(--red-rgb),.14),transparent);border:1px solid var(--edge)}
 .cm-title svg{width:15px;height:15px;color:var(--red)}
 .cm-title .count{margin-left:auto;color:var(--dim);letter-spacing:.1em}
 
@@ -916,7 +1007,7 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
 .cm-panel{flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid var(--edge);
   border-radius:11px;overflow:hidden;background:rgba(10,10,13,.5)}
 .cm-panel-head{display:flex;align-items:center;gap:9px;padding:11px 15px;font-size:11px;font-weight:700;
-  letter-spacing:.2em;background:linear-gradient(90deg,rgba(255,46,69,.12),transparent);
+  letter-spacing:.2em;background:linear-gradient(90deg,rgba(var(--red-rgb),.12),transparent);
   border-bottom:1px solid rgba(255,255,255,.05)}
 .cm-panel-head svg{width:15px;height:15px;color:var(--red)}
 .cm-panel-head .dot{width:5px;height:5px;border-radius:50%;background:var(--red);font-style:normal}

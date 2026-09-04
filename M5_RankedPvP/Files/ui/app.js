@@ -67,6 +67,7 @@ const S = {
     map: null, mapPage: 1, step: 1
   },
 
+  store: null, storeTab: 'cards',
   hud: null, hudTime: 0,
   matchInfo: null, sbOpen: false, dmgTimer: 0,
   training: null
@@ -350,6 +351,7 @@ function showPage(page) {
 
   document.querySelector('.hd-title').textContent = tx(PAGE_TITLES[page] || 'MATCHMAKING');
   $('btn-start').classList.toggle('hidden', page !== 'ranked');
+  $('mode-tabs').classList.toggle('hidden', page !== 'ranked');
   $('btn-back').classList.toggle('hidden', !(page === 'custom' && S.room));
 
   if (page === 'leaderboard') fetchBoard();
@@ -357,6 +359,7 @@ function showPage(page) {
   if (page === 'profile') post('fetch', { what: 'profile' });
   if (page === 'rewards') post('fetch', { what: 'rewards' });
   if (page === 'custom') { post('custom', { action: 'list' }); renderCustom(); }
+  if (page === 'store') post('fetch', { what: 'store' });
   if (page === 'training') renderTraining();
   if (page === 'settings') renderSettings();
   if (page === 'admin') post('admin', { action: 'dashboard' });
@@ -614,6 +617,12 @@ function toggleQueue() {
   post('queue', { action: 'join', mode: S.mode });
 }
 
+/** Label of the mode the START button would queue for. */
+function currentModeLabel() {
+  const m = ((S.boot && S.boot.modes) || []).find((x) => x.id === S.mode);
+  return (m && m.label) || String(S.mode || '').toUpperCase();
+}
+
 function renderQueue(q) {
   if (q) S.lastQueue = q;          // kept so a language redraw can replay it
   const searching = !!(q && q.state === 'SEARCHING');
@@ -621,9 +630,14 @@ function renderQueue(q) {
 
   const start = $('btn-start');
   start.classList.toggle('searching', searching);
-  start.innerHTML = searching
-    ? `<svg><use href="#i-x"/></svg>${esc(tx('CANCEL'))}`
-    : `<svg><use href="#i-play"/></svg>${esc(tx('START'))}`;
+  // the label and the mode underneath it, rather than replacing the whole
+  // button — the mode line is what tells you what you are queuing for
+  start.innerHTML = `
+    <svg><use href="#${searching ? 'i-x' : 'i-play'}"/></svg>
+    <span class="fb-text">
+      <b>${esc(tx(searching ? 'CANCEL' : 'FIND MATCH'))}</b>
+      <em id="btn-start-mode">${esc(currentModeLabel())}</em>
+    </span>`;
 
   $('searchdock').classList.toggle('hidden', !searching);
   if (!searching) { S.queue.elapsed = 0; return; }
@@ -1236,6 +1250,18 @@ const COLOR_VARS = {
   levelBadge: '--level', leaderMark: '--ok'
 };
 
+/** '#2E9BE6' -> '46,155,230'. Lets a stylesheet write a translucent tint of
+ *  the accent without hardcoding the colour. */
+function rgbTriplet(color) {
+  const m = String(color || '').trim().match(/^#?([0-9a-f]{6})$/i);
+  if (m) {
+    const n = parseInt(m[1], 16);
+    return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+  }
+  const rgb = String(color || '').match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  return rgb ? `${rgb[1]},${rgb[2]},${rgb[3]}` : null;
+}
+
 function applyTheme(theme) {
   if (!theme) return;
   S.theme = theme;
@@ -1246,6 +1272,9 @@ function applyTheme(theme) {
       const value = theme.colors[key];
       if (value) root.style.setProperty(COLOR_VARS[key], value);
     });
+    // the accent again as a triplet, for the translucent tints
+    const trip = rgbTriplet(theme.colors.accent);
+    if (trip) root.style.setProperty('--red-rgb', trip);
   }
 
   if (theme.radius !== undefined) root.style.setProperty('--r', theme.radius + 'px');
@@ -1286,6 +1315,67 @@ function applySettings() {
   $('killfeed').classList.toggle('left', S.settings.killFeedPos === 'left');
   $('hud').style.transform = `scale(${(S.settings.hudSize || 100) / 100})`;
   $('hud-ping').style.display = S.settings.showPing === false ? 'none' : '';
+}
+
+/* ================================================================= STORE */
+/* Cards are the banner behind your lobby slot, titles are a word beside your
+   name. Prices and ownership come from the server with the payload; this file
+   only draws what it is told and sends back an id. */
+
+function renderStore(store) {
+  if (store) S.store = store;
+  const d = S.store;
+  const host = $('store-root');
+  if (!d || !host) return;
+
+  $('store-coins').textContent = num(d.coins || 0);
+
+  document.querySelectorAll('.stab').forEach((b) =>
+    b.classList.toggle('active', b.dataset.stab === S.storeTab));
+
+  const items = (S.storeTab === 'titles' ? d.titles : d.cards) || [];
+  const isTitle = S.storeTab === 'titles';
+
+  if (!items.length) {
+    host.innerHTML = `<div class="empty">${esc(tx('NOTHING IN THE STORE'))}</div>`;
+    return;
+  }
+
+  host.innerHTML = `<div class="${isTitle ? 'title-grid' : 'card-grid'}">${
+    items.map((it) => {
+      // owned but not worn -> EQUIP, not owned -> BUY, worn -> a flat label
+      const action = it.equipped
+        ? `<div class="si-owned">${esc(tx('EQUIPPED'))}</div>`
+        : it.owned
+          ? `<button class="btn si-btn" data-store="equip" data-kind="${isTitle ? 'title' : 'card'}"
+                     data-id="${esc(it.id)}">${esc(tx('EQUIP'))}</button>`
+          : `<button class="btn ghost si-btn${(d.coins < it.price) ? ' poor' : ''}"
+                     data-store="buy" data-kind="${isTitle ? 'title' : 'card'}"
+                     data-id="${esc(it.id)}">
+               <svg><use href="#i-coin"/></svg>${num(it.price)} ${esc(tx('BUY'))}</button>`;
+
+      const face = isTitle
+        ? `<div class="ti-face" style="color:${esc(it.color || 'var(--text)')}">${esc(it.name)}</div>`
+        : `<div class="ci-art"${it.image ? ` style="background-image:url('${esc(it.image)}')"` : ''}>
+             ${it.image ? '' : `<span class="ci-blank">${esc(it.name)}</span>`}
+           </div>`;
+
+      return `<div class="sitem ${it.rarity}${it.equipped ? ' on' : ''}">
+        <div class="si-rar" style="color:${esc(it.rarityColor)}">${esc(it.rarityLabel)}</div>
+        ${face}
+        <div class="si-foot">
+          ${isTitle ? '' : `<div class="si-name">${esc(it.name)}</div>`}
+          ${action}
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+
+  host.querySelectorAll('[data-store]').forEach((b) => {
+    b.onclick = () => {
+      Sfx.play('click');
+      post('store', { action: b.dataset.store, kind: b.dataset.kind, id: b.dataset.id });
+    };
+  });
 }
 
 /* ================================================================= ADMIN */
@@ -1506,6 +1596,11 @@ function renderAdmin(d) {
       ${act('setRank', { button: 'APPLY', fields: `<select id="adm-rank">${rankOptions}</select>` })}
       ${act('addXP', { button: 'GRANT XP', fields:
         `<input class="inp" id="adm-xp" type="number" placeholder="XP"/>` })}
+      ${act('giveCoins', { button: 'GIVE', fields:
+        `<input class="inp" id="adm-coins-add" type="number" placeholder="Coins to give"/>`,
+        hint: 'Coins are spent in the Store on cards and titles.' })}
+      ${act('takeCoins', { button: 'TAKE', danger: true, fields:
+        `<input class="inp" id="adm-coins-rem" type="number" placeholder="Coins to take"/>` })}
       ${act('resetStats', { button: 'RESET', danger: true,
         hint: 'Wipes stats, rank and MMR for the current season only.' })}
     </div>`;
@@ -1628,6 +1723,8 @@ function admAction(btn) {
     case 'setRP':         admRun('setRP', { target, value: parseInt(val('adm-rp-set'), 10) }); break;
     case 'setRank':       admRun('setRank', { target, rankId: parseInt(val('adm-rank'), 10) }); break;
     case 'addXP':         admRun('addXP', { target, amount: parseInt(val('adm-xp'), 10) }); break;
+    case 'giveCoins':     admRun('giveCoins', { target, amount: parseInt(val('adm-coins-add'), 10) }); break;
+    case 'takeCoins':     admRun('takeCoins', { target, amount: parseInt(val('adm-coins-rem'), 10) }); break;
     case 'resetStats':    admRun('resetStats', { target }); break;
 
     case 'ban':           admRun('ban', { target, type: val('adm-bantype'), duration: parseInt(val('adm-bandur'), 10) }); break;
@@ -2065,6 +2162,7 @@ window.addEventListener('message', (e) => {
       else if (p.what === 'history') renderHistory(p.rows, p.page);
       else if (p.what === 'matchDetail') renderMatchDetail(p.detail);
       else if (p.what === 'rewards') renderRewards(p);
+      else if (p.what === 'store') renderStore(p.store);
       else if (p.what === 'admin') {
         if (p.action === 'dashboard') renderAdmin(p.result);
         else if (p.action === 'playerLookup') {
@@ -2360,6 +2458,14 @@ document.addEventListener('keydown', (e) => {
     if (S.found) $('btn-accept').click();
   }
 }, true);
+
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('.stab');
+  if (!tab) return;
+  S.storeTab = tab.dataset.stab;
+  Sfx.play('click');
+  renderStore();
+});
 
 document.addEventListener('mouseover', (e) => {
   if (e.target.closest('.btn,.tab,.mtab,.chip,.pill,.mini,.slot')) Sfx.play('hover');

@@ -47,6 +47,8 @@
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9L7 7M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></symbol>
+    <symbol id="i-store" viewBox="0 0 24 24"><path d="M4 9h16l-1 11H5zM4 9l1.4-4.2A1.5 1.5 0 016.8 4h10.4a1.5 1.5 0 011.4 1.1L20 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 12.5a2.5 2.5 0 005 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v9M14.6 9.6a3 3 0 00-4.9 1.1c-.5 1.7 1 2.3 2.3 2.6 1.3.3 2.8.9 2.3 2.6a3 3 0 01-4.9 1.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15 3.5 9.2A4.7 4.7 0 0112 6.6a4.7 4.7 0 018.5 2.6c0 5.8-8.5 11.3-8.5 11.3z" fill="currentColor"/></symbol>
     <symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c0-3.9 2.9-6.2 6.5-6.2 1.3 0 2.5.3 3.5.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18 12.5v6M15 15.5h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.2 10.5V7.8a3.8 3.8 0 017.6 0v2.7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="15.4" r="1.5" fill="currentColor"/></symbol>
@@ -378,7 +380,6 @@
       <!-- ======================= RANKED ======================= -->
       <section class="pg active" id="pg-ranked">
         <div class="slots" id="party-slots"></div>
-        <div class="modebar" id="mode-tabs"></div>
       </section>
 
       <!-- ======================= LEADERBOARD ======================= -->
@@ -519,6 +520,24 @@
       <section class="pg" id="pg-training"><div class="scroll traingrid" id="traingrid"></div></section>
 
       <!-- ======================= SETTINGS ======================= -->
+      <section class="pg" id="pg-store">
+        <div class="store-head">
+          <div class="store-title">
+            <svg><use href="#i-store"/></svg>
+            <div>
+              <b data-i18n="STORE">STORE</b>
+              <span data-i18n="Spend coins on cards (lobby banner) and titles (shown by your name).">Spend coins on cards (lobby banner) and titles (shown by your name).</span>
+            </div>
+          </div>
+          <div class="wallet"><svg><use href="#i-coin"/></svg><b id="store-coins">0</b></div>
+        </div>
+        <div class="store-tabs">
+          <button class="stab active" data-stab="cards" data-i18n="Cards">Cards</button>
+          <button class="stab" data-stab="titles" data-i18n="Titles">Titles</button>
+        </div>
+        <div class="scroll" id="store-root"></div>
+      </section>
+
       <section class="pg" id="pg-settings"><div class="scroll settings" id="settings-root"></div></section>
 
       <!-- ======================= ADMIN ======================= -->
@@ -530,15 +549,28 @@
 
     <!-- ---------- footer ---------- -->
     <footer class="ft">
-      <button class="tab active" data-page="ranked"><svg><use href="#i-ranked"/></svg><span data-i18n="Ranked">Ranked</span></button>
-      <button class="tab" data-page="leaderboard"><svg><use href="#i-board"/></svg><span data-i18n="Leaderboard">Leaderboard</span></button>
-      <button class="tab" data-page="custom"><svg><use href="#i-custom"/></svg><span data-i18n="Custom Match">Custom Match</span></button>
-      <button class="tab more" data-page="profile"><svg><use href="#i-user"/></svg><span data-i18n="Profile">Profile</span></button>
-      <button class="tab more" data-page="history"><svg><use href="#i-clock"/></svg><span data-i18n="History">History</span></button>
-      <button class="tab more" data-page="rewards"><svg><use href="#i-gift"/></svg><span data-i18n="Rewards">Rewards</span></button>
-      <button class="tab more" data-page="training"><svg><use href="#i-target"/></svg><span data-i18n="Training">Training</span></button>
-      <button class="tab more admin-only hidden" data-page="admin"><svg><use href="#i-shield"/></svg><span data-i18n="Admin">Admin</span></button>
-      <button class="tab start" id="btn-start"><svg><use href="#i-play"/></svg><span data-i18n="START">START</span></button>
+      <!-- modes left, the action in the middle, navigation right -->
+      <div class="ft-modes" id="mode-tabs"></div>
+
+      <button class="findbtn" id="btn-start">
+        <svg><use href="#i-play"/></svg>
+        <span class="fb-text">
+          <b data-i18n="FIND MATCH">FIND MATCH</b>
+          <em id="btn-start-mode">1V1</em>
+        </span>
+      </button>
+
+      <nav class="ft-nav">
+        <button class="tab active" data-page="ranked"><svg><use href="#i-ranked"/></svg><span data-i18n="Lobby">Lobby</span></button>
+        <button class="tab" data-page="leaderboard"><svg><use href="#i-board"/></svg><span data-i18n="Leaderboard">Leaderboard</span></button>
+        <button class="tab" data-page="profile"><svg><use href="#i-user"/></svg><span data-i18n="Career">Career</span></button>
+        <button class="tab" data-page="custom"><svg><use href="#i-custom"/></svg><span data-i18n="Custom">Custom</span></button>
+        <button class="tab" data-page="history"><svg><use href="#i-clock"/></svg><span data-i18n="History">History</span></button>
+        <button class="tab" data-page="rewards"><svg><use href="#i-gift"/></svg><span data-i18n="Rewards">Rewards</span></button>
+        <button class="tab" data-page="training"><svg><use href="#i-target"/></svg><span data-i18n="Aim Train">Aim Train</span></button>
+        <button class="tab" data-page="store"><svg><use href="#i-store"/></svg><span data-i18n="Store">Store</span></button>
+        <button class="tab admin-only hidden" data-page="admin"><svg><use href="#i-shield"/></svg><span data-i18n="Admin">Admin</span></button>
+      </nav>
     </footer>
 
   </div>

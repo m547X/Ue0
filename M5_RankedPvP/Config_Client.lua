@@ -194,44 +194,44 @@ Config.UI = {
     -- ------------------------------------------------------------------
     colors = {
         -- brand accent
-        accent      = '#FF2E45',   -- primary red
-        accentDark  = '#C81028',   -- gradient end / pressed state
-        accentSoft  = 'rgba(255,46,69,.16)', -- tinted fills
-        accentGlow  = 'rgba(255,46,69,.42)', -- glows and shadows
+        accent      = '#2E9BE6',   -- primary blue
+        accentDark  = '#1B6FB0',   -- gradient end / pressed state
+        accentSoft  = 'rgba(46,155,230,.16)', -- tinted fills
+        accentGlow  = 'rgba(46,155,230,.45)', -- glows and shadows
 
         -- surfaces
-        background  = '#0A0A0D',   -- page ground
-        panel       = '#0E0E12',   -- cards, modals
-        panelAlt    = '#121218',   -- raised rows
-        panelDeep   = '#08080B',   -- inputs, wells
+        background  = '#080B10',   -- page ground
+        panel       = '#0D131B',   -- cards, modals
+        panelAlt    = '#121A24',   -- raised rows
+        panelDeep   = '#070A0F',   -- inputs, wells
 
         -- lines
-        edge        = 'rgba(255,60,74,.22)',   -- accented borders
+        edge        = 'rgba(70,150,220,.24)',  -- accented borders
         edgeSoft    = 'rgba(255,255,255,.07)', -- neutral borders
 
         -- type
-        text        = '#F2F3F5',
-        textDim     = '#8B8F98',
-        textFaint   = '#5A5E67',
+        text        = '#EAF1F8',
+        textDim     = '#8FA0B4',
+        textFaint   = '#5C6B7D',
 
         -- states
         win         = '#2FDD9B',
         lose        = '#FF3B4E',
-        gold        = '#FFC24A',
+        gold        = '#F5C542',
 
         -- teams (players may override these in Settings)
-        teamA       = '#2ED9C3',
+        teamA       = '#3FA9FF',
         teamB       = '#FF4757',
 
         -- avatar tile gradient
-        avatarFrom  = '#5865F2',
-        avatarTo    = '#3C45C4',
+        avatarFrom  = '#2E9BE6',
+        avatarTo    = '#1B6FB0',
 
         -- light tips of gradients and small accents
-        accentLight = '#FF7A88',   -- bright end of accent bars
+        accentLight = '#7FD0FF',   -- bright end of accent bars
         winLight    = '#8CF5CE',   -- bright end of the health bar
-        levelBadge  = '#7B4BFF',   -- level pill on the avatar
-        leaderMark  = '#2FBF4E'    -- party leader star
+        levelBadge  = '#2E9BE6',   -- level pill on the avatar
+        leaderMark  = '#F5C542'    -- party leader crown
     },
 
     -- Corner rounding used across the interface (px)

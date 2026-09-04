@@ -124,6 +124,8 @@ Config.AdminActions = {
     setRP         = { permission = 'pvp.admin.rp.set',       label = 'Set RP',              group = 'points', reason = true },
     setRank       = { permission = 'pvp.admin.rank.set',     label = 'Set Rank',            group = 'points', reason = true },
     addXP         = { permission = 'pvp.admin.xp',           label = 'Grant XP',            group = 'points', reason = true },
+    giveCoins     = { permission = 'pvp.admin.coins',        label = 'Give Coins',          group = 'points', reason = true },
+    takeCoins     = { permission = 'pvp.admin.coins',        label = 'Take Coins',          group = 'points', reason = true },
     resetStats    = { permission = 'pvp.admin.stats.reset',  label = 'Reset Season Stats',  group = 'points', confirm = true, reason = true },
 
     -- ---- punishments ----------------------------------------------------
@@ -143,6 +145,7 @@ Config.AdminLimits = {
     maxRPGrant   = 2000,   -- per single addRP
     maxRPDeduct  = 2000,   -- per single removeRP
     maxXPGrant   = 100000,
+    maxCoinGrant = 100000,   -- per single Give Coins / Take Coins
     reasonMinLen = 3,
     reasonMaxLen = 200,
     -- Keep audit rows for this many days (0 = forever)
@@ -1293,6 +1296,64 @@ Config.Seasons = {
 -- ============================================================================
 -- type: 'money' | 'item' | 'weapon' | 'vehicle' | 'group' | 'title' | 'badge'
 --       | 'frame' | 'effect'
+
+-- ============================================================================
+-- 16b. STORE — cards and titles bought with coins
+-- ============================================================================
+--
+-- Two cosmetics, no gameplay effect of any kind:
+--   cards   the banner behind the player's lobby slot
+--   titles  a word shown beside their name
+--
+-- Coins are handed out by staff (admin panel > POINTS > Give Coins) and by
+-- the per-match rewards below if you switch `earnPerMatch` on. Prices and
+-- ownership are resolved on the server; the client only ever asks to buy.
+--
+Config.Store = {
+    enabled = true,
+
+    currency = {
+        label   = 'COINS',
+        starting = 0,          -- balance a brand new profile begins with
+        max      = 10000000
+    },
+
+    -- Set to a number to also pay coins out per match. 0 = staff only.
+    earnPerMatch = { win = 0, loss = 0, mvp = 0 },
+
+    -- Badge colours for the little rarity tag on each item
+    rarities = {
+        common    = { label = 'COMMON',    color = '#8B93A3' },
+        rare      = { label = 'RARE',      color = '#3FA9FF' },
+        epic      = { label = 'EPIC',      color = '#C158FF' },
+        legendary = { label = 'LEGENDARY', color = '#F5C542' }
+    },
+
+    -- ---- CARDS ---------------------------------------------------------
+    -- `image` is any URL, or a file you ship under Files/ui/img/ (add it to
+    -- the `files` block in fxmanifest.lua and use 'img/name.png').
+    -- The one marked default is owned by everyone and cannot be sold.
+    cards = {
+        { id = 'default',     name = 'Default',          rarity = 'common',    price = 0,    image = '', default = true },
+        { id = 'black_thorn', name = 'Black Thorn',      rarity = 'rare',      price = 400,  image = '' },
+        { id = 'bucket',      name = 'Bucket of Trouble',rarity = 'rare',      price = 400,  image = '' },
+        { id = 'bracelet',    name = 'The Bracelet',     rarity = 'rare',      price = 400,  image = '' },
+        { id = 'wayfinder',   name = 'Way Finder',       rarity = 'epic',      price = 750,  image = '' },
+        { id = 'op',          name = 'Op',               rarity = 'epic',      price = 750,  image = '' },
+        { id = 'insidious',   name = 'Insidious',        rarity = 'legendary', price = 1500, image = '' },
+        { id = 'infinity',    name = 'Infinity',         rarity = 'legendary', price = 2000, image = '' }
+    },
+
+    -- ---- TITLES --------------------------------------------------------
+    -- `color` tints the title wherever the name is shown.
+    titles = {
+        { id = 'none',         name = '—',            rarity = 'common',    price = 0,    default = true },
+        { id = 'rookie',       name = 'ROOKIE',       rarity = 'common',    price = 0,    color = '#B9C1CC' },
+        { id = 'sharpshooter', name = 'SHARPSHOOTER', rarity = 'rare',      price = 300,  color = '#3FA9FF' },
+        { id = 'demon',        name = 'DEMON',        rarity = 'epic',      price = 800,  color = '#C158FF' },
+        { id = 'legend',       name = 'LEGEND',       rarity = 'legendary', price = 2000, color = '#F5C542' }
+    }
+}
 
 Config.Rewards = {
     enabled = true,

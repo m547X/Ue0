@@ -392,5 +392,28 @@ Locale.ar = {
     ['SET RANK']                  = 'ضبط الرتبة',
     ['SET RP']                    = 'ضبط النقاط',
     ['KILLS'] = 'قتل', ['DEATHS'] = 'موت', ['ASSISTS'] = 'مساعدات',
-    ['HEADSHOTS'] = 'هيدشوت', ['DAMAGE'] = 'الضرر'
+    ['HEADSHOTS'] = 'هيدشوت', ['DAMAGE'] = 'الضرر',
+
+    -- ---------------------------------------------------------------- store
+    ['STORE'] = 'المتجر', ['Store'] = 'المتجر',
+    ['Cards'] = 'البطاقات', ['Titles'] = 'الألقاب',
+    ['BUY'] = 'شراء', ['EQUIP'] = 'تجهيز', ['EQUIPPED'] = 'مُجهّز',
+    ['COINS'] = 'العملات',
+    ['NOTHING IN THE STORE'] = 'لا توجد عناصر في المتجر',
+    ['Spend coins on cards (lobby banner) and titles (shown by your name).'] =
+        'اشترِ بالعملات بطاقات (خلفية اللوبي) وألقابًا (تظهر بجانب اسمك).',
+    ['Purchase complete.'] = 'تم الشراء.',
+    ['Not enough coins.'] = 'العملات غير كافية.',
+    ['You already own that.'] = 'تملك هذا العنصر بالفعل.',
+    ['You do not own that.'] = 'أنت لا تملك هذا العنصر.',
+    ['Unknown item.'] = 'عنصر غير معروف.',
+    ['The store is closed.'] = 'المتجر مغلق.',
+    ['%s%d coins — %s'] = '%s%d عملة — %s',
+    ['Maximum is %d coins per action.'] = 'الحد الأقصى %d عملة لكل إجراء.',
+    ['Give Coins'] = 'منح عملات', ['Take Coins'] = 'سحب عملات',
+    ['Coins are spent in the Store on cards and titles.'] =
+        'العملات تُصرف في المتجر على البطاقات والألقاب.',
+    ['FIND MATCH'] = 'ابحث عن مباراة',
+    ['Lobby'] = 'اللوبي', ['Career'] = 'المسيرة', ['Custom'] = 'مخصصة',
+    ['Aim Train'] = 'تدريب التصويب'
 }

@@ -432,6 +432,12 @@ RegisterNUICallback('admin', function(data, cb)
     cb('ok')
 end)
 
+RegisterNUICallback('store', function(data, cb)
+    -- id only: the price and the balance are the server's business
+    TriggerServerEvent('m5rp:sv:store', data.action, data.kind, data.id)
+    cb('ok')
+end)
+
 RegisterNUICallback('settings', function(data, cb)
     if data and data.settings then
         TriggerServerEvent('m5rp:sv:settings', data.settings)
