@@ -49,7 +49,12 @@ server_scripts {
 files {
     'Files/ui/index.html',
     'Files/ui/style.css',
-    'Files/ui/app.js'
+    'Files/ui/app.js',
+    -- Artwork you drop in: map previews, store cards, weapon renders. The
+    -- folder may be empty; every one of them has a drawn fallback.
+    'Files/ui/img/*.png',
+    'Files/ui/img/*.jpg',
+    'Files/ui/img/*.webp'
 }
 
 dependencies {

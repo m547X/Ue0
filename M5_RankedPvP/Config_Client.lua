@@ -305,6 +305,36 @@ Config.HUD = {
     showWeapon       = true,
     showRoundTimer   = true,
 
+    -- Shown over the arena between the deploy and the first countdown: the map
+    -- name, both team names and every player on them. The countdown closes it
+    -- early, so `duration` is only the cap for a slow start.
+    showcase = {
+        enabled  = true,
+        duration = 8,        -- seconds
+        showIds  = true      -- print the player id next to the name
+    },
+
+    -- Player card, bottom left of the match HUD.
+    player = {
+        enabled  = true,
+        showId   = true,
+        segments = 10        -- ticks across the health and armour bars
+    },
+
+    -- Weapon card, bottom right of the match HUD.
+    weapon = {
+        enabled  = true,
+        segments = 12,       -- ticks across the magazine bar
+        -- Optional artwork per weapon. Put the files under Files/ui/img/ and
+        -- point at them with nui://m5_rankedpvp/Files/ui/img/<file>. Anything
+        -- not listed here falls back to a drawn silhouette, so this can stay
+        -- empty and the panel still looks finished.
+        images = {
+            -- ['WEAPON_PISTOL_MK2']   = 'nui://m5_rankedpvp/Files/ui/img/pistol_mk2.png',
+            -- ['WEAPON_CARBINERIFLE'] = 'nui://m5_rankedpvp/Files/ui/img/carbine.png',
+        }
+    },
+
     -- Full scoreboard shown while a key is held during a match.
     -- The key is registered with FiveM's keybinding system, so a player can
     -- rebind it under Settings > Key Bindings > FiveM > M5 Ranked PvP.

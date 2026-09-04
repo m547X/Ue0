@@ -666,6 +666,12 @@ Config.Headshot = {
 -- 12. MAPS
 -- ============================================================================
 -- Every map is isolated using its own routing bucket at runtime.
+--
+-- `image` is the preview shown on the map-vote cards. A bare name means
+-- Files/ui/img/<name>.png (so `image = 'harbor'` looks for img/harbor.png);
+-- anything containing a slash or a scheme is used exactly as written. A file
+-- that is missing simply falls back to the tinted plate, so the vote screen
+-- never breaks over artwork.
 
 Config.Maps = {
 

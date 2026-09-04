@@ -753,6 +753,20 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
     local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}
     data.scoreboardHint = (sbCfg.enabled ~= false and sbCfg.showHint ~= false)
                           and (sbCfg.display or 'TAB') or nil
+    -- the NUI draws the showcase and both HUD cards from these
+    data.hudCfg = {
+        showcase = Config.HUD.showcase,
+        player   = Config.HUD.player,
+        weapon   = Config.HUD.weapon,
+        show     = {
+            health = Config.HUD.showHealth  ~= false,
+            armor  = Config.HUD.showArmor   ~= false,
+            ammo   = Config.HUD.showAmmo    ~= false,
+            weapon = Config.HUD.showWeapon  ~= false,
+            ping   = Config.HUD.showPing    ~= false,
+            timer  = Config.HUD.showRoundTimer ~= false
+        }
+    }
     nui({ action = 'matchSetup', data = data })
     nui({ action = 'hudVisible', value = Config.HUD.enabled })
 
@@ -1314,16 +1328,18 @@ startMatchThread = function()
                     local ped = playerPed()
                     local ok, weapon = GetCurrentPedWeapon(ped, true)
                     local ammo = ok and GetAmmoInPedWeapon(ped, weapon) or 0
-                    local clip = 0
+                    local clip, clipMax = 0, 0
                     if ok then
                         local has, clipAmmo = GetAmmoInClip(ped, weapon)
                         clip = has and clipAmmo or 0
+                        -- the magazine bar needs the capacity, not just the count
+                        clipMax = GetMaxAmmoInClip(ped, weapon, true) or 0
                     end
                     nui({ action = 'localHud', data = {
                         health = math.max(0, GetEntityHealth(ped) - 100),
                         armor  = GetPedArmour(ped),
-                        weapon = currentWeaponName(),
-                        ammo   = ammo, clip = clip
+                        weapon = currentWeaponName(), weaponHash = ok and weapon or nil,
+                        ammo   = ammo, clip = clip, clipMax = clipMax
                     } })
                 end
             else

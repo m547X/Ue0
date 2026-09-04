@@ -197,52 +197,72 @@ html[dir="rtl"] .hud-side.b{background:linear-gradient(90deg,rgba(255,71,87,.10)
   box-shadow:0 0 14px -3px var(--gold);text-shadow:none;
   animation:blink 1.4s infinite}
 
-/* Bottom-left block: vitals over the weapon, one framed panel so it reads as
-   a single instrument rather than four loose numbers. */
-.hud-bottom{position:absolute;left:28px;bottom:28px;display:flex;flex-direction:column;gap:9px;
-  min-width:268px;padding:13px 16px 12px;border-radius:14px;overflow:hidden;
-  background:linear-gradient(150deg,rgba(16,23,32,.9),rgba(6,9,14,.7));
+/* Bottom of the HUD: two cards, you on the left and your weapon on the right.
+   Same shell, same corner radius, mirrored for Arabic. */
+.hud-card{position:absolute;bottom:28px;display:flex;align-items:center;gap:13px;
+  padding:11px 15px;border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,23,32,.92),rgba(6,9,14,.76));
   border:1px solid var(--edge);
-  box-shadow:0 18px 44px -26px #000,inset 0 1px 0 rgba(255,255,255,.05);
-  backdrop-filter:blur(4px)}
-.hud-bottom::after{content:'';position:absolute;left:0;right:0;top:0;height:1px;
-  background:linear-gradient(90deg,rgba(var(--red-rgb),.65),transparent)}
-/* team-coloured spine down the leading edge */
-.hud-bottom::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;
-  border-radius:0 3px 3px 0;background:linear-gradient(180deg,var(--red),transparent)}
+  box-shadow:0 20px 46px -26px #000,inset 0 1px 0 rgba(255,255,255,.06);
+  backdrop-filter:blur(5px)}
+.hud-player{inset-inline-start:28px;min-width:290px}
+.hud-gun{inset-inline-end:28px;min-width:262px}
+/* accent spine on the outer edge of each card */
+.hud-card::before{content:'';position:absolute;top:13px;bottom:13px;width:3px;border-radius:3px;
+  background:linear-gradient(180deg,var(--red),transparent)}
+.hud-player::before{inset-inline-start:0}
+.hud-gun::before{inset-inline-end:0}
 
-.vital{display:flex;align-items:center;gap:10px}
-.vico{width:15px;height:15px;flex:none;color:var(--win);
-  filter:drop-shadow(0 0 6px rgba(46,217,163,.4))}
-.vital.armor .vico{color:#6FB8FF;filter:drop-shadow(0 0 6px rgba(79,168,255,.4))}
-.vbar{position:relative;flex:1;height:8px;border-radius:5px;
-  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.05);overflow:hidden}
-.vbar i{display:block;height:100%;border-radius:5px;
-  background:linear-gradient(90deg,var(--win),var(--win-2));
-  box-shadow:0 0 10px -2px var(--win);transition:width .18s var(--ease)}
-.vital.armor .vbar i{background:linear-gradient(90deg,#4FA8FF,#A8D5FF);box-shadow:0 0 10px -2px #4FA8FF}
-.vital span{font-size:16px;font-weight:700;min-width:34px;text-align:right;
-  font-variant-numeric:tabular-nums}
-.vital.low .vico{color:var(--lose);filter:drop-shadow(0 0 8px rgba(255,71,87,.55));
-  animation:blink .9s infinite}
-.vital.low .vbar i{background:linear-gradient(90deg,var(--lose),var(--red-3));
-  box-shadow:0 0 12px -2px var(--lose)}
-.vital.low span{color:var(--lose)}
+/* segmented bar: one tick per unit, filled left to right */
+.segs{display:flex;gap:3px;flex:1;min-width:0}
+.segs i{flex:1;height:10px;border-radius:3px;background:rgba(255,255,255,.09);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);transition:.18s var(--ease)}
 
-.hud-weapon{display:flex;align-items:center;gap:12px;
-  border-top:1px solid var(--edge-soft);padding-top:10px;margin-top:2px}
-#hud-weapon-name{font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--dim);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hud-ammo{font-size:23px;font-weight:700;margin-left:auto;line-height:1;
-  font-variant-numeric:tabular-nums}
-.hud-ammo b{color:var(--text)}
-.hud-ammo i{color:var(--dim-2);margin:0 4px;font-style:normal;font-size:14px}
-.hud-ammo span{font-size:13px;color:var(--dim-2)}
-.hud-ammo.empty b{color:var(--lose);animation:blink .7s infinite}
-html[dir="rtl"] .hud-ammo{margin-left:0;margin-right:auto}
-html[dir="rtl"] .hud-bottom::before{left:auto;right:0;border-radius:3px 0 0 3px}
-html[dir="rtl"] .hud-bottom::after{background:linear-gradient(270deg,rgba(var(--red-rgb),.65),transparent)}
-html[dir="rtl"] .vital span{text-align:left}
+/* ----- player card ----- */
+.pc-av{position:relative;width:44px;height:44px;border-radius:11px;overflow:hidden;flex:none;
+  background:linear-gradient(145deg,var(--avatar-from),var(--avatar-to));
+  border:1px solid var(--edge);box-shadow:0 0 0 1px rgba(var(--red-rgb),.2)}
+.pc-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.pc-av .ini{display:grid;place-items:center;width:100%;height:100%;font-size:19px;font-weight:700;color:#fff}
+.pc-body{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+.pc-name{display:flex;align-items:baseline;gap:7px;min-width:0}
+.pc-name b{font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-name i{font-style:normal}
+.pc-bar{display:flex;align-items:center;gap:10px}
+.pc-bar span{min-width:30px;font-size:14px;font-weight:700;text-align:end;
+  font-variant-numeric:tabular-nums;direction:ltr}
+.pc-bar.hp .segs i.on{background:linear-gradient(180deg,var(--team-a),#1F7CC4);
+  box-shadow:0 0 9px -2px var(--team-a)}
+.pc-bar.ar .segs i.on{background:linear-gradient(180deg,#8FD0FF,#4FA8FF);
+  box-shadow:0 0 9px -2px #6FB8FF}
+.pc-bar.ar .segs i{height:7px}
+.pc-ico{width:12px;height:12px;flex:none;color:#6FB8FF;
+  filter:drop-shadow(0 0 6px rgba(79,168,255,.4))}
+.pc-bar.ar span{font-size:12px;color:var(--dim)}
+/* under a third of your health the row goes red and pulses */
+.pc-bar.hp.low .segs i.on{background:linear-gradient(180deg,var(--lose),#B22235);
+  box-shadow:0 0 11px -2px var(--lose)}
+.pc-bar.hp.low span{color:var(--lose);animation:blink .9s infinite}
+
+/* ----- weapon card ----- */
+.gc-art{width:66px;height:38px;flex:none;display:grid;place-items:center;
+  border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--edge-soft);
+  background-size:cover;background-position:center;color:var(--dim);overflow:hidden}
+.gc-art svg{width:44px;height:22px;filter:drop-shadow(0 1px 2px #000)}
+.gc-art.art svg{display:none}
+.gc-body{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+.gc-name{font-size:13px;font-weight:700;letter-spacing:.12em;color:var(--red);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-shadow:0 0 16px var(--red-glow)}
+.gc-ammo{display:flex;align-items:center;gap:9px;direction:ltr}
+.gc-ammo b{font-size:22px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.gc-ammo span{font-size:12px;font-weight:700;color:var(--dim-2);font-variant-numeric:tabular-nums}
+.segs.mag i{height:13px;border-radius:2px}
+.segs.mag i.on{background:linear-gradient(180deg,#DCE9F5,#93A9BD);
+  box-shadow:0 0 8px -3px #DCE9F5}
+.gc-ammo.dry b{color:var(--lose);animation:blink .7s infinite}
+.gc-ammo.dry .segs.mag i.on{background:var(--lose)}
+html[dir="rtl"] .gc-ammo{flex-direction:row}
 
 /* ---------- kill feed ---------- */
 /* red vignette pulse when you take a hit */
@@ -328,7 +348,7 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
   backdrop-filter:blur(4px);z-index:45;
   animation:sbIn .12s var(--ease)}
 @keyframes sbIn{from{opacity:0}to{opacity:1}}
-.sb-shell{position:relative;width:min(1000px,88vw);max-height:82vh;display:flex;flex-direction:column;
+.sb-shell{position:relative;width:min(1560px,95vw);max-height:82vh;display:flex;flex-direction:column;
   background:linear-gradient(180deg,var(--panel),var(--panel-deep));
   border:1px solid var(--edge);border-radius:16px;overflow:hidden;
   box-shadow:0 34px 96px -40px #000,inset 0 1px 0 rgba(255,255,255,.05);
@@ -362,7 +382,9 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
   font-size:11px;font-weight:700;letter-spacing:.2em;color:var(--dim);
   background:rgba(255,255,255,.05);border:1px solid var(--edge-soft)}
 
-.sb-teams{display:flex;flex-direction:column;gap:16px;padding:16px 20px;overflow-y:auto}
+/* the two sides sit next to each other, the way the reference reads */
+.sb-teams{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:16px 20px;overflow-y:auto}
+@media (max-width:980px){.sb-teams{grid-template-columns:1fr}}
 
 /* each side gets its own tinted block so the two never blur together */
 .sb-team{position:relative;padding:12px 14px 10px;border-radius:12px;
@@ -388,10 +410,13 @@ html[dir="rtl"] .sb-team.b::before{background:linear-gradient(270deg,var(--team-
   background:rgba(255,255,255,.05);border:1px solid var(--edge-soft)}
 html[dir="rtl"] .sb-team-head em{margin-left:0;margin-right:auto}
 
-.sb-cols,.sb-row{display:grid;grid-template-columns:1fr 46px 46px 46px 46px 66px 60px;
-  gap:6px;align-items:center}
-.sb-cols{padding:0 12px 6px;font-size:9px;letter-spacing:.2em;color:var(--dim-2)}
+.sb-cols,.sb-row{display:grid;grid-template-columns:30px 1fr 34px 34px 34px 34px 54px 48px;
+  gap:5px;align-items:center}
+.sb-cols{padding:0 12px 6px;font-size:9px;letter-spacing:.16em;color:var(--dim-2)}
 .sb-cols span:not(.grow),.sb-row span:not(.sb-who){text-align:center}
+/* finishing position inside the side, highest score first */
+.sb-pos{font-size:11px;font-weight:700;color:var(--dim-2);direction:ltr;unicode-bidi:isolate}
+.sb-row.top .sb-pos{color:var(--gold)}
 .sb-rows{display:flex;flex-direction:column;gap:5px}
 .sb-row{position:relative;padding:8px 12px;border-radius:10px;
   background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
@@ -419,19 +444,23 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
 .sb-av .ini{display:grid;place-items:center;width:100%;height:100%;font-size:13px;font-weight:700;color:#fff}
 .sb-nm{display:flex;flex-direction:column;gap:1px;min-width:0}
 .sb-nm b{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-nmrow{display:flex;align-items:baseline;gap:6px;min-width:0}
 .sb-nm span{font-size:10px;color:var(--dim-2);letter-spacing:.08em;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sb-row .hs{color:var(--gold)}
 .sb-row .sb-ping{color:var(--dim)}
+/* a connection worth noticing reads before you look at the number */
+.sb-row .sb-ping.warn{color:var(--gold)}
+.sb-row .sb-ping.bad{color:var(--lose)}
 .sb-empty{padding:14px;text-align:center;font-size:11px;letter-spacing:.16em;color:var(--dim-2)}
 
 .sb-foot{padding:11px 20px;border-top:1px solid var(--edge-soft);text-align:center;
   background:linear-gradient(180deg,transparent,rgba(0,0,0,.28))}
 .sb-foot .keycap{display:inline-grid;height:26px;font-size:10px;letter-spacing:.2em;color:var(--dim)}
 
-@media (max-width:1200px){
-  .sb-cols,.sb-row{grid-template-columns:1fr 38px 38px 38px 38px 56px 50px;font-size:12px}
-  .sb-shell{width:94vw}
+@media (max-width:1400px){
+  .sb-cols,.sb-row{grid-template-columns:26px 1fr 28px 28px 28px 28px 46px 42px;font-size:12px}
+  .sb-shell{width:96vw}
 }
 
 .killfeed{position:absolute;top:110px;right:30px;display:flex;flex-direction:column;gap:5px;align-items:flex-end}
@@ -446,6 +475,58 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
 .kf .kf-hs{color:var(--red);display:flex;align-items:center;gap:3px}
 .kf .kf-hs svg{width:12px;height:12px}
 @keyframes kfIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+
+/* ---------- SHOWCASE (map + rosters, before the first countdown) ----------
+   Sits over the arena with nothing behind it, so every line carries its own
+   shadow rather than a panel. */
+.showcase{position:absolute;inset:0;z-index:41;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;padding:0 40px;animation:scIn .5s var(--ease)}
+@keyframes scIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.sc-map{font-size:76px;font-weight:700;letter-spacing:.06em;line-height:1;
+  text-shadow:0 0 60px rgba(0,0,0,.9),0 0 120px rgba(var(--red-rgb),.4),0 6px 18px #000}
+.sc-sub{margin-top:4px;font-size:13px;font-weight:700;letter-spacing:.44em;color:var(--red);
+  text-shadow:0 0 24px var(--red-glow),0 2px 6px #000;animation:scPulse 2.2s infinite}
+@keyframes scPulse{50%{opacity:.62}}
+
+.sc-teams{display:flex;align-items:flex-start;gap:22px;margin-top:46px;
+  width:100%;max-width:1180px;justify-content:center}
+.sc-side{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:11px;max-width:480px}
+.sc-team{text-align:center;font-size:15px;font-weight:700;letter-spacing:.16em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-shadow:0 2px 8px #000,0 0 22px rgba(0,0,0,.9)}
+.sc-side.a .sc-team{color:var(--team-a)}
+.sc-side.b .sc-team{color:var(--team-b)}
+.sc-vs{align-self:center;margin-top:34px;font-size:26px;font-weight:700;letter-spacing:.08em;
+  color:var(--red);text-shadow:0 0 26px var(--red-glow),0 2px 8px #000}
+.sc-list{display:flex;flex-direction:column;gap:8px}
+
+/* one card per player, the same shape on both sides */
+.sc-card{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(16,23,32,.9),rgba(6,9,14,.72));
+  border:1px solid var(--edge);
+  box-shadow:0 18px 40px -26px #000,inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter:blur(4px);animation:scCard .45s var(--ease) backwards}
+@keyframes scCard{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.sc-side.a .sc-card{border-inline-start:3px solid var(--team-a)}
+.sc-side.b .sc-card{border-inline-start:3px solid var(--team-b)}
+.sc-card.me{box-shadow:0 18px 40px -26px #000,0 0 0 1px rgba(var(--red-rgb),.4)}
+.sc-av{position:relative;width:34px;height:34px;border-radius:9px;overflow:hidden;flex:none;
+  background:linear-gradient(145deg,var(--avatar-from),var(--avatar-to));border:1px solid var(--edge)}
+.sc-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.sc-av .ini{display:grid;place-items:center;width:100%;height:100%;font-size:15px;font-weight:700;color:#fff}
+.sc-who{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.sc-nm{display:flex;align-items:baseline;gap:7px;min-width:0}
+.sc-nm b{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-rank{font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--dim)}
+.sc-crest{width:26px;height:26px;flex:none;display:grid;place-items:center;border-radius:8px;
+  color:var(--gold);background:rgba(245,197,66,.12);border:1px solid rgba(245,197,66,.3)}
+.sc-crest svg{width:14px;height:14px}
+.sc-crest.none{color:var(--dim-2);background:rgba(255,255,255,.05);border-color:var(--edge-soft)}
+
+/* the player id, wherever it is printed next to a name */
+.pid{font-size:10px;font-weight:700;color:var(--dim-2);letter-spacing:.04em;
+  direction:ltr;unicode-bidi:isolate;flex:none}
 
 /* ---------- phase (round countdown + round result) ---------- */
 /* One dial drives the whole pre-round: the arc drains a second at a time, the
@@ -662,38 +743,87 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
 .dlg-text{font-size:13px;line-height:1.55;color:var(--dim);margin-bottom:12px}
 .dlg-text b{color:var(--text)}
 
-/* match found */
-.found{position:relative;text-align:center;padding:44px 70px;border-radius:14px;
-  background:var(--panel);border:1px solid var(--edge);
-  box-shadow:0 0 90px -30px var(--red-glow)}
-.found-tag{font-size:14px;font-weight:700;letter-spacing:.5em;color:var(--red);animation:blink 1.1s infinite}
-.found-mode{margin-top:5px;font-size:37px;font-weight:700;letter-spacing:.06em}
-.found-ring{position:relative;width:142px;height:142px;margin:20px auto 10px}
-.found-ring svg{transform:rotate(-90deg)}
-.rbg{fill:none;stroke:var(--panel-3);stroke-width:5}
-.rfg{fill:none;stroke:var(--red);stroke-width:5;stroke-dasharray:327;transition:stroke-dashoffset 1s linear}
-.found-ring span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:48px;font-weight:700}
-.found-ready{font-size:14px;letter-spacing:.22em;color:var(--dim)}
+/* ---------- MATCH FOUND ----------
+   No panel: the title floats over the world, with a lit box counting down
+   under it. The subtitle says what the number is actually waiting for. */
+.found{position:relative;text-align:center;padding:20px}
+.found-tag{font-size:60px;font-weight:700;letter-spacing:.05em;line-height:1;color:var(--red);
+  text-shadow:0 0 46px var(--red-glow),0 0 90px rgba(var(--red-rgb),.45),0 4px 14px #000;
+  animation:foundIn .45s var(--ease)}
+@keyframes foundIn{from{opacity:0;transform:scale(.9);letter-spacing:.22em}
+                   to{opacity:1;transform:scale(1);letter-spacing:.05em}}
+.found-mode{margin-top:8px;font-size:14px;font-weight:700;letter-spacing:.34em;color:var(--dim);
+  text-shadow:0 1px 4px #000}
+
+.found-box{position:relative;width:118px;height:118px;margin:26px auto 14px}
+.found-box::before{content:'';position:absolute;inset:8px;border-radius:20px;
+  background:radial-gradient(circle at 50% 40%,rgba(var(--red-rgb),.22),rgba(4,7,11,.8) 76%)}
+.found-ring{position:absolute;inset:0;transform:rotate(-90deg)}
+.rbg{fill:none;stroke:rgba(255,255,255,.10);stroke-width:4}
+.rfg{fill:none;stroke:var(--red);stroke-width:4;stroke-linecap:round;
+  stroke-dasharray:432;transition:stroke-dashoffset 1s linear;
+  filter:drop-shadow(0 0 9px var(--red-glow))}
+.found-box span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;
+  text-shadow:0 0 26px var(--red-glow),0 2px 6px #000}
+/* last five seconds run hot */
+.found-box.urgent .rfg{stroke:var(--gold);filter:drop-shadow(0 0 11px rgba(245,197,66,.6))}
+.found-box.urgent span{color:var(--gold)}
+
+.found-sub{font-size:12px;font-weight:700;letter-spacing:.36em;color:var(--red);
+  text-shadow:0 1px 4px #000}
+.found-ready{margin-top:14px;font-size:13px;letter-spacing:.22em;color:var(--dim);
+  text-shadow:0 1px 4px #000}
 .found-ready b{color:var(--text);font-size:19px}
 .found-actions{display:flex;gap:11px;justify-content:center;margin-top:22px}
 .found-wait{margin-top:16px;font-size:12px;letter-spacing:.24em;color:var(--dim);animation:blink 1.2s infinite}
 
-/* map vote */
-.mapvote{width:min(980px,88vw);padding:30px;border-radius:14px;background:var(--panel);border:1px solid var(--edge)}
-.mv-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-.mv-tag{font-size:13px;font-weight:700;letter-spacing:.5em;color:var(--red)}
-.mv-timer{font-size:33px;font-weight:700}
-.mv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
-.mv-card{position:relative;height:176px;border-radius:11px;overflow:hidden;cursor:pointer;
-  border:1px solid var(--edge-soft);transition:.18s var(--ease)}
-.mv-card:hover{transform:translateY(-3px);border-color:var(--red)}
-.mv-card.picked{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset}
-.mv-art{position:absolute;inset:0;opacity:.55}
-.mv-name{position:absolute;left:14px;bottom:12px;font-size:20px;font-weight:700;letter-spacing:.08em}
-.mv-votes{position:absolute;right:12px;top:12px;min-width:31px;height:31px;border-radius:8px;
-  display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);
-  border:1px solid var(--edge);font-weight:700}
-.mv-foot{margin-top:16px;text-align:center;font-size:11px;letter-spacing:.26em;color:var(--dim)}
+/* ---------- MAP VOTE ---------- */
+.mapvote{width:min(1420px,94vw);padding:26px 30px 22px;border-radius:18px;
+  background:linear-gradient(180deg,var(--panel),var(--panel-deep));
+  border:1px solid var(--edge);
+  box-shadow:0 40px 100px -44px #000,inset 0 1px 0 rgba(255,255,255,.05)}
+.mv-head{display:flex;justify-content:space-between;align-items:baseline;gap:20px}
+.mv-tag{font-size:34px;font-weight:700;letter-spacing:.02em;line-height:1}
+.mv-tag i{font-style:normal;color:var(--red);text-shadow:0 0 26px var(--red-glow)}
+.mv-timer{font-size:34px;font-weight:700;line-height:1;color:var(--red);
+  font-variant-numeric:tabular-nums;text-shadow:0 0 24px var(--red-glow)}
+.mv-timer.urgent{color:var(--gold);text-shadow:0 0 24px rgba(245,197,66,.55);animation:blink .9s infinite}
+/* the rail under the header drains with the clock */
+.mv-rail{position:relative;height:2px;margin:14px 0 20px;border-radius:2px;
+  background:rgba(255,255,255,.08);overflow:hidden}
+.mv-rail i{display:block;height:100%;width:100%;border-radius:2px;
+  background:linear-gradient(90deg,var(--red),var(--red-3));
+  box-shadow:0 0 12px -2px var(--red);transition:width 1s linear}
+html[dir="rtl"] .mv-rail i{background:linear-gradient(270deg,var(--red),var(--red-3))}
+
+.mv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.mv-card{position:relative;border-radius:12px;overflow:hidden;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--edge-soft);
+  box-shadow:0 16px 36px -26px #000;transition:.18s var(--ease)}
+.mv-card:hover{transform:translateY(-4px);border-color:var(--red);
+  box-shadow:0 22px 44px -24px #000,0 0 0 1px rgba(var(--red-rgb),.3)}
+.mv-card.picked{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset,0 0 26px -8px var(--red-glow)}
+/* tall portrait art, the way a map is previewed in a shooter */
+.mv-art{position:relative;aspect-ratio:3/4;background-size:cover;background-position:center}
+.mv-art::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,transparent 55%,rgba(4,7,11,.72))}
+.mv-foot-card{display:flex;flex-direction:column;align-items:center;gap:9px;
+  padding:11px 10px 13px;text-align:center;
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+.mv-name{max-width:100%;font-size:12px;font-weight:700;letter-spacing:.16em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* vote tally as a diamond under the name, the way the reference reads */
+.mv-votes{width:26px;height:26px;flex:none;transform:rotate(45deg);
+  display:grid;place-items:center;border-radius:6px;
+  background:linear-gradient(180deg,var(--panel-3),var(--panel-deep));
+  border:1px solid var(--edge);transition:.18s var(--ease)}
+.mv-votes b{display:block;transform:rotate(-45deg);font-size:12px;font-weight:700;
+  font-variant-numeric:tabular-nums}
+.mv-card.picked .mv-votes{border-color:var(--red);box-shadow:0 0 16px -4px var(--red-glow)}
+.mv-card.picked .mv-votes b{color:var(--red)}
+.mv-foot{margin-top:22px;text-align:center;font-size:11px;font-weight:700;
+  letter-spacing:.26em;color:var(--dim)}
 
 /* ---------- MATCH RESULT ----------
    An overlay, never a modal: no dark sheet over the world, no pointer events,
@@ -1479,6 +1609,17 @@ html[dir="rtl"] .hud-timer,
 html[dir="rtl"] .hud-ammo,
 html[dir="rtl"] .sd-time,
 html[dir="rtl"] .sb-score{direction:ltr;unicode-bidi:isolate}
+
+/* Player and team names are supplied by the server and are usually Latin, and
+   a configured pattern like "%s'S TEAM" reverses into "S TEAM'<name>" under an
+   RTL paragraph. Each name gets its own LTR paragraph; Arabic inside one still
+   renders right to left, so nothing is lost either way. */
+html[dir="rtl"] .sc-team,
+html[dir="rtl"] .sc-nm,
+html[dir="rtl"] .pc-name,
+html[dir="rtl"] .hud-label,
+html[dir="rtl"] .sb-team-head span,
+html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
 
 /* .hud-mid is held LTR above so the timer reads 1:27, but that also pinned the
    score pair. The two team panels mirror with the layout, so the scores have to

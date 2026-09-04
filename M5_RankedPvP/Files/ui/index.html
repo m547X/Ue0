@@ -53,6 +53,9 @@
     <symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c0-3.9 2.9-6.2 6.5-6.2 1.3 0 2.5.3 3.5.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18 12.5v6M15 15.5h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.2 10.5V7.8a3.8 3.8 0 017.6 0v2.7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="15.4" r="1.5" fill="currentColor"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v6l4 2" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
+    <!-- fallback weapon silhouette, used when no artwork is configured -->
+    <symbol id="i-gun" viewBox="0 0 48 24"><path d="M3 6h30l3 3h9v4h-6l-2 3h-7l-2-3h-4l-4 8h-6l2-8H8a5 5 0 01-5-5V6z" fill="currentColor"/><rect x="6" y="8" width="9" height="2" rx="1" fill="rgba(0,0,0,.45)"/></symbol>
+    <symbol id="i-crest" viewBox="0 0 24 24"><path d="M12 2.6l7.5 3v6.1c0 4.6-3.1 8.3-7.5 9.7-4.4-1.4-7.5-5.1-7.5-9.7V5.6l7.5-3z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.4l1.5 3.1 3.4.5-2.5 2.4.6 3.4-3-1.6-3 1.6.6-3.4-2.5-2.4 3.4-.5z" fill="currentColor"/></symbol>
     <symbol id="i-gift" viewBox="0 0 24 24"><path d="M3 11h18v9H3zM2 7h20v4H2zM12 7v13" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
     <symbol id="i-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12l6 6L20 6" stroke="currentColor" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -108,20 +111,30 @@
       <span id="hud-ping">0 ms</span>
       <span class="hud-flag hidden" id="hud-flag">MATCH POINT</span>
     </div>
-    <div class="hud-bottom">
-      <div class="hud-vitals">
-        <div class="vital">
-          <svg class="vico"><use href="#i-heart"/></svg>
-          <div class="vbar"><i id="hud-hp-bar" style="width:100%"></i></div><span id="hud-hp">100</span>
+    <!-- bottom left: who you are and what is left of you -->
+    <div class="hud-card hud-player" id="hud-player">
+      <div class="pc-av" id="pc-av"><span class="ini">M</span></div>
+      <div class="pc-body">
+        <div class="pc-name"><b id="pc-name">—</b><i class="pid" id="pc-id"></i></div>
+        <div class="pc-bar hp" id="pc-hp-row">
+          <div class="segs" id="pc-hp-segs"></div><span id="pc-hp">100</span>
         </div>
-        <div class="vital armor">
-          <svg class="vico"><use href="#i-shield"/></svg>
-          <div class="vbar"><i id="hud-ar-bar" style="width:0%"></i></div><span id="hud-ar">0</span>
+        <div class="pc-bar ar" id="pc-ar-row">
+          <svg class="pc-ico"><use href="#i-shield"/></svg>
+          <div class="segs" id="pc-ar-segs"></div><span id="pc-ar">0</span>
         </div>
       </div>
-      <div class="hud-weapon">
-        <span id="hud-weapon-name">—</span>
-        <span class="hud-ammo"><b id="hud-clip">0</b><i>/</i><span id="hud-ammo">0</span></span>
+    </div>
+
+    <!-- bottom right: the weapon in your hands -->
+    <div class="hud-card hud-gun" id="hud-gun">
+      <div class="gc-art" id="gc-art"><svg><use href="#i-gun"/></svg></div>
+      <div class="gc-body">
+        <div class="gc-name" id="hud-weapon-name">—</div>
+        <div class="gc-ammo">
+          <b id="hud-clip">0</b><span id="hud-ammo">0</span>
+          <div class="segs mag" id="gc-mag"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -137,10 +150,12 @@
         <div class="sb-score"><b id="sb-score-a">0</b><i></i><b id="sb-score-b">0</b></div>
         <div class="sb-round" id="sb-round">ROUND 1</div>
       </div>
+      <!-- one panel per side, sitting next to each other -->
       <div class="sb-teams">
         <div class="sb-team a">
           <div class="sb-team-head"><i class="sb-dot"></i><span id="sb-team-a">TEAM A</span><em id="sb-alive-a">0 ALIVE</em></div>
           <div class="sb-cols">
+            <span>#</span>
             <span class="grow" data-i18n="PLAYER">PLAYER</span>
             <span data-i18n="K">K</span><span data-i18n="D">D</span><span data-i18n="A">A</span>
             <span data-i18n="HS">HS</span><span data-i18n="DMG">DMG</span><span data-i18n="PING">PING</span>
@@ -150,6 +165,7 @@
         <div class="sb-team b">
           <div class="sb-team-head"><i class="sb-dot"></i><span id="sb-team-b">TEAM B</span><em id="sb-alive-b">0 ALIVE</em></div>
           <div class="sb-cols">
+            <span>#</span>
             <span class="grow" data-i18n="PLAYER">PLAYER</span>
             <span data-i18n="K">K</span><span data-i18n="D">D</span><span data-i18n="A">A</span>
             <span data-i18n="HS">HS</span><span data-i18n="DMG">DMG</span><span data-i18n="PING">PING</span>
@@ -176,6 +192,23 @@
   <div id="dmg-flash" class="dmg-flash"></div>
 
   <div id="killfeed" class="killfeed"></div>
+
+  <!-- Shown over the arena between the deploy and the first countdown -->
+  <div id="showcase" class="showcase hidden">
+    <div class="sc-map" id="sc-map">—</div>
+    <div class="sc-sub" id="sc-sub">PREPARING MATCH…</div>
+    <div class="sc-teams">
+      <div class="sc-side a">
+        <div class="sc-team" id="sc-team-a">TEAM A</div>
+        <div class="sc-list" id="sc-list-a"></div>
+      </div>
+      <div class="sc-vs" data-i18n="VS">VS</div>
+      <div class="sc-side b">
+        <div class="sc-team" id="sc-team-b">TEAM B</div>
+        <div class="sc-list" id="sc-list-b"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Round countdown, and the round result that replaces it between rounds -->
   <div id="phase" class="phase hidden">
@@ -286,10 +319,14 @@
     <div class="found">
       <div class="found-tag" data-i18n="MATCH FOUND">MATCH FOUND</div>
       <div class="found-mode" id="found-mode">RANKED</div>
-      <div class="found-ring">
-        <svg viewBox="0 0 120 120"><circle class="rbg" cx="60" cy="60" r="52"/><circle class="rfg" id="found-ring" cx="60" cy="60" r="52"/></svg>
+      <div class="found-box" id="found-box">
+        <svg class="found-ring" viewBox="0 0 120 120">
+          <rect class="rbg" x="6" y="6" width="108" height="108" rx="26"/>
+          <rect class="rfg" id="found-ring" x="6" y="6" width="108" height="108" rx="26"/>
+        </svg>
         <span id="found-timer">15</span>
       </div>
+      <div class="found-sub" id="found-sub" data-i18n="ACCEPT TO CONTINUE">ACCEPT TO CONTINUE</div>
       <div class="found-ready"><b id="found-accepted">0</b> / <span id="found-total">2</span> READY</div>
       <div class="found-actions">
         <button class="btn big" id="btn-accept" data-i18n="ACCEPT">ACCEPT</button>
@@ -302,7 +339,11 @@
   <!-- Map vote -->
   <div id="modal-mapvote" class="modal hidden">
     <div class="mapvote">
-      <div class="mv-head"><span class="mv-tag" data-i18n="MAP VOTE">MAP VOTE</span><span class="mv-timer" id="mv-timer">20</span></div>
+      <div class="mv-head">
+        <h2 class="mv-tag"><span data-i18n="VOTING">VOTING</span> <i data-i18n="MAPS">MAPS</i></h2>
+        <span class="mv-timer" id="mv-timer">20S</span>
+      </div>
+      <div class="mv-rail"><i id="mv-rail-fill"></i></div>
       <div class="mv-grid" id="mv-grid"></div>
       <div class="mv-foot" id="mv-foot" data-i18n="SELECT A MAP">SELECT A MAP</div>
     </div>

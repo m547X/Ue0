@@ -127,12 +127,23 @@ function crestSymbol(tier) {
 function crest(tier, color) {
   return `<svg viewBox="0 0 100 100" style="color:${color || '#5A616D'}"><use href="${crestSymbol(tier)}"/></svg>`;
 }
-function mapArt(id, forced) {
+/** Tinted plate derived from the map id, used when there is no artwork. */
+function mapGradient(id, forced) {
   let h = 0;
   const str = String(id);
   for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
   const hue = forced !== undefined ? forced : h;
-  return `background:linear-gradient(155deg,hsl(${hue} 26% 20%),hsl(${(hue + 42) % 360} 32% 9%))`;
+  return `linear-gradient(155deg,hsl(${hue} 26% 20%),hsl(${(hue + 42) % 360} 32% 9%))`;
+}
+function mapArt(id, forced) {
+  // background-image, not the shorthand: the caller may also set a size/position
+  return `background-image:${mapGradient(id, forced)}`;
+}
+/** A bare name in the config means Files/ui/img/<name>.png; a path or URL is used as is. */
+function imgUrl(src) {
+  if (!src) return '';
+  const s = String(src);
+  return /[:/]/.test(s) ? s : `img/${s}.png`;
 }
 function tierOf(rankId) {
   const r = ((S.boot && S.boot.ranks) || []).find((x) => x.id === rankId);
@@ -700,19 +711,27 @@ function renderFound(d) {
   $('found-total').textContent = d.total || 0;
 
   const mine = d.accepted_self === true;
-  $('found-waiting').classList.toggle('hidden', !mine);
+  // once the lobby is full the wait line says nothing the counter does not
+  $('found-waiting').classList.toggle('hidden', !mine || (d.accepted || 0) >= (d.total || 0));
   document.querySelector('.found-actions').classList.toggle('hidden', mine);
+
+  /* The number under the title means different things depending on where the
+     queue is: how long you have left to accept, or how long until the vote. */
+  $('found-sub').textContent = mine ? tx('VOTING IN…') : tx('ACCEPT TO CONTINUE');
 
   if (first) {
     Sfx.play('found');
     let left = d.timeout || 15;
     const total = left;
+    const box  = $('found-box') || document.querySelector('.found-box');
     const ring = $('found-ring');
-    const circ = 2 * Math.PI * 52;
-    ring.style.strokeDasharray = circ;
+    // a rounded rect, so measure it rather than working the perimeter out
+    const len = ring.getTotalLength ? ring.getTotalLength() : 388;
+    ring.style.strokeDasharray = len;
     const tick = () => {
       $('found-timer').textContent = Math.max(0, left);
-      ring.style.strokeDashoffset = circ * (1 - left / total);
+      ring.style.strokeDashoffset = len * (1 - Math.max(0, left) / total);
+      if (box) box.classList.toggle('urgent', left <= 5);
       if (left <= 5 && left > 0) Sfx.play('tick');
       left -= 1;
       if (left < 0) { clearInterval(S.foundTimer); S.foundTimer = null; }
@@ -745,32 +764,48 @@ function renderMapVote(d) {
     grid.innerHTML = '';
     d.options.forEach((m, i) => {
       S.mapvote.names[m.id] = m.name;
+      /* The screenshot is layered over the tinted plate rather than replacing
+         it, so a missing or misnamed file degrades to the plate instead of a
+         blank card. */
+      const plate = mapGradient(m.id, (i * 47 + 200) % 360);
+      const url = imgUrl(m.image);
+      const art = url ? `background-image:url("${esc(url)}"),${plate}`
+                      : `background-image:${plate}`;
       const card = el('div', 'mv-card', `
-        <div class="mv-art" style="${mapArt(m.id, (i * 47 + 200) % 360)}"></div>
-        <div class="mv-votes" data-map="${esc(m.id)}">0</div>
-        <div class="mv-name">${esc(m.name)}</div>`);
+        <div class="mv-art" style="${art}"></div>
+        <div class="mv-foot-card">
+          <span class="mv-name">${esc(m.name)}</span>
+          <span class="mv-votes" data-map="${esc(m.id)}"><b>0</b></span>
+        </div>`);
       card.onclick = () => {
         document.querySelectorAll('.mv-card').forEach((c) => c.classList.remove('picked'));
         card.classList.add('picked');
         Sfx.play('click');
         post('mapVote', { mapId: m.id });
-        $('mv-foot').textContent = `YOU VOTED FOR ${String(m.name).toUpperCase()}`;
+        $('mv-foot').textContent = `${tx('YOU VOTED FOR')} ${String(m.name).toUpperCase()}`;
       };
       grid.appendChild(card);
     });
 
-    let left = d.duration || 20;
-    $('mv-timer').textContent = left;
+    const total = d.duration || 20;
+    let left = total;
+    const fill = $('mv-rail-fill');
+    const paint = () => {
+      $('mv-timer').textContent = `${Math.max(0, left)}${tx('S')}`;
+      $('mv-timer').classList.toggle('urgent', left <= 5);
+      if (fill) fill.style.width = (Math.max(0, left) / total) * 100 + '%';
+    };
+    paint();
     if (S.mapvoteTimer) clearInterval(S.mapvoteTimer);
     S.mapvoteTimer = setInterval(() => {
-      left -= 1; $('mv-timer').textContent = Math.max(0, left);
+      left -= 1; paint();
       if (left <= 0) { clearInterval(S.mapvoteTimer); S.mapvoteTimer = null; }
     }, 1000);
   }
 
   if (d.votes) {
     Object.keys(d.votes).forEach((id) => {
-      const n = document.querySelector(`.mv-votes[data-map="${id}"]`);
+      const n = document.querySelector(`.mv-votes[data-map="${id}"] b`);
       if (n) n.textContent = d.votes[id];
     });
   }
@@ -1772,11 +1807,43 @@ function admAction(btn) {
 /** A player portrait. The initial is always drawn underneath and the avatar
  *  sits on top of it, so a picture that fails to load simply reveals the
  *  letter — no error handler rewriting the DOM while it is still parsing. */
-function avatarCell(p, cls) {
+/* The initial is always drawn underneath and the image laid over it, so a
+   portrait that fails to load simply reveals the letter again. */
+function avatarInner(p) {
   const img = p.avatar
     ? `<img src="${esc(p.avatar)}" alt="" loading="lazy" onerror="this.remove()"/>`
     : '';
-  return `<div class="${cls}"><span class="ini">${esc(initial(p.name))}</span>${img}</div>`;
+  return `<span class="ini">${esc(initial(p.name))}</span>${img}`;
+}
+function avatarCell(p, cls) {
+  return `<div class="${cls}">${avatarInner(p)}</div>`;
+}
+
+/** `#1234` next to a name, or '' when ids are switched off. */
+function idTag(userId, on) {
+  return (on !== false && userId !== undefined && userId !== null)
+    ? `<i class="pid">#${esc(userId)}</i>` : '';
+}
+
+/* A row of ticks rather than one continuous bar. The nodes are only rebuilt
+   when the tick count changes — every other frame just toggles a class. */
+function segBar(host, filled, total) {
+  if (!host) return;
+  if (host.children.length !== total) {
+    host.innerHTML = new Array(total).fill('<i></i>').join('');
+  }
+  for (let i = 0; i < total; i++) host.children[i].classList.toggle('on', i < filled);
+}
+
+/** Ping bands, so a bad connection reads before the number does. */
+function pingClass(ms) {
+  const n = ms || 0;
+  return n >= 120 ? ' bad' : (n >= 70 ? ' warn' : '');
+}
+
+function hudCfg(part) {
+  const c = (S.matchInfo && S.matchInfo.hudCfg) || {};
+  return (part ? c[part] : c) || {};
 }
 
 /** The row of portraits on one side of the HUD. */
@@ -1859,21 +1926,27 @@ function renderScoreboard() {
   $('sb-alive-a').textContent = `${d.aliveA} ${tx('ALIVE')}`;
   $('sb-alive-b').textContent = `${d.aliveB} ${tx('ALIVE')}`;
 
-  const row = (p, top) => {
+  const showIds = hudCfg('showcase').showIds;
+
+  const row = (p, pos, top) => {
     const cls = (p.connected === false ? ' gone' : (p.alive === false ? ' dead' : ''))
               + (p.userId === meId ? ' me' : '')
               + (top ? ' top' : '');
     return `<div class="sb-row${cls}">
+      <span class="sb-pos">#${pos}</span>
       <span class="sb-who">
         ${avatarCell(p, 'sb-av')}
-        <span class="sb-nm"><b>${esc(p.name)}</b><span>${esc(tx(p.rank || ''))}</span></span>
+        <span class="sb-nm">
+          <span class="sb-nmrow"><b>${esc(p.name)}</b>${idTag(p.userId, showIds)}</span>
+          <span>${esc(tx(p.rank || ''))}</span>
+        </span>
       </span>
       <span>${p.kills || 0}</span>
       <span>${p.deaths || 0}</span>
       <span>${p.assists || 0}</span>
       <span class="hs">${p.headshots || 0}</span>
       <span>${num(p.damage || 0)}</span>
-      <span class="sb-ping">${p.ping || 0}</span>
+      <span class="sb-ping${pingClass(p.ping)}">${p.ping || 0}</span>
     </div>`;
   };
 
@@ -1882,7 +1955,7 @@ function renderScoreboard() {
                       .sort((a, b) => (b.score || 0) - (a.score || 0));
     // the top of a sorted side leads it, but only once someone has scored
     const lead = rows.length && (rows[0].score || 0) > 0 ? rows[0] : null;
-    return rows.length ? rows.map((p) => row(p, p === lead)).join('')
+    return rows.length ? rows.map((p, i) => row(p, i + 1, p === lead)).join('')
                        : `<div class="sb-empty">${esc(tx('NO PLAYERS'))}</div>`;
   };
 
@@ -1901,21 +1974,111 @@ function updateTimer() {
   $('hud-clock').textContent = clock(S.hudTime);
   $('hud-timer').classList.toggle('low', S.hudTime <= 15 && S.hudTime > 0);
 }
+/* ============================================================== SHOWCASE */
+/** Map name and both rosters, over the arena, until the first countdown. */
+function renderShowcase(d) {
+  const host = $('showcase');
+  if (!host) return;
+  const cfg = ((d && d.hudCfg) || {}).showcase || {};
+  if (!d || cfg.enabled === false || d.ffa) { hideShowcase(); return; }
+
+  $('sc-map').textContent = String((d.map && d.map.name) || d.modeLabel || '').toUpperCase();
+  $('sc-sub').textContent = tx('PREPARING MATCH…');
+
+  const names = d.teamNames || {};
+  $('sc-team-a').textContent = names['1'] || names[1] || tx('TEAM A');
+  $('sc-team-b').textContent = names['2'] || names[2] || tx('TEAM B');
+
+  const meId = S.boot && S.boot.player && S.boot.player.userId;
+  const card = (p, i) => `
+    <div class="sc-card${p.userId === meId ? ' me' : ''}" style="animation-delay:${i * 70}ms">
+      ${avatarCell(p, 'sc-av')}
+      <span class="sc-who">
+        <span class="sc-nm"><b>${esc(p.name)}</b>${idTag(p.userId, cfg.showIds)}</span>
+        <span class="sc-rank">${esc(tx(p.rank || 'Unranked')).toUpperCase()}</span>
+      </span>
+      <span class="sc-crest${p.rank ? '' : ' none'}"><svg><use href="#i-crest"/></svg></span>
+    </div>`;
+
+  const side = (team, hostId) => {
+    const rows = (d.roster || []).filter((p) => p.team === team);
+    $(hostId).innerHTML = rows.map(card).join('');
+  };
+  side(1, 'sc-list-a');
+  side(2, 'sc-list-b');
+
+  host.classList.remove('hidden');
+  clearTimeout(renderShowcase._t);
+  renderShowcase._t = setTimeout(hideShowcase, (cfg.duration || 8) * 1000);
+}
+function hideShowcase() {
+  clearTimeout(renderShowcase._t);
+  const host = $('showcase');
+  if (host) host.classList.add('hidden');
+}
+
+/** Name, portrait and id on the player card — fixed for the whole match. */
+function renderPlayerCard() {
+  const p = (S.boot && S.boot.player) || {};
+  const cfg = hudCfg('player');
+  $('hud-player').classList.toggle('hidden', cfg.enabled === false);
+  $('pc-name').textContent = p.name || '—';
+  $('pc-id').textContent = (cfg.showId !== false && p.userId !== undefined && p.userId !== null)
+    ? `#${p.userId}` : '';
+  $('pc-av').innerHTML = avatarInner(p);
+  // draw the empty ticks now so the card is never half-built before the
+  // first localHud frame arrives
+  const segs = cfg.segments || 10;
+  segBar($('pc-hp-segs'), 0, segs);
+  segBar($('pc-ar-segs'), 0, segs);
+  segBar($('gc-mag'), 0, hudCfg('weapon').segments || 12);
+}
+
 function renderLocalHud(d) {
   if (!d) return;
-  const hp = Math.max(0, Math.min(100, d.health));
-  $('hud-hp').textContent = hp;
-  $('hud-hp-bar').style.width = hp + '%';
-  $('hud-hp').parentNode.classList.toggle('low', hp <= 30);
+  const show = hudCfg('show');
+  const pcfg = hudCfg('player');
+  const wcfg = hudCfg('weapon');
 
-  const ar = Math.max(0, Math.min(100, d.armor));
-  $('hud-ar').textContent = d.armor;
-  $('hud-ar-bar').style.width = ar + '%';
+  /* ---- player card: health and armour as ticks, not a sliding bar ---- */
+  const segs = pcfg.segments || 10;
+  const hp = Math.max(0, Math.min(100, d.health || 0));
+  const ar = Math.max(0, Math.min(100, d.armor || 0));
 
-  $('hud-weapon-name').textContent = String(d.weapon || '').replace('WEAPON_', '').replace(/_/g, ' ');
-  $('hud-clip').textContent = d.clip;
-  $('hud-ammo').textContent = d.ammo;
-  $('hud-clip').parentNode.classList.toggle('empty', (d.clip || 0) === 0);
+  $('pc-hp').textContent = hp;
+  segBar($('pc-hp-segs'), Math.ceil((hp / 100) * segs), segs);
+  $('pc-hp-row').classList.toggle('low', hp <= 30);
+  $('pc-hp-row').classList.toggle('hidden', show.health === false);
+
+  $('pc-ar').textContent = ar;
+  segBar($('pc-ar-segs'), Math.ceil((ar / 100) * segs), segs);
+  $('pc-ar-row').classList.toggle('hidden', show.armor === false);
+
+  /* ---- weapon card ---- */
+  const gun = $('hud-gun');
+  gun.classList.toggle('hidden', wcfg.enabled === false || show.weapon === false);
+
+  const raw = String(d.weapon || '');
+  $('hud-weapon-name').textContent = raw.replace('WEAPON_', '').replace(/_/g, ' ') || '—';
+
+  // configured artwork wins; anything unlisted keeps the drawn silhouette
+  const art = $('gc-art');
+  const src = imgUrl((wcfg.images || {})[raw]);
+  if (src) { art.style.backgroundImage = `url("${src}")`; art.classList.add('art'); }
+  else { art.style.backgroundImage = ''; art.classList.remove('art'); }
+
+  const clip = d.clip || 0;
+  const max  = d.clipMax || 0;
+  const ammo = d.ammo || 0;
+  $('hud-clip').textContent = clip;
+  // a loadout with infinite reserve reports a huge number, not a flag
+  $('hud-ammo').textContent = ammo >= 9999 ? '∞' : ammo;
+  $('hud-ammo').style.display = show.ammo === false ? 'none' : '';
+
+  const mag = wcfg.segments || 12;
+  segBar($('gc-mag'), max > 0 ? Math.min(mag, Math.ceil((clip / max) * mag)) : 0, mag);
+  // 'dry', not 'empty': .empty is a generic placeholder class with padding
+  $('gc-mag').parentNode.classList.toggle('dry', clip === 0);
 }
 
 function addKillFeed(d) {
@@ -1967,6 +2130,8 @@ const PH_CIRC = 333;
 function phaseReset() {
   clearInterval(renderRound._t);
   clearTimeout(renderRound._h);
+  // the showcase has had its moment once a round starts moving
+  hideShowcase();
   const phase = $('phase');
   phase.classList.remove('go', 'last');
   $('phase-dial').classList.remove('hidden');
@@ -2297,6 +2462,8 @@ window.addEventListener('message', (e) => {
       $('hud').classList.remove('hidden');
       $('killfeed').innerHTML = '';
       toggleScoreboard(false);
+      renderPlayerCard();
+      renderShowcase(S.matchInfo);
       break;
     }
 
@@ -2342,10 +2509,11 @@ window.addEventListener('message', (e) => {
     case 'matchCleanup':
       // the result overlay goes with everything else: nothing survives the
       // match it belonged to
-      ['hud', 'killfeed', 'phase', 'boundary', 'spectate', 'combat-banner',
+      ['hud', 'killfeed', 'phase', 'showcase', 'boundary', 'spectate', 'combat-banner',
        'modal-result', 'modal-mvp', 'surrender'].forEach((id) => {
         const n = $(id); if (n) n.classList.add('hidden');
       });
+      hideShowcase();
       toggleScoreboard(false);
       $('killfeed').innerHTML = '';
       S.hud = null;
