@@ -438,8 +438,21 @@ html[dir="rtl"] .sb-team-head em{margin-left:0;margin-right:auto}
 html[dir="rtl"] .sb-row::before{left:auto;right:0}
 .sb-row.me{background:linear-gradient(90deg,var(--red-soft),rgba(255,255,255,.02));
   border-color:var(--red);box-shadow:0 0 0 1px rgba(var(--red-rgb),.25)}
-.sb-row.dead{opacity:.42}
+/* A downed player is marked on the portrait rather than by fading the whole
+   row — their stats stay readable, which is the point of holding TAB. */
+.sb-row.dead{opacity:.62}
 .sb-row.dead::before{background:var(--dim-2) !important}
+/* the cell's own gradient is behind the portrait, so it has to go grey too —
+   otherwise a player with no picture keeps a bright blue tile */
+.sb-row.dead .sb-av{border-color:var(--edge-soft);box-shadow:none;
+  background:linear-gradient(145deg,#39424E,#20262E)}
+.sb-row.dead .sb-av .ini,
+.sb-row.dead .sb-av img{filter:grayscale(1) brightness(.38)}
+.sb-skull{position:absolute;inset:0;display:grid;place-items:center;
+  background:rgba(4,7,11,.42);color:rgba(255,255,255,.45)}
+.sb-skull svg{width:17px;height:17px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))}
+/* a dead leader is still the leader, but the gold ring would fight the skull */
+.sb-row.dead.top .sb-av{box-shadow:0 0 0 1px rgba(245,197,66,.4)}
 .sb-row.gone{opacity:.28;font-style:italic}
 .sb-row.gone::before{background:transparent !important}
 /* the side's leading player — gold ring, no extra column needed */

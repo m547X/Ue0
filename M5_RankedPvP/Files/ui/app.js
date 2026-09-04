@@ -1815,8 +1815,8 @@ function avatarInner(p) {
     : '';
   return `<span class="ini">${esc(initial(p.name))}</span>${img}`;
 }
-function avatarCell(p, cls) {
-  return `<div class="${cls}">${avatarInner(p)}</div>`;
+function avatarCell(p, cls, overlay) {
+  return `<div class="${cls}">${avatarInner(p)}${overlay || ''}</div>`;
 }
 
 /** `#1234` next to a name, or '' when ids are switched off. */
@@ -1942,13 +1942,17 @@ function renderScoreboard() {
   const showIds = hudCfg('showcase').showIds;
 
   const row = (p, pos, top) => {
-    const cls = (p.connected === false ? ' gone' : (p.alive === false ? ' dead' : ''))
+    // down, but still in the match — someone who left is 'gone', not dead
+    const dead = p.connected !== false && p.alive === false;
+    const cls = (p.connected === false ? ' gone' : (dead ? ' dead' : ''))
               + (p.userId === meId ? ' me' : '')
               + (top ? ' top' : '');
+    const skull = dead
+      ? '<span class="sb-skull"><svg><use href="#i-skull"/></svg></span>' : '';
     return `<div class="sb-row${cls}">
       <span class="sb-pos">#${pos}</span>
       <span class="sb-who">
-        ${avatarCell(p, 'sb-av')}
+        ${avatarCell(p, 'sb-av', skull)}
         <span class="sb-nm">
           <span class="sb-nmrow"><b>${esc(p.name)}</b>${idTag(p.userId, showIds)}</span>
           <span>${esc(tx(p.rank || ''))}</span>
