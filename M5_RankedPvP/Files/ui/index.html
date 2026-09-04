@@ -83,25 +83,30 @@
   <!-- Match HUD -->
   <div id="hud" class="hud hidden">
     <div class="hud-top">
+      <!-- Each side owns its score: the number sits above that side's name,
+           on that side's edge, so it can never be read as the other team's. -->
       <div class="hud-side a">
+        <div class="hud-row">
+          <b class="hud-score" id="hud-score-a">0</b>
+          <div class="hud-faces" id="hud-faces-a"></div>
+        </div>
         <div class="hud-team">
           <span class="hud-label" id="hud-team-a">TEAM A</span>
           <span class="hud-alive" id="hud-alive-a">0</span>
         </div>
-        <div class="hud-faces" id="hud-faces-a"></div>
       </div>
       <div class="hud-mid">
-        <div class="hud-scores">
-          <span id="hud-score-a">0</span><i></i><span id="hud-score-b">0</span>
-        </div>
         <div class="hud-timer" id="hud-timer"><b id="hud-clock">0:00</b></div>
       </div>
       <div class="hud-side b">
-        <div class="hud-team">
-          <span class="hud-alive" id="hud-alive-b">0</span>
-          <span class="hud-label" id="hud-team-b">TEAM B</span>
+        <div class="hud-row">
+          <b class="hud-score" id="hud-score-b">0</b>
+          <div class="hud-faces" id="hud-faces-b"></div>
         </div>
-        <div class="hud-faces" id="hud-faces-b"></div>
+        <div class="hud-team">
+          <span class="hud-label" id="hud-team-b">TEAM B</span>
+          <span class="hud-alive" id="hud-alive-b">0</span>
+        </div>
       </div>
     </div>
     <div class="hud-pips" id="hud-pips"></div>

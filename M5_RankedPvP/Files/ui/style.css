@@ -115,7 +115,21 @@ h1,h2,h3,h4{font-weight:700}
 .hud-side.b{align-items:flex-end;background:linear-gradient(270deg,rgba(255,71,87,.10),transparent 62%)}
 html[dir="rtl"] .hud-side.a{background:linear-gradient(270deg,rgba(63,169,255,.10),transparent 62%)}
 html[dir="rtl"] .hud-side.b{background:linear-gradient(90deg,rgba(255,71,87,.10),transparent 62%)}
+/* score row over the name row; the score hugs the panel's outer edge and the
+   portraits sit inboard of it, so the pair stays the height it was before */
+.hud-row{display:flex;align-items:center;gap:12px;width:100%}
+.hud-side.b .hud-row{flex-direction:row-reverse}
+.hud-score{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.hud-side.a .hud-score{color:var(--team-a);text-shadow:0 0 20px rgba(63,169,255,.5)}
+.hud-side.b .hud-score{color:var(--team-b);text-shadow:0 0 20px rgba(255,71,87,.5)}
+/* the side that is behind steps back, so who is ahead reads at a glance */
+.hud-side.trail .hud-score{opacity:.68;text-shadow:none}
+/* one round from the match: that side's number goes gold and breathes */
+.hud-side.point .hud-score{color:var(--gold) !important;opacity:1;
+  text-shadow:0 0 22px rgba(245,197,66,.6);animation:blink 1.4s infinite}
+
 .hud-team{display:flex;align-items:center;gap:8px}
+.hud-side.b .hud-team{flex-direction:row-reverse}
 .hud-label{font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--text);
   max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hud-side.a .hud-label{color:var(--team-a)}
@@ -139,30 +153,25 @@ html[dir="rtl"] .hud-side.b{background:linear-gradient(90deg,rgba(255,71,87,.10)
 .face.down{filter:grayscale(1) brightness(.45)}
 .face.down::after{content:'';position:absolute;inset:0;background:rgba(0,0,0,.35)}
 .face.me{box-shadow:0 0 0 2px var(--gold)}
-.hud-mid{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;
-  padding:7px 26px 8px;
+.hud-mid{position:relative;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:7px 22px 8px;
   background:linear-gradient(180deg,rgba(0,0,0,.6),rgba(0,0,0,.34))}
 /* hairlines separating the centre column from both team panels */
 .hud-mid::before,.hud-mid::after{content:'';position:absolute;top:10px;bottom:10px;width:1px;
   background:linear-gradient(180deg,transparent,var(--edge),transparent)}
 .hud-mid::before{left:0}
 .hud-mid::after{right:0}
-.hud-scores{display:flex;align-items:center;gap:13px}
-.hud-scores span{font-size:31px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
-.hud-scores #hud-score-a{color:var(--team-a);text-shadow:0 0 18px rgba(63,169,255,.45)}
-.hud-scores #hud-score-b{color:var(--team-b);text-shadow:0 0 18px rgba(255,71,87,.45)}
-.hud-scores i{width:2px;height:18px;border-radius:2px;background:rgba(255,255,255,.14)}
-
-/* the clock reads as a small instrument, with a pulse dot while it runs */
-.hud-timer{display:flex;align-items:center;gap:7px;padding:2px 11px;border-radius:999px;
-  background:rgba(255,255,255,.05);border:1px solid var(--edge-soft);line-height:1.2}
-.hud-timer::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--win);
+/* the clock is the only thing in the middle now, so it carries that column */
+.hud-timer{display:flex;align-items:center;gap:8px;padding:5px 14px;border-radius:999px;
+  background:rgba(255,255,255,.05);border:1px solid var(--edge-soft);line-height:1.1}
+.hud-timer::before{content:'';width:6px;height:6px;flex:none;border-radius:50%;background:var(--win);
   box-shadow:0 0 8px var(--win);animation:pulseDot 1.6s infinite}
-.hud-timer b{font-size:14px;font-weight:700;letter-spacing:.1em;color:var(--text);
+.hud-timer b{font-size:23px;font-weight:700;letter-spacing:.04em;color:var(--text);
   font-variant-numeric:tabular-nums}
 .hud-timer.low{border-color:rgba(255,59,78,.4);background:rgba(255,59,78,.12)}
 .hud-timer.low::before{background:var(--lose);box-shadow:0 0 8px var(--lose);animation:blink .8s infinite}
 .hud-timer.low b{color:var(--lose);animation:blink .8s infinite}
+html[dir="rtl"] .hud-timer{direction:ltr}
 @keyframes blink{50%{opacity:.4}}
 @keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
 
@@ -1596,7 +1605,6 @@ html[dir="rtl"] .tb-stats{flex-direction:row-reverse}
 
 /* numbers stay left to right inside Arabic text */
 html[dir="rtl"] .sd-time,
-html[dir="rtl"] .hud-mid,
 html[dir="rtl"] .hscore,
 html[dir="rtl"] .code{direction:ltr}
 /* Mixed number/latin runs reverse under RTL — "0 / 1,000 XP" comes out as
@@ -1621,8 +1629,4 @@ html[dir="rtl"] .hud-label,
 html[dir="rtl"] .sb-team-head span,
 html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
 
-/* .hud-mid is held LTR above so the timer reads 1:27, but that also pinned the
-   score pair. The two team panels mirror with the layout, so the scores have to
-   mirror with them — otherwise a side's score sits under the other side's name.
-   Only the row is flipped back; the digits themselves are unaffected. */
-html[dir="rtl"] .hud-scores{direction:rtl}
+

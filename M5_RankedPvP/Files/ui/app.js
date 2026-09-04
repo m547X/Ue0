@@ -1886,12 +1886,25 @@ function renderHud(d) {
     $('hud-pips').style.display = 'none';
   }
 
-  // one round from taking the match — worth calling out on the HUD
-  const point = need > 0 && !d.ffa
-             && (d.scores.a === need - 1 || d.scores.b === need - 1);
+  /* Each side's panel carries its own score, so the state of the series is
+     told on the panel rather than by a shared pair in the middle: the side
+     that is behind steps back, and a side one round from the match goes gold. */
+  const sideA = document.querySelector('.hud-side.a');
+  const sideB = document.querySelector('.hud-side.b');
+  const pointA = need > 0 && !d.ffa && d.scores.a === need - 1;
+  const pointB = need > 0 && !d.ffa && d.scores.b === need - 1;
+  if (sideA) {
+    sideA.classList.toggle('trail', d.scores.a < d.scores.b);
+    sideA.classList.toggle('point', pointA);
+  }
+  if (sideB) {
+    sideB.classList.toggle('trail', d.scores.b < d.scores.a);
+    sideB.classList.toggle('point', pointB);
+  }
+
   const flag = $('hud-flag');
   flag.textContent = tx('MATCH POINT');
-  flag.classList.toggle('hidden', !point);
+  flag.classList.toggle('hidden', !(pointA || pointB));
 
   const board = d.scoreboard || [];
   const meId  = S.boot && S.boot.player && S.boot.player.userId;
