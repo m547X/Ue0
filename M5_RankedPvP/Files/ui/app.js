@@ -1846,15 +1846,21 @@ function hudCfg(part) {
   return (part ? c[part] : c) || {};
 }
 
+/** Down, but still in the match — someone who left is gone, not dead. */
+function isDown(p) {
+  return p.connected !== false && p.alive === false;
+}
+const SKULL = '<span class="av-skull"><svg><use href="#i-skull"/></svg></span>';
+
 /** The row of portraits on one side of the HUD. */
 function renderFaces(hostId, players, meId) {
   const host = $(hostId);
   if (!host) return;
   host.innerHTML = players.map((p) => {
-    const state = (p.connected === false) ? ' down'
-                : (p.alive === false ? ' down' : '');
+    const dead  = isDown(p);
+    const state = (p.connected === false) ? ' gone' : (dead ? ' down' : '');
     const mine  = p.userId === meId ? ' me' : '';
-    return avatarCell(p, 'face' + state + mine);
+    return avatarCell(p, 'face' + state + mine, dead ? SKULL : '');
   }).join('');
 }
 
@@ -1942,13 +1948,11 @@ function renderScoreboard() {
   const showIds = hudCfg('showcase').showIds;
 
   const row = (p, pos, top) => {
-    // down, but still in the match — someone who left is 'gone', not dead
-    const dead = p.connected !== false && p.alive === false;
+    const dead = isDown(p);
     const cls = (p.connected === false ? ' gone' : (dead ? ' dead' : ''))
               + (p.userId === meId ? ' me' : '')
               + (top ? ' top' : '');
-    const skull = dead
-      ? '<span class="sb-skull"><svg><use href="#i-skull"/></svg></span>' : '';
+    const skull = dead ? SKULL : '';
     return `<div class="sb-row${cls}">
       <span class="sb-pos">#${pos}</span>
       <span class="sb-who">

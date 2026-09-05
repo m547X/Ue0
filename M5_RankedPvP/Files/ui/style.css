@@ -150,8 +150,15 @@ html[dir="rtl"] .hud-side.b{background:linear-gradient(90deg,rgba(255,71,87,.10)
 .face .ini{display:grid;place-items:center;width:100%;height:100%;font-size:12px;font-weight:700;color:#fff}
 .hud-side.a .face{border-color:var(--team-a)}
 .hud-side.b .face{border-color:var(--team-b)}
-.face.down{filter:grayscale(1) brightness(.45)}
-.face.down::after{content:'';position:absolute;inset:0;background:rgba(0,0,0,.35)}
+/* filter the portrait layers, not the cell — the skull sits on top of them
+   and has to stay readable. The cell's own gradient greys with them, or a
+   player with no picture keeps a bright blue tile. */
+.face.down{background:linear-gradient(145deg,#39424E,#20262E);border-color:var(--edge-soft) !important}
+.face.down .ini,
+.face.down img{filter:grayscale(1) brightness(.38)}
+.face.gone{opacity:.5}
+.face.gone .ini,
+.face.gone img{filter:grayscale(1) brightness(.45)}
 .face.me{box-shadow:0 0 0 2px var(--gold)}
 .hud-mid{position:relative;display:flex;flex-direction:column;align-items:center;
   justify-content:center;padding:7px 22px 8px;
@@ -367,7 +374,7 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
 .sb-shell::before{content:'';position:absolute;left:0;right:0;top:0;height:1px;z-index:2;
   background:linear-gradient(90deg,transparent,rgba(var(--red-rgb),.75),transparent)}
 
-.sb-head{position:relative;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px;
+.sb-head{position:relative;display:flex;justify-content:space-between;align-items:center;gap:14px;
   padding:16px 22px;border-bottom:1px solid var(--edge-soft);
   background:linear-gradient(180deg,rgba(255,255,255,.045),transparent)}
 .sb-head::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
@@ -381,13 +388,7 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
 .sb-title em{font-style:normal;font-size:11px;color:var(--dim-2);letter-spacing:.12em;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .sb-title em:empty{display:none}
-.sb-score{display:flex;align-items:center;gap:14px;direction:ltr;
-  font-variant-numeric:tabular-nums}
-.sb-score b{font-size:34px;font-weight:700;line-height:1}
-.sb-score b:first-child{color:var(--team-a);text-shadow:0 0 20px rgba(63,169,255,.4)}
-.sb-score b:last-child{color:var(--team-b);text-shadow:0 0 20px rgba(255,71,87,.4)}
-.sb-score i{width:2px;height:20px;border-radius:2px;background:rgba(255,255,255,.16)}
-.sb-round{justify-self:end;padding:4px 12px;border-radius:999px;
+.sb-round{padding:4px 12px;border-radius:999px;
   font-size:11px;font-weight:700;letter-spacing:.2em;color:var(--dim);
   background:rgba(255,255,255,.05);border:1px solid var(--edge-soft)}
 
@@ -406,7 +407,14 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
 html[dir="rtl"] .sb-team.a::before{background:linear-gradient(270deg,var(--team-a),transparent)}
 html[dir="rtl"] .sb-team.b::before{background:linear-gradient(270deg,var(--team-b),transparent)}
 
-.sb-team-head{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+/* The score lives in its own team's panel: with two panels side by side a
+   centred pair sits over whichever side the page direction puts it on, and in
+   Arabic that is the other team's. Inside the panel it cannot detach. */
+.sb-team-head{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.sb-tscore{min-width:30px;font-size:30px;font-weight:700;line-height:1;flex:none;
+  font-variant-numeric:tabular-nums;text-align:center}
+.sb-team.a .sb-tscore{color:var(--team-a);text-shadow:0 0 20px rgba(63,169,255,.45)}
+.sb-team.b .sb-tscore{color:var(--team-b);text-shadow:0 0 20px rgba(255,71,87,.45)}
 .sb-dot{width:8px;height:8px;border-radius:50%;flex:none}
 .sb-team.a .sb-dot{background:var(--team-a);box-shadow:0 0 10px -1px var(--team-a)}
 .sb-team.b .sb-dot{background:var(--team-b);box-shadow:0 0 10px -1px var(--team-b)}
@@ -448,9 +456,10 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
   background:linear-gradient(145deg,#39424E,#20262E)}
 .sb-row.dead .sb-av .ini,
 .sb-row.dead .sb-av img{filter:grayscale(1) brightness(.38)}
-.sb-skull{position:absolute;inset:0;display:grid;place-items:center;
+.av-skull{position:absolute;inset:0;display:grid;place-items:center;
   background:rgba(4,7,11,.42);color:rgba(255,255,255,.45)}
-.sb-skull svg{width:17px;height:17px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))}
+.av-skull svg{width:17px;height:17px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))}
+.face .av-skull svg{width:14px;height:14px}
 /* a dead leader is still the leader, but the gold ring would fight the skull */
 .sb-row.dead.top .sb-av{box-shadow:0 0 0 1px rgba(245,197,66,.4)}
 .sb-row.gone{opacity:.28;font-style:italic}
@@ -1628,8 +1637,7 @@ html[dir="rtl"] #hud-ping,
 html[dir="rtl"] .slot-nums,
 html[dir="rtl"] .hud-timer,
 html[dir="rtl"] .hud-ammo,
-html[dir="rtl"] .sd-time,
-html[dir="rtl"] .sb-score{direction:ltr;unicode-bidi:isolate}
+html[dir="rtl"] .sd-time{direction:ltr;unicode-bidi:isolate}
 
 /* Player and team names are supplied by the server and are usually Latin, and
    a configured pattern like "%s'S TEAM" reverses into "S TEAM'<name>" under an
