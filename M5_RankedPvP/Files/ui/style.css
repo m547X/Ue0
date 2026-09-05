@@ -1040,6 +1040,8 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
   background:var(--level);border:2px solid var(--panel)}
 .id-info{flex:1;min-width:0}
 .id-name{font-size:17px;font-weight:700;letter-spacing:.03em;line-height:1.15}
+.id-title{font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--gold);margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .id-rank{display:flex;align-items:center;gap:6px;margin-top:1px}
 .id-crest{width:15px;height:15px;flex:none}
 .id-rank span{font-size:12px;color:var(--dim);letter-spacing:.06em}
@@ -1176,6 +1178,25 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
 
 .slot.filled{border-color:var(--edge);
   box-shadow:inset 0 -70px 70px -60px var(--red-glow),inset 0 1px 0 rgba(255,255,255,.05)}
+
+/* The card a player equipped in the store is the backdrop of their seat. It
+   sits under everything and is faded into the panel from both ends, so the
+   name, the rank and the RP bar stay readable over any artwork. */
+.slot-art{position:absolute;inset:0;z-index:0;background-size:cover;background-position:center;
+  opacity:.72}
+.slot-art::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(8,11,16,.66) 0%,rgba(8,11,16,.12) 38%,rgba(8,11,16,.55) 72%,rgba(8,11,16,.94) 100%)}
+.slot.filled > .slot-top,
+.slot.filled > .slot-foot,
+.slot.filled > .slot-kick{position:relative;z-index:1}
+/* with artwork behind it the portrait needs its own ground to sit on */
+.slot.art .slot-av{box-shadow:0 0 0 3px rgba(var(--red-rgb),.5),0 0 30px -4px var(--red-glow),
+  0 10px 30px -10px #000}
+.slot.art .slot-name,.slot.art .slot-nums{text-shadow:0 1px 4px #000}
+
+/* the equipped title, under the name */
+.slot-title{margin-top:4px;font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--gold);
+  text-shadow:0 1px 4px #000;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .slot.filled:hover{transform:translateY(-3px);border-color:var(--red)}
 .slot.filled::before{content:'';position:absolute;left:0;right:0;top:0;height:1px;
   background:linear-gradient(90deg,transparent,var(--red),transparent);opacity:.7}

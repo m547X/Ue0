@@ -448,6 +448,13 @@ function renderBoot(data) {
   $('id-initial').textContent = initial(p.name);
   $('id-levelbadge').textContent = p.level || 1;
   renderIdentityRank();
+
+  // the title bought in the store sits under the name on the identity card
+  const cos = p.cosmetics || null;
+  const idTitle = $('id-title');
+  idTitle.textContent = (cos && cos.title) ? String(cos.title).toUpperCase() : '';
+  idTitle.style.color = (cos && cos.titleColor) || '';
+  idTitle.classList.toggle('hidden', !(cos && cos.title));
   $('id-xp-bar').style.width = Math.min(100, ((p.xp || 0) / Math.max(1, p.xpNeeded || 1)) * 100) + '%';
   $('id-xp-text').textContent = `${num(p.xp)} / ${num(p.xpNeeded)} XP`;
   $('id-lvl-text').textContent = `LVL ${p.level || 1} / ∞`;
@@ -635,10 +642,17 @@ function renderSlots() {
     const lo = m.rp || 0;
     const hi = prog && prog.needed ? (lo + prog.needed) : (lo + 50);
 
-    const slot = el('div', 'slot filled' + (m.leader ? ' leader' : ''), `
+    const cos = cosmeticsOf(m, isMe);
+    const art = cos && imgUrl(cos.cardImage);
+
+    const slot = el('div', 'slot filled' + (m.leader ? ' leader' : '') + (art ? ' art' : ''), `
+      ${art ? `<div class="slot-art" style="background-image:url(&quot;${esc(art)}&quot;)"></div>` : ''}
       <div class="slot-top">
         <div class="slot-av">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
+        ${cos && cos.title
+          ? `<div class="slot-title"${cos.titleColor ? ` style="color:${esc(cos.titleColor)}"` : ''}>${esc(String(cos.title).toUpperCase())}</div>`
+          : ''}
         <div class="slot-ready ${m.ready ? 'on' : ''}">${esc(tx(m.ready ? 'READY' : 'NOT READY'))}</div>
       </div>
       <div class="slot-foot">
@@ -1873,6 +1887,15 @@ function segBar(host, filled, total) {
 function pingClass(ms) {
   const n = ms || 0;
   return n >= 120 ? ' bad' : (n >= 70 ? ' warn' : '');
+}
+
+/* What the player bought in the store and equipped: the card art behind their
+   seat, and the title under their name. The server sends it on the boot
+   payload for you and on the party roster for everyone else. */
+function cosmeticsOf(member, isMe) {
+  if (member && member.cosmetics) return member.cosmetics;
+  if (isMe && S.boot && S.boot.player) return S.boot.player.cosmetics || null;
+  return null;
 }
 
 function hudCfg(part) {

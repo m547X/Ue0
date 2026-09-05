@@ -1996,6 +1996,11 @@ end
 -- 10. PARTY
 -- ============================================================================
 
+-- Forward declaration. The store subsystem is defined much further down, but
+-- the party roster below needs to read a member's equipped cosmetics, and a
+-- local declared later in the file is not in scope up here.
+local Store
+
 local Parties = {}  -- [partyId] = party
 local Invites  = {} -- [userId] = { partyId, from, expires }
 
@@ -2011,6 +2016,9 @@ local function partyPayload(party)
         local uidv = party.members[i]
         local mpd = Players[uidv]
         if mpd then
+            -- the card art and title a member bought are part of who they
+            -- are on the roster, not just something they see on their own card
+            Store.load(uidv)
             members[#members + 1] = {
                 userId = uidv,
                 name   = mpd.name,
@@ -2019,7 +2027,8 @@ local function partyPayload(party)
                 rp     = mpd.rp,
                 leader = (uidv == party.leader),
                 ready  = party.ready[uidv] == true,
-                state  = mpd.state
+                state  = mpd.state,
+                cosmetics = Store.cosmetics(uidv)
             }
         end
     end
@@ -6128,7 +6137,7 @@ end
 -- "buy this id" / "equip this id" — it never sends a price, never sends a
 -- balance, and cannot equip something it does not own.
 
-local Store = { cache = {} }   -- [userId] = { coins, card, title, owned = { kind = {id=true} } }
+Store = { cache = {} }   -- [userId] = { coins, card, title, owned = { kind = {id=true} } }
 
 local CardById, TitleById = {}, {}
 for _, c in ipairs(Config.Store.cards  or {}) do CardById[c.id]  = c end
@@ -8295,7 +8304,12 @@ RegisterNetEvent('m5rp:sv:store', function(action, kind, id)
     -- always answer with the authoritative state, successful or not
     TriggerClientEvent('m5rp:cl:data', src, {
         what = 'store', store = Store.payload(pd.userId) })
-    if ok then Player.pushUpdate(pd.userId) end
+    if ok then
+        Player.pushUpdate(pd.userId)
+        -- a card or a title is on show to the whole party, so push the roster
+        -- again rather than making everyone else wait for the next change
+        if action == 'equip' then PartyMgr.sync(PartyMgr.get(pd.userId)) end
+    end
 end)
 
 --- Activity heartbeat used by the AFK detector.
