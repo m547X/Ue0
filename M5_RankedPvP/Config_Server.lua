@@ -209,6 +209,43 @@ Config.Webhooks = {
 -- ============================================================================
 -- 5. RANKS
 -- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 5a. RANK POOLS — one rank per mode
+-- ----------------------------------------------------------------------------
+-- A rank pool is one independent ladder: its own RP, rank, placement matches
+-- and hidden MMR. With `perMode` on, every mode is its own pool, so a player
+-- can be Gold in 1v1 and Silver in 2v2 at the same time.
+--
+-- `shared` groups modes that should count as one ladder. Anything not listed
+-- keeps its own. To put every team mode on a single ladder, for example:
+--
+--     shared = { ['2v2'] = 'team', ['3v3'] = 'team', ['5v5'] = 'team' }
+--
+-- CHANGING THESE REGROUPS EXISTING RANKS. A pool is stored under its name, so
+-- renaming a pool leaves the old rows behind under the old name; players will
+-- start that pool from Unranked. Decide the grouping before you go live.
+--
+Config.RankPools = {
+    -- false = one ladder for everything, the way it worked before per-mode
+    -- ranks. Every mode then uses `default` below.
+    perMode = true,
+
+    shared = {
+        -- ['tdm'] = 'objective',
+        -- ['snd'] = 'objective',
+    },
+
+    -- Shown in the hub before the player has picked a mode, and used as the
+    -- single ladder when perMode is false.
+    default = '1v1',
+
+    -- Where a rank saved before per-mode ranks existed ends up. The upgrade
+    -- migration stamps every old row with this pool, so nobody loses a rank.
+    -- It must be one of your pools, normally the same as `default`.
+    legacy = '1v1'
+}
+
 -- `rpRequired` is the cumulative RP needed to enter that division.
 -- Order matters: the list must be sorted ascending by rpRequired.
 

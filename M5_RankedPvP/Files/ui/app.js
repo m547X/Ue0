@@ -406,6 +406,39 @@ function showPage(page) {
   if (page === 'admin') post('admin', { action: 'dashboard' });
 }
 
+/* Per-mode ranks: every mode has its own ladder, and the header always shows
+   the ladder of the mode currently selected. The server sends all of them at
+   boot, so switching a tab is a redraw, not a round trip. */
+function poolFor(mode) {
+  const b = S.boot || {};
+  if (!b.pools) return null;              // server without per-mode ranks
+  const name = (b.modePool && b.modePool[mode || S.mode]) || b.pool;
+  if (b.pools[name]) return b.pools[name];
+
+  /* A ladder the player has never played has no row yet, and showing the
+     default ladder's rank here would claim a rank they have not earned. */
+  const pl = (b.player && b.player.placement) || {};
+  return {
+    rp: 0, rank: 'Unranked', rankId: 0, rankColor: '#5A616D', tier: 'UNRANKED',
+    progress: { percent: 0, needed: 0 },
+    placement: { done: false, played: 0, total: pl.total || 0, enabled: pl.enabled !== false }
+  };
+}
+
+/** The player card, merged with the ladder of the selected mode. */
+function playerForMode(mode) {
+  const p = (S.boot && S.boot.player) || {};
+  const e = poolFor(mode);
+  return e ? Object.assign({}, p, e) : p;
+}
+
+/** Redraws the header for whichever mode is selected now. */
+function renderIdentityRank() {
+  const p = playerForMode();
+  $('id-rankname').textContent = tx(p.rank || 'Unranked');
+  $('id-crest').innerHTML = crest(p.tier, p.rankColor);
+}
+
 /* ============================================================ BOOT RENDER */
 function renderBoot(data) {
   S.boot = data;
@@ -414,8 +447,7 @@ function renderBoot(data) {
   $('id-name').textContent = p.name || '—';
   $('id-initial').textContent = initial(p.name);
   $('id-levelbadge').textContent = p.level || 1;
-  $('id-rankname').textContent = p.rank || 'Unranked';
-  $('id-crest').innerHTML = crest(p.tier, p.rankColor);
+  renderIdentityRank();
   $('id-xp-bar').style.width = Math.min(100, ((p.xp || 0) / Math.max(1, p.xpNeeded || 1)) * 100) + '%';
   $('id-xp-text').textContent = `${num(p.xp)} / ${num(p.xpNeeded)} XP`;
   $('id-lvl-text').textContent = `LVL ${p.level || 1} / ∞`;
@@ -471,6 +503,8 @@ function renderModeTabs() {
       S.mode = m.id;
       renderModeTabs();
       renderSlots();
+      // the header follows the tab: each mode is its own ladder
+      renderIdentityRank();
     };
     host.appendChild(b);
   });
@@ -2252,12 +2286,33 @@ function renderRound(d) {
   }
 }
 
-function renderMatchEnd(d) {
+/** Takes the result panel off the screen. Called by the dismiss key, by the
+    auto-close timer, and by the cleanup that ends the match for good. */
+function closeResult() {
+  clearTimeout(renderMatchEnd._t);
+  const modal = $('modal-result');
+  if (modal) modal.classList.add('hidden');
+}
+
+function renderMatchEnd(d, dismissHint, autoClose) {
   if (!d) return;
   const modal = $('modal-result');
   modal.classList.remove('hidden');
   // nothing else should be on screen behind the result
   toggleScoreboard(false);
+  $('hud').classList.add('hidden');
+
+  // The panel has no focus and so no close button that could be clicked; the
+  // key that closes it is printed at the bottom instead.
+  const hint = $('result-dismiss');
+  if (hint) {
+    hint.classList.toggle('hidden', !dismissHint);
+    if (dismissHint) $('result-key').textContent = dismissHint;
+  }
+  clearTimeout(renderMatchEnd._t);
+  if (autoClose && autoClose > 0) {
+    renderMatchEnd._t = setTimeout(closeResult, autoClose * 1000);
+  }
 
   /* Accept either wording. A real match reports VICTORY/DEFEAT and a practice
      one used to report WIN/LOSS, which matched neither the colour test nor a
@@ -2525,7 +2580,8 @@ window.addEventListener('message', (e) => {
     case 'killfeed': addKillFeed(d.data); break;
     case 'event': showEvent(d.data); break;
     case 'round': renderRound(d.data); break;
-    case 'matchEnd': renderMatchEnd(d.data); break;
+    case 'matchEnd': renderMatchEnd(d.data, d.dismissHint, d.autoClose); break;
+    case 'closeResult': closeResult(); break;
 
     case 'matchCleanup':
       // the result overlay goes with everything else: nothing survives the
@@ -2535,6 +2591,7 @@ window.addEventListener('message', (e) => {
         const n = $(id); if (n) n.classList.add('hidden');
       });
       hideShowcase();
+      closeResult();
       toggleScoreboard(false);
       $('killfeed').innerHTML = '';
       S.hud = null;

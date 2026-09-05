@@ -130,6 +130,7 @@ Locale.ar = {
     ['No match to reconnect to.'] = 'لا توجد مباراة للعودة إليها.',
     ['The reconnect window has expired.'] = 'انتهت مهلة العودة.',
     ['SURRENDER']                 = 'استسلام',
+    ['CLOSE']                     = 'إغلاق',
     ['Surrender is disabled.']    = 'الاستسلام معطّل.',
     ['HOLD TO SURRENDER']         = 'استمر بالضغط للانسحاب',
     ['At least two players are required.'] = 'مطلوب لاعبان على الأقل.',

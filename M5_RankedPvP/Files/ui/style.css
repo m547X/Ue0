@@ -922,6 +922,12 @@ html[dir="rtl"] .mv-rail i{background:linear-gradient(270deg,var(--red),var(--re
 .res-stats b{display:block;font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
 .res-stats span{font-size:9px;letter-spacing:.2em;color:var(--dim-2)}
 .res-board{max-height:32vh;overflow-y:auto;margin-top:10px;text-align:left}
+/* The panel takes no NUI focus, so it cannot be clicked away — the key that
+   closes it is the way out, and it is printed here. */
+.res-dismiss{display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:15px 0 2px;font-size:10px;font-weight:700;letter-spacing:.24em;color:var(--dim-2)}
+.res-dismiss .keycap{display:inline-grid;height:26px;font-size:10px;letter-spacing:.14em;
+  color:var(--dim)}
 .rb-team{font-size:10px;font-weight:700;letter-spacing:.2em;margin:10px 2px 6px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rb-team.a{color:var(--team-a)}

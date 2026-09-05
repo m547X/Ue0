@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS `m5_player_stats` (
 CREATE TABLE IF NOT EXISTS `m5_player_ranks` (
   `user_id`           INT UNSIGNED NOT NULL,
   `season_id`         INT UNSIGNED NOT NULL,
+  `mode`              VARCHAR(24) NOT NULL DEFAULT '1v1',
   `rp`                INT NOT NULL DEFAULT 0,
   `rank_id`           INT NOT NULL DEFAULT 0,
   `division`          INT NOT NULL DEFAULT 0,
@@ -87,9 +88,9 @@ CREATE TABLE IF NOT EXISTS `m5_player_ranks` (
   `placement_data`    LONGTEXT NULL,
   `rank_protection`   INT NOT NULL DEFAULT 0,
   `updated_at`        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`user_id`, `season_id`),
-  KEY `idx_ranks_board` (`season_id`, `rp` DESC),
-  KEY `idx_ranks_rank`  (`season_id`, `rank_id`)
+  PRIMARY KEY (`user_id`, `season_id`, `mode`),
+  KEY `idx_ranks_board` (`season_id`, `mode`, `rp` DESC),
+  KEY `idx_ranks_rank`  (`season_id`, `mode`, `rank_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------------------------------------------------------
@@ -98,13 +99,14 @@ CREATE TABLE IF NOT EXISTS `m5_player_ranks` (
 CREATE TABLE IF NOT EXISTS `m5_player_mmr` (
   `user_id`     INT UNSIGNED NOT NULL,
   `season_id`   INT UNSIGNED NOT NULL,
+  `mode`        VARCHAR(24) NOT NULL DEFAULT '1v1',
   `mmr`         INT NOT NULL DEFAULT 1000,
   `uncertainty` INT NOT NULL DEFAULT 350,
   `games`       INT NOT NULL DEFAULT 0,
   `peak_mmr`    INT NOT NULL DEFAULT 1000,
   `updated_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`user_id`, `season_id`),
-  KEY `idx_mmr_season` (`season_id`, `mmr`)
+  PRIMARY KEY (`user_id`, `season_id`, `mode`),
+  KEY `idx_mmr_season` (`season_id`, `mode`, `mmr`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------------------------------------------------------

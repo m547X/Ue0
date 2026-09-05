@@ -280,7 +280,7 @@ Config.UI = {
     },
 
     scale = 1.0,           -- global UI scale multiplier
-    blurBackground = true, -- blur the game behind the hub
+    blurBackground = false, -- blur the game behind the hub (GTA screen blur)
 
     -- Decorative layers behind the hub
     decor = {
@@ -362,6 +362,20 @@ Config.HUD = {
         blockDuringCountdown = true
     },
 
+    -- The match result panel. It is an overlay with no NUI focus, so it cannot
+    -- be clicked away — this key is how the player dismisses it. ESC is not
+    -- bindable in FiveM (the pause menu owns it), so the default is BACKSPACE.
+    -- It is registered with FiveM's keybinding system, so it can be rebound
+    -- under Settings > Key Bindings > FiveM.
+    result = {
+        enabled = true,
+        key     = 'BACK',        -- backspace
+        display = 'BACKSPACE',   -- what the hint on the panel shows
+        label   = 'M5 Ranked PvP — Close Result',
+        -- Seconds before it closes on its own. 0 = only the key closes it.
+        autoClose = 20
+    },
+
     killFeed = {
         enabled   = true,
         position  = 'right', -- 'right' | 'left'
@@ -435,18 +449,21 @@ Config.Spectator = {
 Config.Effects = {
     enabled = true,
 
-    -- Screen effect applied while the countdown runs
-    countdownEffect = 'MinigameTransitionIn',
+    -- ------------------------------------------------------------------
+    -- Screen tints are OFF. GTA's screen effects wash the whole picture in
+    -- a colour, which is exactly what you do not want in a gun fight, and a
+    -- looped one can survive a crash and stay burned on the screen. Set any
+    -- of these to a GTA effect name to bring it back; false means none.
+    -- ------------------------------------------------------------------
+    countdownEffect   = false,   -- was 'MinigameTransitionIn'
+    deathEffect       = false,   -- was 'DeathFailOut'
+    outOfBoundsEffect = false,   -- was 'DeathFailMPDark'
 
-    -- Damage / death feedback
-    deathEffect     = 'DeathFailOut',
+    -- Hit feedback is drawn by the NUI, not by a screen effect, so it stays
     hitmarker       = true,
     hitmarkerTime   = 140,
     headshotMarkerColor = { r = 255, g = 60, b = 70 },
     hitmarkerColor      = { r = 255, g = 255, b = 255 },
-
-    -- Out of bounds screen tint
-    outOfBoundsEffect = 'DeathFailMPDark',
 
     -- Spawn protection shimmer
     spawnProtectionAlpha = 120
@@ -460,7 +477,9 @@ Config.Boundary = {
     warningText   = 'RETURN TO COMBAT ZONE',
     countdownFrom = 5,
     drawArrow     = true,
-    tintScreen    = true,
+    -- off with the rest of the screen tints: the NUI already draws a warning
+    -- frame and a countdown, which reads without washing the picture out
+    tintScreen    = false,
     pulseHud      = true
 }
 

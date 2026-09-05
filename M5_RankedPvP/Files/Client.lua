@@ -909,15 +909,39 @@ RegisterNetEvent('m5rp:cl:end', function(data)
     State.roundLive = false
     State.matchState = 'MATCH_END'
 
-    nui({ action = 'matchEnd', data = data })
+    -- The match is over, so the match HUD goes with it. Leaving it up put the
+    -- round timer, the scores and the ammo counter behind the result panel.
+    nui({ action = 'hudVisible', value = false })
+    nui({ action = 'scoreboard', show = false })
+
+    local rc = (Config.HUD and Config.HUD.result) or {}
+    nui({ action = 'matchEnd', data = data,
+          dismissHint = rc.enabled ~= false and (rc.display or 'BACKSPACE') or nil,
+          autoClose   = rc.autoClose })
     hook('onMatchEnd', {
         matchId = data.matchId, result = data.result,
         scores = data.scores, rp = data.rp
     })
 
-    -- The result is an overlay, not a menu: no NUI focus, no cursor, nothing
-    -- for the player to dismiss. Taking focus here used to lock the mouse the
-    -- instant a match ended, which is the worst possible moment for it.
+    -- The result is an overlay, not a menu: no NUI focus, no cursor. That also
+    -- means the panel cannot be clicked away, so the dismiss key below is the
+    -- way out — taking focus here would lock the mouse the instant a match
+    -- ends, which is the worst possible moment for it.
+end)
+
+--- Hold-free dismiss for the result panel. ESC cannot be bound in FiveM (the
+--- pause menu owns it), so the default is BACKSPACE; the player can rebind it
+--- under Settings > Key Bindings > FiveM.
+CreateThread(function()
+    local rc = (Config.HUD and Config.HUD.result) or {}
+    if rc.enabled == false then return end
+
+    RegisterCommand('m5rp_closeresult', function()
+        nui({ action = 'closeResult' })
+    end, false)
+
+    RegisterKeyMapping('m5rp_closeresult',
+        rc.label or 'M5 Ranked PvP — Close Result', 'keyboard', rc.key or 'BACK')
 end)
 
 RegisterNetEvent('m5rp:cl:cleanup', function(data)

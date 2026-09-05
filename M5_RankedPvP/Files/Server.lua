@@ -309,6 +309,7 @@ local SCHEMA = {
 [[CREATE TABLE IF NOT EXISTS `m5_player_ranks` (
   `user_id` INT UNSIGNED NOT NULL,
   `season_id` INT UNSIGNED NOT NULL,
+  `mode` VARCHAR(24) NOT NULL DEFAULT '1v1',
   `rp` INT NOT NULL DEFAULT 0,
   `rank_id` INT NOT NULL DEFAULT 0,
   `division` INT NOT NULL DEFAULT 0,
@@ -319,21 +320,22 @@ local SCHEMA = {
   `placement_data` LONGTEXT NULL,
   `rank_protection` INT NOT NULL DEFAULT 0,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`user_id`,`season_id`),
-  KEY `idx_ranks_board` (`season_id`,`rp`),
-  KEY `idx_ranks_rank` (`season_id`,`rank_id`)
+  PRIMARY KEY (`user_id`,`season_id`,`mode`),
+  KEY `idx_ranks_board` (`season_id`,`mode`,`rp`),
+  KEY `idx_ranks_rank` (`season_id`,`mode`,`rank_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
 
 [[CREATE TABLE IF NOT EXISTS `m5_player_mmr` (
   `user_id` INT UNSIGNED NOT NULL,
   `season_id` INT UNSIGNED NOT NULL,
+  `mode` VARCHAR(24) NOT NULL DEFAULT '1v1',
   `mmr` INT NOT NULL DEFAULT 1000,
   `uncertainty` INT NOT NULL DEFAULT 350,
   `games` INT NOT NULL DEFAULT 0,
   `peak_mmr` INT NOT NULL DEFAULT 1000,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`user_id`,`season_id`),
-  KEY `idx_mmr_season` (`season_id`,`mmr`)
+  PRIMARY KEY (`user_id`,`season_id`,`mode`),
+  KEY `idx_mmr_season` (`season_id`,`mode`,`mmr`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
 
 [[CREATE TABLE IF NOT EXISTS `m5_matches` (
@@ -711,14 +713,70 @@ function DB.write(sql, params)
     return true, res or 0
 end
 
+--- Brings a database created before per-mode ranks up to date.
+---
+--- CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
+--- an existing install would keep the old two-column key and every ladder
+--- would overwrite the one before it. This adds the column, stamps the old
+--- rows with the legacy pool so nobody loses a rank, and widens the primary
+--- key. It is idempotent: once the column is there it does nothing at all.
+local function migrateRankPools()
+    local db = DB.scalar('SELECT DATABASE()')
+    if not db then return end
+
+    local pools = Config.RankPools or {}
+    local legacy = pools.legacy or pools.default or '1v1'
+
+    for _, t in ipairs({ 'm5_player_ranks', 'm5_player_mmr' }) do
+        local exists = tonumber(DB.scalar(
+            [[SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = 'mode']],
+            { db, t }) or 0) or 0
+
+        -- the table may simply not exist yet on a fresh install
+        local tableThere = tonumber(DB.scalar(
+            [[SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?]], { db, t }) or 0) or 0
+
+        if tableThere > 0 and exists == 0 then
+            log('^3migrating %s to per-mode ranks (existing rows -> ladder "%s")', t, legacy)
+            DB.query(('ALTER TABLE `%s` ADD COLUMN `mode` VARCHAR(24) NOT NULL DEFAULT %s AFTER `season_id`')
+                :format(t, ("'" .. legacy:gsub("'", "''") .. "'")))
+            DB.query(('UPDATE `%s` SET `mode` = ? WHERE `mode` = %s'):format(t, "''"), { legacy })
+            DB.query(('ALTER TABLE `%s` DROP PRIMARY KEY, ADD PRIMARY KEY (`user_id`,`season_id`,`mode`)')
+                :format(t))
+            log('^2%s migrated', t)
+        end
+    end
+end
+
 function DB.init()
     if not Config.Database.autoCreateTables then
+        -- Even with auto-create off, a table missing the per-mode column would
+        -- reject every rank write from here on. Say so loudly rather than
+        -- failing silently once a match ends.
+        local db = DB.scalar('SELECT DATABASE()')
+        if db then
+            local has = tonumber(DB.scalar(
+                [[SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_player_ranks'
+                    AND COLUMN_NAME = 'mode']], { db }) or 0) or 0
+            local tableThere = tonumber(DB.scalar(
+                [[SELECT COUNT(*) FROM information_schema.TABLES
+                  WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_player_ranks']], { db }) or 0) or 0
+            if tableThere > 0 and has == 0 then
+                err('m5_player_ranks has no `mode` column: per-mode ranks cannot be saved. '
+                    .. 'Run m5_rankedpvp_permode.sql, or turn Config.Database.autoCreateTables '
+                    .. 'on once and restart to migrate automatically.')
+            end
+        end
         DB.ready = true
         return
     end
     for i = 1, #SCHEMA do
         DB.query(SCHEMA[i])
     end
+    migrateRankPools()
     DB.ready = true
     log('database schema verified (%d tables)', #SCHEMA)
 end
@@ -1101,9 +1159,11 @@ function Rank.radiantSlotFree(userId, rp)
     local slots = Config.RankSettings.radiantSlots or 0
     if slots <= 0 then return true end
     local threshold = RankById[23] and RankById[23].rpRequired or 2600
+    -- the cap is per ladder: the top slots of 1v1 are not the top slots of 2v2
+    local pool = (Players[userId] and Players[userId].pool) or defaultPool()
     local higher = DB.scalar(
-        'SELECT COUNT(*) FROM m5_player_ranks WHERE season_id = ? AND user_id <> ? AND rp >= ? AND rp > ?',
-        { Season.id(), userId, threshold, rp }) or 0
+        'SELECT COUNT(*) FROM m5_player_ranks WHERE season_id = ? AND mode = ? AND user_id <> ? AND rp >= ? AND rp > ?',
+        { Season.id(), pool, userId, threshold, rp }) or 0
     return tonumber(higher) < slots
 end
 
@@ -1153,6 +1213,110 @@ end
 
 local Player = {}
 
+-- ---------------------------------------------------------------------------
+-- RANK POOLS
+-- ---------------------------------------------------------------------------
+-- One pool is one independent ladder — RP, rank, placement and MMR. Which pool
+-- a mode belongs to is decided here and nowhere else.
+--
+-- Everything downstream (RP.apply, the rank getters, the boot payload, the
+-- admin grants) keeps reading pd.rp / pd.rankId / pd.mmr exactly as it always
+-- has: those flat fields are a window onto whichever pool is active. Switching
+-- pools writes the window back and reads the next one in, so the hundreds of
+-- call sites never had to learn about pools at all.
+-- ---------------------------------------------------------------------------
+
+local POOL_RANK_FIELDS = {
+    'rp', 'rankId', 'division', 'highestRankId', 'highestRP',
+    'placementDone', 'placementPlayed', 'placementData', 'rankProtection'
+}
+local POOL_MMR_FIELDS = { 'mmr', 'uncertainty', 'mmrGames', 'peakMMR' }
+
+--- The pool the hub opens on, and the home of any row saved before pools.
+local function defaultPool()
+    return (Config.RankPools or {}).default or '1v1'
+end
+
+--- The pool a mode's rank belongs to.
+function Player.poolOf(mode)
+    local cfg = Config.RankPools or {}
+    if cfg.perMode == false then return cfg.default or '1v1' end
+    if not mode or mode == '' then return cfg.default or '1v1' end
+    return (cfg.shared or {})[mode] or mode
+end
+
+local function emptyPool()
+    return {
+        rp = 0, rankId = 0, division = 0, highestRankId = 0, highestRP = 0,
+        placementDone = false, placementPlayed = 0, placementData = {},
+        rankProtection = 0,
+        mmr = Config.MMR.startValue, uncertainty = Config.MMR.uncertaintyStart,
+        mmrGames = 0, peakMMR = Config.MMR.startValue
+    }
+end
+
+--- Copies the live fields back into the pool they belong to.
+function Player.syncPool(pd)
+    if not pd or not pd.pool then return end
+    local into = pd.pools[pd.pool]
+    if not into then into = emptyPool(); pd.pools[pd.pool] = into end
+    for i = 1, #POOL_RANK_FIELDS do
+        local f = POOL_RANK_FIELDS[i]; into[f] = pd[f]
+    end
+    for i = 1, #POOL_MMR_FIELDS do
+        local f = POOL_MMR_FIELDS[i]; into[f] = pd[f]
+    end
+    local d = pd.poolDirty[pd.pool] or { rank = false, mmr = false }
+    d.rank = d.rank or pd.dirtyRank
+    d.mmr  = d.mmr  or pd.dirtyMMR
+    pd.poolDirty[pd.pool] = d
+end
+
+--- Makes `pool` the live one. Safe to call with the pool already active.
+function Player.usePool(pd, pool)
+    if not pd then return end
+    pool = pool or (Config.RankPools or {}).default or '1v1'
+    if pd.pool == pool then return end
+
+    Player.syncPool(pd)
+
+    local from = pd.pools[pool]
+    if not from then from = emptyPool(); pd.pools[pool] = from end
+    for i = 1, #POOL_RANK_FIELDS do
+        local f = POOL_RANK_FIELDS[i]; pd[f] = from[f]
+    end
+    for i = 1, #POOL_MMR_FIELDS do
+        local f = POOL_MMR_FIELDS[i]; pd[f] = from[f]
+    end
+
+    pd.pool = pool
+    local d = pd.poolDirty[pool] or { rank = false, mmr = false }
+    pd.dirtyRank = d.rank
+    pd.dirtyMMR  = d.mmr
+end
+
+--- Switches to the pool that owns `mode`. The one every caller should use.
+function Player.useMode(pd, mode)
+    Player.usePool(pd, Player.poolOf(mode))
+end
+
+--- Read one pool without disturbing the live one. For matchmaking, which has
+--- to weigh several players against a mode none of them are inside yet.
+function Player.poolData(pd, pool)
+    if not pd then return emptyPool() end
+    if pd.pool == pool then
+        local live = emptyPool()
+        for i = 1, #POOL_RANK_FIELDS do
+            local f = POOL_RANK_FIELDS[i]; live[f] = pd[f]
+        end
+        for i = 1, #POOL_MMR_FIELDS do
+            local f = POOL_MMR_FIELDS[i]; live[f] = pd[f]
+        end
+        return live
+    end
+    return pd.pools[pool] or emptyPool()
+end
+
 --- Loads (or creates) every persisted row for a user and puts it in the cache.
 function Player.load(userId, source)
     -- Re-loading a profile that is already cached replaces the live table, so
@@ -1186,25 +1350,56 @@ function Player.load(userId, source)
         name = row.name or name
     end
 
-    -- ---- rank row --------------------------------------------------------
-    local rank = DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
-        { userId, seasonId })
-    if not rank then
-        DB.insert('INSERT INTO m5_player_ranks (user_id, season_id, rp, rank_id) VALUES (?, ?, 0, 0)',
-            { userId, seasonId })
-        rank = { rp = 0, rank_id = 0, division = 0, highest_rank_id = 0, highest_rp = 0,
-                 placement_done = 0, placement_played = 0, placement_data = '[]', rank_protection = 0 }
+    -- ---- rank + mmr rows, one per pool -----------------------------------
+    -- Every pool the player has ever played comes back in one read each; a
+    -- pool with no row yet simply starts empty when it is first activated.
+    local pools = {}
+    local function poolEntry(name)
+        local e = pools[name]
+        if not e then
+            e = {
+                rp = 0, rankId = 0, division = 0, highestRankId = 0, highestRP = 0,
+                placementDone = false, placementPlayed = 0, placementData = {},
+                rankProtection = 0,
+                mmr = Config.MMR.startValue, uncertainty = Config.MMR.uncertaintyStart,
+                mmrGames = 0, peakMMR = Config.MMR.startValue
+            }
+            pools[name] = e
+        end
+        return e
     end
 
-    -- ---- mmr row ---------------------------------------------------------
-    local mmr = DB.single('SELECT * FROM m5_player_mmr WHERE user_id = ? AND season_id = ?',
-        { userId, seasonId })
-    if not mmr then
-        DB.insert('INSERT INTO m5_player_mmr (user_id, season_id, mmr, uncertainty, games, peak_mmr) VALUES (?, ?, ?, ?, 0, ?)',
-            { userId, seasonId, Config.MMR.startValue, Config.MMR.uncertaintyStart, Config.MMR.startValue })
-        mmr = { mmr = Config.MMR.startValue, uncertainty = Config.MMR.uncertaintyStart,
-                games = 0, peak_mmr = Config.MMR.startValue }
+    local rankRows = DB.query('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
+        { userId, seasonId }) or {}
+    for i = 1, #rankRows do
+        local r = rankRows[i]
+        local e = poolEntry(r.mode ~= nil and r.mode ~= '' and r.mode or defaultPool())
+        e.rp             = tonumber(r.rp) or 0
+        e.rankId         = tonumber(r.rank_id) or 0
+        e.division       = tonumber(r.division) or 0
+        e.highestRankId  = tonumber(r.highest_rank_id) or 0
+        e.highestRP      = tonumber(r.highest_rp) or 0
+        e.placementDone  = toBool(r.placement_done)
+        e.placementPlayed= tonumber(r.placement_played) or 0
+        e.placementData  = jsonDecode(r.placement_data, {})
+        e.rankProtection = tonumber(r.rank_protection) or 0
     end
+
+    local mmrRows = DB.query('SELECT * FROM m5_player_mmr WHERE user_id = ? AND season_id = ?',
+        { userId, seasonId }) or {}
+    for i = 1, #mmrRows do
+        local r = mmrRows[i]
+        local e = poolEntry(r.mode ~= nil and r.mode ~= '' and r.mode or defaultPool())
+        e.mmr         = tonumber(r.mmr) or Config.MMR.startValue
+        e.uncertainty = tonumber(r.uncertainty) or Config.MMR.uncertaintyStart
+        e.mmrGames    = tonumber(r.games) or 0
+        e.peakMMR     = tonumber(r.peak_mmr) or Config.MMR.startValue
+    end
+
+    -- the pool the hub opens on always exists, so a brand new player has
+    -- something to be Unranked in
+    local startPool = defaultPool()
+    local rank = poolEntry(startPool)
 
     -- ---- stats row -------------------------------------------------------
     local stats = DB.single('SELECT * FROM m5_player_stats WHERE user_id = ? AND season_id = ?',
@@ -1236,20 +1431,25 @@ function Player.load(userId, source)
         reports   = tonumber(row.reports) or 0,
         playtime  = tonumber(row.playtime) or 0,
 
-        rp             = tonumber(rank.rp) or 0,
-        rankId         = tonumber(rank.rank_id) or 0,
-        division       = tonumber(rank.division) or 0,
-        highestRankId  = tonumber(rank.highest_rank_id) or 0,
-        highestRP      = tonumber(rank.highest_rp) or 0,
-        placementDone  = toBool(rank.placement_done),
-        placementPlayed= tonumber(rank.placement_played) or 0,
-        placementData  = jsonDecode(rank.placement_data, {}),
-        rankProtection = tonumber(rank.rank_protection) or 0,
+        -- every ladder the player has, and the one these flat fields mirror
+        pools     = pools,
+        pool      = startPool,
+        poolDirty = {},
 
-        mmr         = tonumber(mmr.mmr) or Config.MMR.startValue,
-        uncertainty = tonumber(mmr.uncertainty) or Config.MMR.uncertaintyStart,
-        mmrGames    = tonumber(mmr.games) or 0,
-        peakMMR     = tonumber(mmr.peak_mmr) or Config.MMR.startValue,
+        rp             = rank.rp,
+        rankId         = rank.rankId,
+        division       = rank.division,
+        highestRankId  = rank.highestRankId,
+        highestRP      = rank.highestRP,
+        placementDone  = rank.placementDone,
+        placementPlayed= rank.placementPlayed,
+        placementData  = rank.placementData,
+        rankProtection = rank.rankProtection,
+
+        mmr         = rank.mmr,
+        uncertainty = rank.uncertainty,
+        mmrGames    = rank.mmrGames,
+        peakMMR     = rank.peakMMR,
 
         stats = {
             matches = tonumber(stats.matches) or 0,
@@ -1335,37 +1535,48 @@ function Player.save(pd, removeAfter)
         return
     end
 
-    if pd.dirtyRank then
-        local okWrite = DB.write([[INSERT INTO m5_player_ranks
-                    (user_id, season_id, rp, rank_id, division, highest_rank_id, highest_rp,
-                     placement_done, placement_played, placement_data, rank_protection)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE
-                     rp = VALUES(rp), rank_id = VALUES(rank_id), division = VALUES(division),
-                     highest_rank_id = VALUES(highest_rank_id), highest_rp = VALUES(highest_rp),
-                     placement_done = VALUES(placement_done),
-                     placement_played = VALUES(placement_played),
-                     placement_data = VALUES(placement_data),
-                     rank_protection = VALUES(rank_protection)]],
-            { pd.userId, seasonId, pd.rp, pd.rankId, pd.division, pd.highestRankId, pd.highestRP,
-              pd.placementDone and 1 or 0, pd.placementPlayed, jsonEncode(pd.placementData),
-              pd.rankProtection })
-        -- keep it dirty on a failed write so the next flush retries instead of
-        -- dropping an admin grant or a match result on the floor
-        if okWrite then pd.dirtyRank = false
-        else err('rank save failed for user %d — retrying on the next flush', pd.userId) end
-    end
+    -- Every pool the player has touched this session is written, not just the
+    -- live one: they can win a 2v2 and then open the hub on 1v1, and the 2v2
+    -- result must not be sitting in memory when they disconnect.
+    Player.syncPool(pd)
+    for pool, dirty in pairs(pd.poolDirty) do
+        local e = pd.pools[pool]
+        if e and dirty.rank then
+            local okWrite = DB.write([[INSERT INTO m5_player_ranks
+                        (user_id, season_id, mode, rp, rank_id, division, highest_rank_id, highest_rp,
+                         placement_done, placement_played, placement_data, rank_protection)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                        ON DUPLICATE KEY UPDATE
+                         rp = VALUES(rp), rank_id = VALUES(rank_id), division = VALUES(division),
+                         highest_rank_id = VALUES(highest_rank_id), highest_rp = VALUES(highest_rp),
+                         placement_done = VALUES(placement_done),
+                         placement_played = VALUES(placement_played),
+                         placement_data = VALUES(placement_data),
+                         rank_protection = VALUES(rank_protection)]],
+                { pd.userId, seasonId, pool, e.rp, e.rankId, e.division, e.highestRankId, e.highestRP,
+                  e.placementDone and 1 or 0, e.placementPlayed, jsonEncode(e.placementData),
+                  e.rankProtection })
+            -- keep it dirty on a failed write so the next flush retries instead
+            -- of dropping an admin grant or a match result on the floor
+            if okWrite then dirty.rank = false
+            else err('rank save failed for user %d pool %s — retrying on the next flush', pd.userId, pool) end
+        end
 
-    if pd.dirtyMMR then
-        local okWrite = DB.write([[INSERT INTO m5_player_mmr
-                    (user_id, season_id, mmr, uncertainty, games, peak_mmr)
-                    VALUES (?,?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE
-                     mmr = VALUES(mmr), uncertainty = VALUES(uncertainty),
-                     games = VALUES(games), peak_mmr = VALUES(peak_mmr)]],
-            { pd.userId, seasonId, pd.mmr, pd.uncertainty, pd.mmrGames, pd.peakMMR })
-        if okWrite then pd.dirtyMMR = false end
+        if e and dirty.mmr then
+            local okWrite = DB.write([[INSERT INTO m5_player_mmr
+                        (user_id, season_id, mode, mmr, uncertainty, games, peak_mmr)
+                        VALUES (?,?,?,?,?,?,?)
+                        ON DUPLICATE KEY UPDATE
+                         mmr = VALUES(mmr), uncertainty = VALUES(uncertainty),
+                         games = VALUES(games), peak_mmr = VALUES(peak_mmr)]],
+                { pd.userId, seasonId, pool, e.mmr, e.uncertainty, e.mmrGames, e.peakMMR })
+            if okWrite then dirty.mmr = false end
+        end
     end
+    -- the live flags follow whatever is still outstanding on the active pool
+    local liveDirty = pd.poolDirty[pd.pool] or { rank = false, mmr = false }
+    pd.dirtyRank = liveDirty.rank
+    pd.dirtyMMR  = liveDirty.mmr
 
     if pd.dirtyStats then
         local s = pd.stats
@@ -1399,7 +1610,11 @@ function Player.save(pd, removeAfter)
     -- Dropping the cache entry while something is still unwritten would throw
     -- the change away, so a failed save keeps the player in memory to retry.
     if removeAfter then
-        if pd.dirtyPlayer or pd.dirtyRank or pd.dirtyMMR or pd.dirtyStats then
+        local poolPending = false
+        for _, d in pairs(pd.poolDirty) do
+            if d.rank or d.mmr then poolPending = true break end
+        end
+        if pd.dirtyPlayer or pd.dirtyStats or poolPending then
             err('keeping user %d cached: unsaved data still pending', pd.userId)
         else
             Players[pd.userId] = nil
@@ -2150,12 +2365,13 @@ function Matchmaker.join(userId, mode)
 
     -- Party rank gap check
     if party and Config.Matchmaking.partyRankGapEnabled and #members > 1 then
+        local gapPool = Player.poolOf(modes[1])
         local lo, hi = 99, -1
         for i = 1, #members do
-            local mpd = Players[members[i]]
-            if mpd.placementDone then
-                lo = math.min(lo, mpd.rankId)
-                hi = math.max(hi, mpd.rankId)
+            local e = Player.poolData(Players[members[i]], gapPool)
+            if e.placementDone then
+                lo = math.min(lo, e.rankId)
+                hi = math.max(hi, e.rankId)
             end
         end
         if hi >= 0 and (hi - lo) > Config.Matchmaking.maxPartyRankGap then
@@ -2163,10 +2379,15 @@ function Matchmaker.join(userId, mode)
         end
     end
 
+    -- A group can search several modes at once and each mode has its own
+    -- ladder, so the entry is seeded from the first mode's pool. The RP that
+    -- actually moves is applied against whichever mode the match lands in.
+    local searchPool = Player.poolOf(modes[1])
     local totalMMR, totalRank = 0, 0
     for i = 1, #members do
-        totalMMR  = totalMMR + Players[members[i]].mmr
-        totalRank = totalRank + Players[members[i]].rankId
+        local e = Player.poolData(Players[members[i]], searchPool)
+        totalMMR  = totalMMR + e.mmr
+        totalRank = totalRank + e.rankId
     end
 
     -- One entry per searched mode, all sharing a group key so that filling any
@@ -3031,6 +3252,12 @@ end
 function Match.addPlayer(m, userId, team)
     local pd = Players[userId]
     if not pd then return false end
+
+    -- From here until the results are applied, this player's rank, RP and MMR
+    -- are the ones belonging to this match's mode. Everything downstream —
+    -- the pre-match snapshot below, RP.apply, the MMR update, the result
+    -- payload — reads the flat fields and so lands on the right ladder.
+    Player.useMode(pd, m.mode)
 
     m.players[userId] = {
         userId    = userId,
@@ -3953,6 +4180,11 @@ function Match.finalize(m, winner, reason, mvpId)
         local rpResult, rpBreakdown, newMMR
 
         if pd then
+            -- A player who reconnected mid-match came back on the pool the hub
+            -- opens with, so pin the ladder to this match's mode again before
+            -- anything is credited to it.
+            Player.useMode(pd, m.mode)
+
             -- ---------------- MMR ----------------
             local kd = mp.deaths > 0 and (mp.kills / mp.deaths) or mp.kills
             local perf = clamp(((kd / math.max(0.01, avgKD)) - 1), -1, 1)
@@ -6522,10 +6754,13 @@ local function decorateRow(row, showMMR)
     }
 end
 
-function Board.global(page, showMMR)
+--- The RP ladder for one pool. With per-mode ranks there is no single global
+--- ladder any more, so the caller always names the pool it wants.
+function Board.global(page, showMMR, pool)
     local size   = Config.Database.pageSize
     local offset = math.max(0, (page or 1) - 1) * size
-    return cached(('global_%d_%s'):format(page or 1, tostring(showMMR)),
+    pool = pool or defaultPool()
+    return cached(('global_%s_%d_%s'):format(pool, page or 1, tostring(showMMR)),
         Config.Database.leaderboardCacheTime, function()
         local rows = DB.query([[SELECT r.user_id, r.rp, r.rank_id, p.name, p.level,
                                        s.wins, s.losses, s.matches, s.kills, s.deaths,
@@ -6533,10 +6768,10 @@ function Board.global(page, showMMR)
                                 FROM m5_player_ranks r
                                 LEFT JOIN m5_players p ON p.user_id = r.user_id
                                 LEFT JOIN m5_player_stats s ON s.user_id = r.user_id AND s.season_id = r.season_id
-                                LEFT JOIN m5_player_mmr m ON m.user_id = r.user_id AND m.season_id = r.season_id
-                                WHERE r.season_id = ? AND r.placement_done = 1
+                                LEFT JOIN m5_player_mmr m ON m.user_id = r.user_id AND m.season_id = r.season_id AND m.mode = r.mode
+                                WHERE r.season_id = ? AND r.mode = ? AND r.placement_done = 1
                                 ORDER BY r.rp DESC, s.wins DESC
-                                LIMIT ? OFFSET ?]], { Season.id(), size, offset }) or {}
+                                LIMIT ? OFFSET ?]], { Season.id(), pool, size, offset }) or {}
         local out = {}
         for i = 1, #rows do
             local e = decorateRow(rows[i], showMMR)
@@ -6553,6 +6788,8 @@ function Board.period(kind, page, showMMR)
     local size   = Config.Database.pageSize
     local offset = math.max(0, (page or 1) - 1) * size
 
+    -- the badge next to a name is the player's rank on the default ladder;
+    -- without the mode predicate a player with three ranks appears three times
     return cached(('period_%s_%d'):format(kind, page or 1),
         Config.Database.leaderboardCacheTime, function()
         local rows = DB.query([[SELECT mp.user_id, p.name, p.level, r.rank_id, r.rp,
@@ -6565,11 +6802,11 @@ function Board.period(kind, page, showMMR)
                                 FROM m5_match_players mp
                                 JOIN m5_matches mt ON mt.id = mp.match_id
                                 LEFT JOIN m5_players p ON p.user_id = mp.user_id
-                                LEFT JOIN m5_player_ranks r ON r.user_id = mp.user_id AND r.season_id = mt.season_id
+                                LEFT JOIN m5_player_ranks r ON r.user_id = mp.user_id AND r.season_id = mt.season_id AND r.mode = ?
                                 WHERE mt.ranked = 1 AND mt.ended_at >= ?
                                 GROUP BY mp.user_id, p.name, p.level, r.rank_id, r.rp
                                 ORDER BY gained DESC
-                                LIMIT ? OFFSET ?]], { since, size, offset }) or {}
+                                LIMIT ? OFFSET ?]], { defaultPool(), since, size, offset }) or {}
         local out = {}
         for i = 1, #rows do
             local e = decorateRow(rows[i], showMMR)
@@ -6587,6 +6824,7 @@ end
 function Board.byMode(mode, page, showMMR)
     local size   = Config.Database.pageSize
     local offset = math.max(0, (page or 1) - 1) * size
+    local pool   = Player.poolOf(mode)
 
     return cached(('mode_%s_%d_%s'):format(tostring(mode), page or 1, tostring(showMMR)),
         Config.Database.leaderboardCacheTime, function()
@@ -6600,13 +6838,13 @@ function Board.byMode(mode, page, showMMR)
                                 FROM m5_match_players mp
                                 JOIN m5_matches mt ON mt.id = mp.match_id
                                 LEFT JOIN m5_players p ON p.user_id = mp.user_id
-                                LEFT JOIN m5_player_ranks r ON r.user_id = mp.user_id AND r.season_id = mt.season_id
-                                LEFT JOIN m5_player_mmr m ON m.user_id = mp.user_id AND m.season_id = mt.season_id
+                                LEFT JOIN m5_player_ranks r ON r.user_id = mp.user_id AND r.season_id = mt.season_id AND r.mode = ?
+                                LEFT JOIN m5_player_mmr m ON m.user_id = mp.user_id AND m.season_id = mt.season_id AND m.mode = ?
                                 WHERE mt.ranked = 1 AND mt.mode = ? AND mt.season_id = ?
                                 GROUP BY mp.user_id, p.name, p.level, r.rank_id, m.mmr
                                 ORDER BY points DESC, wins DESC
                                 LIMIT ? OFFSET ?]],
-            { mode, Season.id(), size, offset }) or {}
+            { pool, pool, mode, Season.id(), size, offset }) or {}
 
         local out = {}
         for i = 1, #rows do
@@ -6678,11 +6916,11 @@ function Board.recent(userId, showMMR)
                             FROM m5_match_players mp1
                             JOIN m5_match_players mp2 ON mp2.match_id = mp1.match_id AND mp2.user_id <> mp1.user_id
                             LEFT JOIN m5_players p ON p.user_id = mp2.user_id
-                            LEFT JOIN m5_player_ranks r ON r.user_id = mp2.user_id AND r.season_id = ?
+                            LEFT JOIN m5_player_ranks r ON r.user_id = mp2.user_id AND r.season_id = ? AND r.mode = ?
                             LEFT JOIN m5_player_stats s ON s.user_id = mp2.user_id AND s.season_id = ?
                             WHERE mp1.user_id = ?
                             ORDER BY mp2.match_id DESC LIMIT 25]],
-        { Season.id(), Season.id(), userId }) or {}
+        { Season.id(), defaultPool(), Season.id(), userId }) or {}
     local out = {}
     for i = 1, #rows do
         local e = decorateRow(rows[i], showMMR)
@@ -6692,12 +6930,13 @@ function Board.recent(userId, showMMR)
     return out
 end
 
-function Board.myPosition(userId)
-    local rp = DB.scalar('SELECT rp FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
-        { userId, Season.id() })
+function Board.myPosition(userId, pool)
+    pool = pool or (Players[userId] and Players[userId].pool) or defaultPool()
+    local rp = DB.scalar('SELECT rp FROM m5_player_ranks WHERE user_id = ? AND season_id = ? AND mode = ?',
+        { userId, Season.id(), pool })
     if not rp then return 0 end
-    local above = DB.scalar('SELECT COUNT(*) FROM m5_player_ranks WHERE season_id = ? AND placement_done = 1 AND rp > ?',
-        { Season.id(), rp }) or 0
+    local above = DB.scalar('SELECT COUNT(*) FROM m5_player_ranks WHERE season_id = ? AND mode = ? AND placement_done = 1 AND rp > ?',
+        { Season.id(), pool, rp }) or 0
     return (tonumber(above) or 0) + 1
 end
 
@@ -6705,9 +6944,10 @@ end
 -- Profile
 -- ---------------------------------------------------------------------------
 
-local function buildProfile(userId, showMMR)
+local function buildProfile(userId, showMMR, pool)
     local seasonId = Season.id()
     local pd = Players[userId]
+    pool = pool or (pd and pd.pool) or defaultPool()
 
     local prow = pd and {
         name = pd.name, level = pd.level, xp = pd.xp,
@@ -6717,19 +6957,22 @@ local function buildProfile(userId, showMMR)
     } or DB.single('SELECT * FROM m5_players WHERE user_id = ?', { userId })
     if not prow then return nil end
 
-    local rrow = pd and {
-        rp = pd.rp, rank_id = pd.rankId, highest_rank_id = pd.highestRankId,
-        highest_rp = pd.highestRP, placement_done = pd.placementDone and 1 or 0,
-        placement_played = pd.placementPlayed
-    } or DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ?', { userId, seasonId })
+    local live = pd and Player.poolData(pd, pool) or nil
+    local rrow = live and {
+        rp = live.rp, rank_id = live.rankId, highest_rank_id = live.highestRankId,
+        highest_rp = live.highestRP, placement_done = live.placementDone and 1 or 0,
+        placement_played = live.placementPlayed
+    } or DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ? AND mode = ?',
+        { userId, seasonId, pool })
         or { rp = 0, rank_id = 0, highest_rank_id = 0, highest_rp = 0, placement_done = 0, placement_played = 0 }
 
     local srow = pd and pd.stats
         or DB.single('SELECT * FROM m5_player_stats WHERE user_id = ? AND season_id = ?', { userId, seasonId })
         or emptyStats()
 
-    local mrow = pd and { mmr = pd.mmr, peak_mmr = pd.peakMMR }
-        or DB.single('SELECT * FROM m5_player_mmr WHERE user_id = ? AND season_id = ?', { userId, seasonId })
+    local mrow = live and { mmr = live.mmr, peak_mmr = live.peakMMR }
+        or DB.single('SELECT * FROM m5_player_mmr WHERE user_id = ? AND season_id = ? AND mode = ?',
+            { userId, seasonId, pool })
         or { mmr = Config.MMR.startValue, peak_mmr = Config.MMR.startValue }
 
     local kills  = tonumber(srow.kills) or 0
@@ -7146,13 +7389,13 @@ function Player.verifyRank(userId)
     end
 
     local row = DB.single(
-        'SELECT rp, rank_id, placement_done FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
-        { userId, seasonId })
+        'SELECT rp, rank_id, placement_done FROM m5_player_ranks WHERE user_id = ? AND season_id = ? AND mode = ?',
+        { userId, seasonId, pd.pool })
 
     if not row then
-        err('VERIFY FAILED: no m5_player_ranks row for user %d season %d after saving',
-            userId, seasonId)
-        return ('the database has no rank row for season %d'):format(seasonId)
+        err('VERIFY FAILED: no m5_player_ranks row for user %d season %d pool %s after saving',
+            userId, seasonId, pd.pool)
+        return ('the database has no rank row for season %d, ladder %s'):format(seasonId, pd.pool)
     end
 
     local storedRank, storedRP = tonumber(row.rank_id) or -1, tonumber(row.rp) or -1
@@ -7389,7 +7632,12 @@ function Admin.handle(adminPd, action, data)
         local value = tonumber(data.value)
         if not id or not value then return false, 'Invalid target or value.' end
 
+        -- a grant now names the ladder it lands on; without one it goes to the
+        -- ladder the hub opens with, which is what an admin sees on the card
+        local pool = Player.poolOf(Config.Modes[data.mode] and data.mode or nil)
+
         return true, withPlayer(id, function(pd)
+            Player.usePool(pd, pool)
             local before = pd.rp
             pd.rp = clamp(math.floor(value), Config.RankSettings.minRP, Config.RankSettings.maxRP)
             local rank = Rank.fromRP(pd.rp)
@@ -7398,9 +7646,10 @@ function Admin.handle(adminPd, action, data)
             pd.dirtyRank = true
 
             Admin.audit(adminPd, action, who,
-                { before = before, after = pd.rp, amount = pd.rp - before, reason = reason })
+                { before = before, after = pd.rp, amount = pd.rp - before, reason = reason,
+                  details = { pool = pool } })
             notifyUser(id, 'info', 'Your RP was set to %d — %s', 'RANKED', pd.rp, reason)
-            return { rp = pd.rp, rank = rank.name }
+            return { rp = pd.rp, rank = rank.name, pool = pool }
         end)
 
     elseif action == 'setRank' then
@@ -7408,7 +7657,10 @@ function Admin.handle(adminPd, action, data)
         local rankId = tonumber(data.rankId)
         if not id or not RankById[rankId] then return false, 'Invalid target or rank.' end
 
+        local pool = Player.poolOf(Config.Modes[data.mode] and data.mode or nil)
+
         return true, withPlayer(id, function(pd)
+            Player.usePool(pd, pool)
             local rank = Rank.get(rankId)
             local before = pd.rp
             local beforeRank = pd.rankId
@@ -7427,7 +7679,8 @@ function Admin.handle(adminPd, action, data)
             pd.dirtyRank = true
 
             Admin.audit(adminPd, action, who,
-                { before = before, after = pd.rp, reason = reason, details = { rank = rank.name } })
+                { before = before, after = pd.rp, reason = reason,
+                  details = { rank = rank.name, pool = pool } })
             notifyUser(id, 'info', 'Your rank was set to %s — %s', 'RANKED', rank.name, reason)
             -- always logged: a grant that does not stick is the first thing to
             -- check in the console, and `m5rankinfo <userId>` shows the rest
@@ -7588,13 +7841,16 @@ function Seasons.rollover(byAdmin)
 
     -- archive
     if Config.Seasons.archiveLeaderboard then
+        -- Only the default ladder is archived into m5_season_players: that
+        -- table is keyed by (season, user) and holds one final placement, and
+        -- widening it would rewrite every history screen built on it.
         local rows = DB.query([[SELECT r.user_id, r.rp, r.rank_id, r.highest_rank_id, p.name,
                                        s.wins, s.losses, s.kills, s.deaths
                                 FROM m5_player_ranks r
                                 LEFT JOIN m5_players p ON p.user_id = r.user_id
                                 LEFT JOIN m5_player_stats s ON s.user_id = r.user_id AND s.season_id = r.season_id
-                                WHERE r.season_id = ?
-                                ORDER BY r.rp DESC]], { old.id }) or {}
+                                WHERE r.season_id = ? AND r.mode = ?
+                                ORDER BY r.rp DESC]], { old.id, defaultPool() }) or {}
 
         for i = 1, #rows do
             local r = rows[i]
@@ -7632,7 +7888,9 @@ function Seasons.rollover(byAdmin)
     local newId = Season.create()
 
     if R.mode ~= 'none' then
-        local rows = DB.query('SELECT user_id, rp, highest_rank_id FROM m5_player_ranks WHERE season_id = ?',
+        -- every ladder rolls over on its own terms: a soft reset applies to
+        -- each one separately, so a Gold 1v1 and a Silver 2v2 both carry
+        local rows = DB.query('SELECT user_id, mode, rp, highest_rank_id FROM m5_player_ranks WHERE season_id = ?',
             { old.id }) or {}
         for i = 1, #rows do
             local newRP = 0
@@ -7642,24 +7900,26 @@ function Seasons.rollover(byAdmin)
             end
             local rank = R.mode == 'soft' and Rank.fromRP(newRP) or Rank.get(0)
             DB.insert([[INSERT INTO m5_player_ranks
-                (user_id, season_id, rp, rank_id, division, placement_done, placement_played, placement_data)
-                VALUES (?, ?, ?, ?, ?, ?, 0, '[]')
+                (user_id, season_id, mode, rp, rank_id, division, placement_done, placement_played, placement_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, '[]')
                 ON DUPLICATE KEY UPDATE rp = VALUES(rp)]],
-                { rows[i].user_id, newId, newRP, R.mode == 'soft' and rank.id or 0,
+                { rows[i].user_id, newId, rows[i].mode or defaultPool(), newRP,
+                  R.mode == 'soft' and rank.id or 0,
                   R.mode == 'soft' and rank.division or 0,
                   (R.resetPlacement or R.mode == 'hard') and 0 or 1 })
         end
 
         if R.keepMMR then
-            local mrows = DB.query('SELECT user_id, mmr, peak_mmr FROM m5_player_mmr WHERE season_id = ?',
+            local mrows = DB.query('SELECT user_id, mode, mmr, peak_mmr FROM m5_player_mmr WHERE season_id = ?',
                 { old.id }) or {}
             for i = 1, #mrows do
                 local carried = math.floor(((tonumber(mrows[i].mmr) or Config.MMR.startValue) * R.mmrSoftFactor)
                                 + (Config.MMR.startValue * (1 - R.mmrSoftFactor)))
-                DB.insert([[INSERT INTO m5_player_mmr (user_id, season_id, mmr, uncertainty, games, peak_mmr)
-                            VALUES (?, ?, ?, ?, 0, ?)
+                DB.insert([[INSERT INTO m5_player_mmr (user_id, season_id, mode, mmr, uncertainty, games, peak_mmr)
+                            VALUES (?, ?, ?, ?, ?, 0, ?)
                             ON DUPLICATE KEY UPDATE mmr = VALUES(mmr)]],
-                    { mrows[i].user_id, newId, carried, Config.MMR.uncertaintyStart, carried })
+                    { mrows[i].user_id, newId, mrows[i].mode or defaultPool(),
+                      carried, Config.MMR.uncertaintyStart, carried })
             end
         end
     end
@@ -7685,6 +7945,41 @@ end
 -- ============================================================================
 -- 20. NET EVENTS
 -- ============================================================================
+
+--- One ladder, in the same shape the hub already draws the header from.
+local function poolSummary(e)
+    local done = e.placementDone
+    return {
+        rp        = e.rp,
+        rank      = done and Rank.get(e.rankId).name or 'Unranked',
+        rankId    = done and e.rankId or 0,
+        rankColor = done and Rank.get(e.rankId).color or '#5A616D',
+        tier      = done and Rank.get(e.rankId).tier or 'UNRANKED',
+        progress  = Rank.progress(e.rp, e.rankId, done),
+        highestRank = Rank.get(e.highestRankId).name,
+        placement = {
+            done = done, played = e.placementPlayed,
+            total = Config.Placement.matches, enabled = Config.Placement.enabled
+        }
+    }
+end
+
+local function poolsForClient(pd)
+    Player.syncPool(pd)
+    local out = {}
+    -- always include the ladder the hub opens on, even for a brand new player
+    out[defaultPool()] = poolSummary(Player.poolData(pd, defaultPool()))
+    for name, e in pairs(pd.pools) do out[name] = poolSummary(e) end
+    return out
+end
+
+local function modePoolMap()
+    local out = {}
+    for key, cfg in pairs(Config.Modes) do
+        if cfg.enabled ~= false then out[key] = Player.poolOf(key) end
+    end
+    return out
+end
 
 --- Everything the client and the NUI need on open. Sensitive server config
 --- (webhooks, formulas, thresholds) is never part of this payload.
@@ -7773,6 +8068,16 @@ function Server_BootPayload(pd)
             cosmetics = Store.cosmetics(pd.userId)
         },
         stats   = Board.profile(pd.userId, showMMR),
+
+        -- Per-mode ranks. `pools` is every ladder this player has, `modePool`
+        -- maps a mode to its ladder, and `pool` is the one the header opens
+        -- on. The hub switches header and progress purely from these — no
+        -- round trip when the player flips between mode tabs.
+        pools    = poolsForClient(pd),
+        modePool = modePoolMap(),
+        pool     = defaultPool(),
+        perModeRanks = (Config.RankPools or {}).perMode ~= false,
+
         ranks   = rankTableForClient(),
         rankPath= Config.RankPath,
         modes   = modes,
@@ -8026,12 +8331,13 @@ RegisterNetEvent('m5rp:sv:fetch', function(what, data)
             rows = Board.byMode(mode, page, showMMR)
             mine = Board.modeStats(pd.userId, mode)
         else
-            rows = Board.global(page, showMMR)
+            rows = Board.global(page, showMMR, Player.poolOf(data.mode))
         end
 
         TriggerClientEvent('m5rp:cl:data', src, {
             what = 'leaderboard', board = board, mode = mode, page = page,
-            rows = rows, you = Board.myPosition(pd.userId), stats = mine
+            pool = Player.poolOf(mode), rows = rows,
+            you = Board.myPosition(pd.userId, Player.poolOf(mode)), stats = mine
         })
 
     elseif what == 'profile' then
@@ -8375,24 +8681,38 @@ RegisterCommand('m5rankinfo', function(src, args)
 
     local pd = Players[userId]
     if pd then
-        print(('[M5RP] memory : rp=%d rankId=%d (%s) placementDone=%s dirtyRank=%s')
-            :format(pd.rp, pd.rankId, Rank.get(pd.rankId).name,
-                    tostring(pd.placementDone), tostring(pd.dirtyRank)))
+        Player.syncPool(pd)
+        print(('[M5RP] active ladder: %s'):format(tostring(pd.pool)))
+        for pool, e in pairs(pd.pools) do
+            local d = pd.poolDirty[pool] or {}
+            print(('[M5RP] memory  [%s]: rp=%d rankId=%d (%s) placementDone=%s dirty=%s')
+                :format(pool, e.rp, e.rankId, Rank.get(e.rankId).name,
+                        tostring(e.placementDone), tostring(d.rank == true)))
+        end
     else
         print('[M5RP] memory : not loaded (player offline)')
     end
 
-    local row = DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
-        { userId, seasonId })
-    if row then
-        -- the Lua type matters: oxmysql hands TINYINT(1) back as a boolean on
-        -- current versions and as a number on older ones
-        print(('[M5RP] database: rp=%s rank_id=%s (%s) placement_done=%s (lua type: %s -> %s)')
-            :format(tostring(row.rp), tostring(row.rank_id),
-                    Rank.get(tonumber(row.rank_id) or 0).name, tostring(row.placement_done),
-                    type(row.placement_done), tostring(toBool(row.placement_done))))
+    local rows = DB.query('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = ?',
+        { userId, seasonId }) or {}
+    if #rows > 0 then
+        for i = 1, #rows do
+            local row = rows[i]
+            -- the Lua type matters: oxmysql hands TINYINT(1) back as a boolean
+            -- on current versions and as a number on older ones
+            print(('[M5RP] database[%s]: rp=%s rank_id=%s (%s) placement_done=%s (lua type: %s -> %s)')
+                :format(tostring(row.mode), tostring(row.rp), tostring(row.rank_id),
+                        Rank.get(tonumber(row.rank_id) or 0).name, tostring(row.placement_done),
+                        type(row.placement_done), tostring(toBool(row.placement_done))))
+        end
     else
         print(('[M5RP] database: NO ROW for season %d'):format(seasonId))
+    end
+
+    if rows[1] and rows[1].mode == nil then
+        print('[M5RP] ^3WARNING: this table has no `mode` column — the per-mode rank ' ..
+              'migration has not run. Restart the resource with ' ..
+              'Config.Database.autoCreateTables on, or run the ALTERs by hand.')
     end
 
     -- rows written before the season was known are the classic cause of a
