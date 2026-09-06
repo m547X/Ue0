@@ -149,6 +149,30 @@ function tierOf(rankId) {
   const r = ((S.boot && S.boot.ranks) || []).find((x) => x.id === rankId);
   return r ? r.tier : 'UNRANKED';
 }
+/* Where an RP total sits between its own rank's floor and the next rank's.
+   Derived from the rank table the boot payload carries, so it works for every
+   player on the roster and not only for the one holding the mouse. */
+function rankProgress(rp) {
+  const ranks = ((S.boot && S.boot.ranks) || [])
+    .filter((r) => r.id > 0)
+    .slice()
+    .sort((a, b) => a.rp - b.rp);
+  if (!ranks.length) return null;
+
+  let cur = ranks[0], next = null;
+  for (let i = 0; i < ranks.length; i++) {
+    if (rp >= ranks[i].rp) { cur = ranks[i]; next = ranks[i + 1] || null; }
+  }
+  const lo = cur.rp;
+  const hi = next ? next.rp : lo;
+  const span = hi - lo;
+  return {
+    lo, hi, top: !next,
+    left: next ? Math.max(0, hi - rp) : 0,
+    percent: next && span > 0 ? Math.min(100, Math.max(0, ((rp - lo) / span) * 100)) : 100
+  };
+}
+
 function tierColor(rankId) {
   const r = ((S.boot && S.boot.ranks) || []).find((x) => x.id === rankId);
   return r ? r.color : '#5A616D';
@@ -612,12 +636,12 @@ function renderSlots() {
           <div class="slot-ready">${esc(tx(sub))}</div>
         </div>
         <div class="slot-foot">
-          <div class="slot-crest"><span class="ghost-crest"></span></div>
-          <div class="slot-track ghost"></div>
-          <div class="slot-nums">
-            <span>&ndash;</span>
-            <span class="slot-rank">${seatMode ? esc(seatMode) : '&ndash;'}</span>
-            <span>&ndash;</span>
+          <div class="rankplate ghost">
+            <div class="rk-crest"><span class="ghost-crest"></span></div>
+            <div class="rk-name">&ndash;</div>
+            <div class="rk-mode">${seatMode ? esc(seatMode) : '&ndash;'}</div>
+            <div class="rk-track"><i style="width:0%"></i></div>
+            <div class="rk-nums"><span>&ndash;</span><em></em><span>&ndash;</span></div>
           </div>
         </div>`);
 
@@ -637,13 +661,41 @@ function renderSlots() {
     const isMe = m.userId === meId;
     const tier = isMe && p ? p.tier : tierOf(m.rankId);
     const color = isMe && p ? p.rankColor : tierColor(m.rankId);
-    const prog = (isMe && p && p.progress) ? p.progress : null;
+    const prog = rankProgress(m.rp || 0);
     const pct = prog ? prog.percent : 0;
-    const lo = m.rp || 0;
-    const hi = prog && prog.needed ? (lo + prog.needed) : (lo + 50);
+    const lo  = prog ? prog.lo : (m.rp || 0);
+    const hi  = prog ? prog.hi : (m.rp || 0);
 
     const cos = cosmeticsOf(m, isMe);
     const art = cos && imgUrl(cos.cardImage);
+
+    /* The plate is tinted by the player's tier, so the whole bottom of the
+       card carries their rank colour rather than the accent. */
+    const plateTier = color ? ` style="--tier:${esc(color)}"` : '';
+    const modeLabel = (modeCfg && modeCfg.label) || String(S.mode || '').toUpperCase();
+
+    /* Someone still in their placement matches has no RP to show, so the bar
+       counts the matches they owe instead. */
+    const pl = isMe && p && p.placement;
+    const placing = pl && pl.enabled && !pl.done;
+    let barPct, barLo, barMid, barHi;
+    if (placing) {
+      barPct = Math.min(100, (pl.played / Math.max(1, pl.total)) * 100);
+      barLo  = pl.played;
+      barHi  = pl.total;
+      barMid = tx('PLACEMENT');
+    } else if (!m.rankId) {
+      // no rank yet and no placement data for them: nothing honest to plot
+      barPct = 0; barLo = '—'; barHi = '—'; barMid = '';
+    } else if (prog && prog.top) {
+      // the very top rank has nothing above it to climb towards
+      barPct = 100; barLo = num(m.rp || 0); barHi = ''; barMid = tx('MAX RANK');
+    } else {
+      barPct = pct;
+      barLo  = num(lo);
+      barHi  = num(hi);
+      barMid = prog && prog.left > 0 ? `${num(prog.left)} ${tx('TO GO')}` : '';
+    }
 
     const slot = el('div', 'slot filled' + (m.leader ? ' leader' : '') + (art ? ' art' : ''), `
       ${art ? `<div class="slot-art" style="background-image:url(&quot;${esc(art)}&quot;)"></div>` : ''}
@@ -656,12 +708,12 @@ function renderSlots() {
         <div class="slot-ready ${m.ready ? 'on' : ''}">${esc(tx(m.ready ? 'READY' : 'NOT READY'))}</div>
       </div>
       <div class="slot-foot">
-        <div class="slot-crest">${crest(tier, color)}</div>
-        <div class="slot-track"><i style="width:${pct}%"></i></div>
-        <div class="slot-nums">
-          <span>${num(lo)}</span>
-          <span class="slot-rank">${esc(tx(m.rank || 'Unranked'))} (${esc((modeCfg && modeCfg.label) || S.mode)})</span>
-          <span>${num(hi)}</span>
+        <div class="rankplate"${plateTier}>
+          <div class="rk-crest">${crest(tier, color)}</div>
+          <div class="rk-name">${esc(String(tx(m.rank || 'Unranked')).toUpperCase())}</div>
+          <div class="rk-mode">${esc(modeLabel)}</div>
+          <div class="rk-track"><i style="width:${barPct}%">${barPct > 0 ? '<b></b>' : ''}</i></div>
+          <div class="rk-nums"><span>${barLo}</span><em>${esc(barMid)}</em><span>${barHi}</span></div>
         </div>
       </div>`);
 
