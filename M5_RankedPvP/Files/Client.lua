@@ -261,6 +261,8 @@ local function applyLoadout(loadout, settle)
     loadoutSeq = loadoutSeq + 1
     local seq = loadoutSeq
 
+    State.loadout = loadout
+
     local function give()
         local ped = playerPed()
         RemoveAllPedWeapons(ped, true)
@@ -290,18 +292,52 @@ local function applyLoadout(loadout, settle)
     local primary = give()
     if not settle or not primary then return end
 
+    -- A respawn is not over on the frame it starts, and other resources tend
+    -- to re-apply their own inventory on spawn too, so the window is measured
+    -- in seconds rather than in frames.
+    local window = ((Config.Loadout and Config.Loadout.settleSeconds) or 3.0) * 1000
     Citizen.CreateThread(function()
-        for _ = 1, 20 do
+        local until_ = ms() + window
+        while ms() < until_ do
             Citizen.Wait(0)
             -- a newer loadout owns the ped now
             if seq ~= loadoutSeq then return end
             if not HasPedGotWeapon(playerPed(), primary, false) then
-                -- the resurrect took it: everything went with it, so hand the
-                -- whole loadout back rather than patching one weapon in
+                -- whatever took it took everything, so hand the whole loadout
+                -- back rather than patching one weapon in
                 give()
             end
         end
     end)
+end
+
+--- Puts the last loadout back on a player who somehow ended up holding nothing.
+---
+--- The settle window above covers the spawn itself. This covers the rest of the
+--- round: nothing in a match disarms a player legitimately — the weapon wheel
+--- is disabled and weapons cannot be dropped — so an empty hand mid fight is
+--- always something else's doing, and the player has no way to recover from it.
+local nextRearm = 0
+local function rearmGuard()
+    local cfg = Config.Loadout or {}
+    if cfg.rearmWhenEmpty == false then return end
+    if not State.roundLive or not State.alive or State.frozen then return end
+
+    local lo = State.loadout
+    if not lo or not lo.weapons or #lo.weapons == 0 then return end
+
+    local t = ms()
+    if t < nextRearm then return end
+    nextRearm = t + math.floor(((cfg.rearmEvery or 1.0) * 1000))
+
+    local ped = playerPed()
+    for i = 1, #lo.weapons do
+        if HasPedGotWeapon(ped, GetHashKey(lo.weapons[i].name), false) then return end
+    end
+
+    -- holding nothing from the loadout: put it back
+    dbg('re-arming: the player was left with none of their loadout')
+    applyLoadout(lo, false)
 end
 
 local function teleport(spawn, freeze)
@@ -995,6 +1031,7 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
     State.alive      = false
     State.team       = 0
     State.map        = nil
+    State.loadout    = nil
     State.settings   = {}
     State.roster     = {}
     State.outside    = false
@@ -1416,6 +1453,7 @@ startMatchThread = function()
                 combatScan()
                 applyMatchRestrictions()
                 boundaryCheck()
+                rearmGuard()
                 pushActivity()
 
                 -- spawn protection shimmer

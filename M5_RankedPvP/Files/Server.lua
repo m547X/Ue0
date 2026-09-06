@@ -5132,10 +5132,13 @@ function Combat.outOfBounds(pd)
     if Config.Match.boundary.action == 'teleport' then
         local s = srcOf(pd.userId)
         if s then
+            -- The teleport resurrects the ped, which strips its weapons, so
+            -- this has to hand the loadout back. Sending nil left a player
+            -- pulled in from out of bounds standing there unarmed.
             TriggerClientEvent('m5rp:cl:round', s, {
                 phase = 'respawn', matchId = m.id,
                 spawn = spawnPointFor(m, mp, 1),
-                loadout = nil, protection = 1
+                loadout = loadoutFor(m, pd.userId), protection = 1
             })
         end
         return

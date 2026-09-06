@@ -470,6 +470,28 @@ Config.Effects = {
 }
 
 -- ============================================================================
+-- 8b. LOADOUT — making sure a spawn actually arms the player
+-- ============================================================================
+-- Spawning with an empty hand is the one bug a player cannot work around, so
+-- the loadout the server hands out is defended twice.
+
+Config.Loadout = {
+    -- How long after a spawn the client keeps checking that the weapons stuck.
+    -- A respawn does not finish on the frame it is asked for: the engine keeps
+    -- working on the ped and strips it as it goes, and other resources often
+    -- re-apply their own inventory on spawn as well. If a weapon disappears
+    -- inside this window the whole loadout is handed back.
+    settleSeconds = 3.0,
+
+    -- Last line of defence. While a round is live, a player left holding
+    -- nothing is re-armed from the last loadout the server sent. Nothing in a
+    -- match disarms a player legitimately — the weapon wheel is disabled and
+    -- weapons cannot be dropped — so this only ever undoes a mistake.
+    rearmWhenEmpty = true,
+    rearmEvery     = 1.0   -- seconds between checks
+}
+
+-- ============================================================================
 -- 9. MAP BOUNDARY (client presentation only, logic is server driven)
 -- ============================================================================
 
