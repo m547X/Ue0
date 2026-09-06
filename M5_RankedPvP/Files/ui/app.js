@@ -593,28 +593,46 @@ function renderSlots() {
   const iAmLeader = !S.party || S.party.leader === meId;
   const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode);
 
-  /* Only real players get a seat, plus one tile to invite the next person.
-     A row of empty "OPEN SLOT" boxes said nothing, and a rank plate under a
-     seat with nobody in it had no rank to show. The invite tile stays whatever
-     mode is selected: inviting is how the party grows, and the mode follows
-     the new size (1v1 -> 2v2 -> 3v3 ...). */
-  const showInvite = members.length < max;
+  /* Every seat is drawn, so the row always shows how big the party can get.
+     What an empty seat does not get is a rank plate: there is no rank under a
+     seat with nobody in it, and dashes where a crest and RP should be said
+     nothing. The seat after the party is always invitable, whatever mode is
+     selected — inviting is how the party grows, and the mode follows the new
+     size (1v1 -> 2v2 -> 3v3 ...). */
+  const nextSeat = members.length;
 
   host.innerHTML = '';
-  for (let i = 0, seats = members.length + (showInvite ? 1 : 0); i < seats; i++) {
+  for (let i = 0; i < max; i++) {
     const m = members[i];
 
     if (!m) {
-      const invitable = iAmLeader;
+      const isNext    = i === nextSeat;
+      const invitable = isNext && iAmLeader;
 
-      const slot = el('div', 'slot invite' + (invitable ? '' : ' noperm'), `
+      let cls, icon, head, sub;
+      if (invitable) {
+        cls = 'invite';         icon = 'i-userplus';
+        head = 'INVITE PLAYER'; sub = 'CLICK TO INVITE';
+      } else if (isNext) {
+        cls = 'invite noperm';  icon = 'i-userplus';
+        head = 'INVITE PLAYER'; sub = 'LEADER ONLY';
+      } else {
+        // reachable, just not yet — a padlock would read as permanently shut
+        cls = 'invite locked';  icon = 'i-user';
+        head = 'OPEN SLOT';     sub = 'INVITE IN ORDER';
+      }
+
+      /* the mode this seat belongs to, when one exists for that team size */
+      const seatMode = modeLabelForSize(i + 1);
+
+      const slot = el('div', 'slot ' + cls, `
         <div class="slot-top">
-          <div class="invite-ico"><svg><use href="#i-userplus"/></svg></div>
-          <div class="slot-name">${esc(tx('INVITE PLAYER'))}</div>
-          <div class="slot-ready">${esc(tx(invitable ? 'CLICK TO INVITE' : 'LEADER ONLY'))}</div>
+          <div class="invite-ico"><svg><use href="#${icon}"/></svg></div>
+          <div class="slot-name">${esc(tx(head))}</div>
+          <div class="slot-ready">${esc(tx(sub))}</div>
         </div>
         <div class="slot-foot">
-          <div class="invite-hint">${esc(tx(modeLabelForSize(members.length + 1) || ''))}</div>
+          <div class="invite-hint">${seatMode ? esc(seatMode) : ''}</div>
         </div>`);
 
       if (invitable) {

@@ -244,25 +244,64 @@ local function isPlayerPed(ped)
     return ped and ped ~= 0 and DoesEntityExist(ped) and IsPedAPlayer(ped)
 end
 
+-- Bumped on every loadout. A settle thread that finds a newer number has been
+-- overtaken by a later spawn and gets out of the way instead of fighting it.
+local loadoutSeq = 0
+
 --- Applies a loadout handed down by the server.
-local function applyLoadout(loadout)
-    local ped = playerPed()
-    RemoveAllPedWeapons(ped, true)
-    if not loadout then return end
+---
+--- `settle` is for the loadouts handed out on a spawn. NetworkResurrectLocalPlayer
+--- does not finish on the frame it is called: the engine keeps working on the
+--- ped over the next few, and strips its weapons as part of that. A loadout
+--- given on the same frame is therefore sometimes wiped a moment later and the
+--- player lands empty handed with nothing to explain it. Watching the primary
+--- weapon for a few frames and handing it back if it vanishes closes that
+--- window; away from a respawn there is nothing to race, so it is skipped.
+local function applyLoadout(loadout, settle)
+    loadoutSeq = loadoutSeq + 1
+    local seq = loadoutSeq
 
-    SetEntityMaxHealth(ped, (loadout.health or 100) + 100)
-    SetEntityHealth(ped, (loadout.health or 100) + 100)
-    SetPedArmour(ped, loadout.armor or 0)
+    local function give()
+        local ped = playerPed()
+        RemoveAllPedWeapons(ped, true)
+        if not loadout then return nil end
 
-    if loadout.weapons then
-        for i = 1, #loadout.weapons do
-            local w = loadout.weapons[i]
-            GiveWeaponToPed(ped, GetHashKey(w.name), w.ammo or 100, false, i == 1)
+        SetEntityMaxHealth(ped, (loadout.health or 100) + 100)
+        SetEntityHealth(ped, (loadout.health or 100) + 100)
+        SetPedArmour(ped, loadout.armor or 0)
+
+        local primary
+        if loadout.weapons then
+            for i = 1, #loadout.weapons do
+                local w = loadout.weapons[i]
+                local hash = GetHashKey(w.name)
+                GiveWeaponToPed(ped, hash, w.ammo or 100, false, i == 1)
+                if i == 1 then primary = hash end
+            end
         end
+        -- put it in their hands, not on their back
+        if primary then SetCurrentPedWeapon(ped, primary, true) end
+
+        State.lastHealth = GetEntityHealth(ped)
+        State.lastArmor  = GetPedArmour(ped)
+        return primary
     end
 
-    State.lastHealth = GetEntityHealth(ped)
-    State.lastArmor  = GetPedArmour(ped)
+    local primary = give()
+    if not settle or not primary then return end
+
+    Citizen.CreateThread(function()
+        for _ = 1, 20 do
+            Citizen.Wait(0)
+            -- a newer loadout owns the ped now
+            if seq ~= loadoutSeq then return end
+            if not HasPedGotWeapon(playerPed(), primary, false) then
+                -- the resurrect took it: everything went with it, so hand the
+                -- whole loadout back rather than patching one weapon in
+                give()
+            end
+        end
+    end)
 end
 
 local function teleport(spawn, freeze)
@@ -807,7 +846,9 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         stopSpectate()
 
         if data.spawn then teleport(data.spawn, data.freeze == true) end
-        if data.loadout then applyLoadout(data.loadout) end
+        -- settle: the teleport above resurrected the ped, and the engine is
+        -- still finishing with it for the next few frames
+        if data.loadout then applyLoadout(data.loadout, true) end
 
         local ped = playerPed()
         State.lastHealth = GetEntityHealth(ped)
@@ -1586,7 +1627,7 @@ RegisterNetEvent('m5rp:cl:training', function(data)
     hook('onTrainingStart', { kind = data.kind, label = data.label })
 
     if data.spawn then teleport(data.spawn, false) end
-    if data.loadout then applyLoadout(data.loadout) end
+    if data.loadout then applyLoadout(data.loadout, true) end
 
     spawnTrainingTargets(data.spawn, data.targets or 0, data.spacing or 8.0,
                          data.kind == 'headshot')
