@@ -415,6 +415,11 @@ local function nui(payload)
     SendNUIMessage(payload)
 end
 
+-- Forward declaration. The out-of-bounds panel is owned by the boundary code
+-- much further down, but the match events above it have to be able to take the
+-- panel down, and a local declared later is not in scope up here.
+local showBoundary, hideBoundary, clearBoundary
+
 local function setFocus(on)
     SetNuiFocus(on, on)
     SetNuiFocusKeepInput(false)
@@ -814,7 +819,7 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
     State.settings   = data.settings or {}
     State.alive      = false
     State.reportedDeath = false
-    State.outside    = false
+    clearBoundary()
 
     State.roster = {}
     if data.roster then
@@ -877,7 +882,7 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         nui({ action = 'scoreboard', show = false })   -- the break is over
         State.alive = true
         State.reportedDeath = false
-        State.outside = false
+        clearBoundary()
         State.spawnProtectUntil = ms() + ((data.protection or 0) * 1000)
         stopSpectate()
 
@@ -930,11 +935,7 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         State.roundLive = false
         -- the boundary check stops running between rounds, so its tint has to
         -- be dropped here or it stays up through the whole break
-        if State.outside then
-            State.outside = false
-            stopScreenEffect(Config.Effects.outOfBoundsEffect)
-            nui({ action = 'boundary', active = false })
-        end
+        clearBoundary()
         nui({ action = 'round', data = {
             phase = 'end', round = data.round, winner = data.winner,
             reason = data.reason, scores = data.scores,
@@ -1034,7 +1035,7 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
     State.loadout    = nil
     State.settings   = {}
     State.roster     = {}
-    State.outside    = false
+    clearBoundary()
 
     hook('onMatchLeave', {
         matchId = data and data.matchId or State.matchId,
@@ -1277,8 +1278,36 @@ end)
 -- 08. BOUNDARY
 -- ============================================================================
 
+--- The out-of-bounds panel has one owner. Every path that hides it goes
+--- through here, and the state is tracked so a repeated call costs nothing.
+local boundaryShown = false
+
+showBoundary = function(seconds, distance)
+    boundaryShown = true
+    nui({ action = 'boundary', active = true, seconds = seconds, distance = distance })
+end
+
+hideBoundary = function()
+    if not boundaryShown then return end
+    boundaryShown = false
+    nui({ action = 'boundary', active = false })
+    stopScreenEffect(Config.Effects.outOfBoundsEffect)
+end
+
+--- Resets the boundary state completely: used by anything that moves the
+--- player itself, rather than leaving the flag and the panel to disagree.
+clearBoundary = function()
+    State.outside = false
+    hideBoundary()
+end
+
 local function boundaryCheck()
     if not State.map or not State.map.center or not State.map.radius then return end
+    -- Nothing to measure until the player has actually been put in the arena.
+    -- Between the match setup and the spawn teleport they are still standing
+    -- wherever they were, hundreds of metres away, and warning them about a
+    -- zone they have not been placed in yet is what started this.
+    if not State.alive then clearBoundary() return end
 
     local pos = GetEntityCoords(playerPed())
     local c   = State.map.center
@@ -1308,19 +1337,22 @@ local function boundaryCheck()
         end
 
         local left = math.max(0, math.ceil((State.outsideUntil - ms()) / 1000))
-        nui({ action = 'boundary', active = true, seconds = left,
-              distance = math.floor(dist - State.map.radius) })
+        showBoundary(left, math.floor(dist - State.map.radius))
 
         if ms() >= State.outsideUntil then
             State.outside = false
-            nui({ action = 'boundary', active = false })
-            stopScreenEffect(Config.Effects.outOfBoundsEffect)
+            hideBoundary()
             TriggerServerEvent('m5rp:sv:combat', 'oob')
         end
-    elseif State.outside then
+    else
+        -- Unconditional, not `elseif State.outside`. The warning used to be
+        -- taken down only when this function was the one that put it up, so a
+        -- spawn clearing State.outside behind its back left the panel on
+        -- screen with nothing able to remove it — which is exactly what a
+        -- player saw at the start of a match, warned about a distance measured
+        -- before the spawn teleport had landed. Being inside is now enough.
         State.outside = false
-        nui({ action = 'boundary', active = false })
-        stopScreenEffect(Config.Effects.outOfBoundsEffect)
+        hideBoundary()
     end
 end
 
