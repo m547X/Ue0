@@ -593,56 +593,28 @@ function renderSlots() {
   const iAmLeader = !S.party || S.party.leader === meId;
   const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.mode);
 
-  /* The seat right after the party is always invitable, whatever mode is
-     selected: inviting is how the party grows, and the mode follows the new
-     size (1v1 -> 2v2 -> 3v3 ...). Gating it on the current mode's team size
-     locked every seat while in 1v1 and left no way to invite anyone. */
-  const nextSeat = members.length;
+  /* Only real players get a seat, plus one tile to invite the next person.
+     A row of empty "OPEN SLOT" boxes said nothing, and a rank plate under a
+     seat with nobody in it had no rank to show. The invite tile stays whatever
+     mode is selected: inviting is how the party grows, and the mode follows
+     the new size (1v1 -> 2v2 -> 3v3 ...). */
+  const showInvite = members.length < max;
 
   host.innerHTML = '';
-  for (let i = 0; i < max; i++) {
+  for (let i = 0, seats = members.length + (showInvite ? 1 : 0); i < seats; i++) {
     const m = members[i];
 
     if (!m) {
-      const isNext    = i === nextSeat;
-      const invitable = isNext && iAmLeader;
+      const invitable = iAmLeader;
 
-      /* the mode this seat belongs to, when one exists for that team size */
-      const seatMode  = modeLabelForSize(i + 1);
-
-      let cls, icon, head, sub;
-      if (invitable) {
-        cls  = 'open';
-        icon = 'i-userplus';
-        head = 'INVITE PLAYER';
-        sub  = 'CLICK TO INVITE';
-      } else if (isNext) {
-        cls  = 'open noperm';
-        icon = 'i-userplus';
-        head = 'INVITE PLAYER';
-        sub  = 'LEADER ONLY';
-      } else {
-        // reachable, just not yet — a padlock would read as permanently shut
-        cls  = 'locked';
-        icon = 'i-user';
-        head = 'OPEN SLOT';
-        sub  = 'INVITE IN ORDER';
-      }
-
-      const slot = el('div', 'slot ' + cls, `
+      const slot = el('div', 'slot invite' + (invitable ? '' : ' noperm'), `
         <div class="slot-top">
-          <div class="slot-av ghost"><svg><use href="#${icon}"/></svg></div>
-          <div class="slot-name">${esc(tx(head))}</div>
-          <div class="slot-ready">${esc(tx(sub))}</div>
+          <div class="invite-ico"><svg><use href="#i-userplus"/></svg></div>
+          <div class="slot-name">${esc(tx('INVITE PLAYER'))}</div>
+          <div class="slot-ready">${esc(tx(invitable ? 'CLICK TO INVITE' : 'LEADER ONLY'))}</div>
         </div>
         <div class="slot-foot">
-          <div class="rankplate ghost">
-            <div class="rk-crest"><span class="ghost-crest"></span></div>
-            <div class="rk-name">&ndash;</div>
-            <div class="rk-mode">${seatMode ? esc(seatMode) : '&ndash;'}</div>
-            <div class="rk-track"><i style="width:0%"></i></div>
-            <div class="rk-nums"><span>&ndash;</span><em></em><span>&ndash;</span></div>
-          </div>
+          <div class="invite-hint">${esc(tx(modeLabelForSize(members.length + 1) || ''))}</div>
         </div>`);
 
       if (invitable) {
