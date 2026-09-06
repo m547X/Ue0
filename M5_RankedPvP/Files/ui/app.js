@@ -859,7 +859,10 @@ function renderMapVote(d) {
          blank card. */
       const plate = mapGradient(m.id, (i * 47 + 200) % 360);
       const url = imgUrl(m.image);
-      const art = url ? `background-image:url("${esc(url)}"),${plate}`
+      // single quotes inside url(): the style attribute is delimited with a
+      // double quote, so a double quote in the value ends it early and the
+      // whole declaration is thrown away
+      const art = url ? `background-image:url('${esc(url)}'),${plate}`
                       : `background-image:${plate}`;
       const card = el('div', 'mv-card', `
         <div class="mv-art" style="${art}"></div>
@@ -1511,7 +1514,7 @@ function renderStore(store) {
 
       const face = isTitle
         ? `<div class="ti-face" style="color:${esc(it.color || 'var(--text)')}">${esc(it.name)}</div>`
-        : `<div class="ci-art"${it.image ? ` style="background-image:url('${esc(it.image)}')"` : ''}>
+        : `<div class="ci-art"${it.image ? ` style="background-image:url('${esc(imgUrl(it.image))}')"` : ''}>
              ${it.image ? '' : `<span class="ci-blank">${esc(it.name)}</span>`}
            </div>`;
 

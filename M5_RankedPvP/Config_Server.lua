@@ -831,7 +831,369 @@ Config.Maps = {
             vector4(3386.9, 5223.4, 20.4, 218.0)
         },
         spectator = vector4(3320.0, 5170.0, 48.0, 180.0)
-    }
+    },
+
+    -- ------------------------------------------------------------------
+    -- Imported arenas.
+    --
+    -- `radius` is the combat boundary and was not part of the source, so it
+    -- is derived: 1.6x the distance from the centre to the furthest spawn,
+    -- with a floor of 70m. That always contains both spawns with room to
+    -- fight in, but it is a guess at the real size of each arena — walk one
+    -- and adjust if the boundary warning fires too early or too late.
+    --
+    -- Every map below carries a single spawn per team except Arena 1, which
+    -- came with alternates. `teamA`/`teamB` are lists and the server cycles
+    -- through them, so add more points to spread a 5v5 out instead of
+    -- stacking five players on one spot.
+    --
+    -- None of them list tdm, snd or ffa, so those modes keep using the five
+    -- maps above. Add the mode to a map here to put it in that rotation.
+    -- ------------------------------------------------------------------
+
+    {
+        id     = 'maincraft',
+        name   = "ماين كرافت",
+        image  = 'https://r2.fivemanage.com/EX1FJXysrxR5lQr7eorEh/Screenshot_147.png',
+        center = vector3(-1952.404, -1503.301, 321.060),
+        radius = 70.0,
+        modes  = { '1v1', '2v2' },
+        weapons = nil,
+        teamA = {
+            vector4(-1973.118, -1493.408, 321.061, 261.076)
+        },
+        teamB = {
+            vector4(-1929.014, -1514.050, 321.061, 85.310)
+        },
+        spectator = vector4(-1952.404, -1503.301, 346.060, 269.178)
+    },
+
+    {
+        id     = 'airskate1',
+        name   = "AIR SKATE 1",
+        image  = 'https://r2.fivemanage.com/EX1FJXysrxR5lQr7eorEh/Screenshot_164.png',
+        center = vector3(-2101.788, -1785.290, 651.131),
+        radius = 70.0,
+        modes  = { '1v1', '2v2', '3v3' },
+        weapons = nil,
+        teamA = {
+            vector4(-2114.919, -1817.637, 655.929, 343.978)
+        },
+        teamB = {
+            vector4(-2110.082, -1762.764, 651.133, 189.471)
+        },
+        spectator = vector4(-2101.788, -1785.290, 676.131, 182.878)
+    },
+
+    {
+        id     = 'airskate2',
+        name   = "AIR SKATE 2",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/AirSkate2.png',
+        center = vector3(-3353.411, -815.803, 102.633),
+        radius = 75.0,
+        modes  = { '1v1', '2v2', '3v3' },
+        weapons = nil,
+        teamA = {
+            vector4(-3308.983, -824.315, 99.699, 84.775)
+        },
+        teamB = {
+            vector4(-3397.637, -805.618, 99.699, 257.385)
+        },
+        spectator = vector4(-3353.411, -815.803, 127.633, 270.663)
+    },
+
+    {
+        id     = 'airskate3',
+        name   = "AIR SKATE 3",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/AirSkate3.png',
+        center = vector3(-2912.725, -1034.516, 101.000),
+        radius = 70.0,
+        modes  = { '2v2', '3v3', '4v4' },
+        weapons = nil,
+        teamA = {
+            vector4(-2921.795, -1062.875, 101.000, 344.512)
+        },
+        teamB = {
+            vector4(-2904.417, -1009.851, 101.000, 164.998)
+        },
+        spectator = vector4(-2912.725, -1034.516, 126.000, 358.193)
+    },
+
+    {
+        id     = 'arena1',
+        name   = "ARENA 1",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena1.png',
+        center = vector3(5367.149, -1110.734, 355.209),
+        radius = 100.0,
+        modes  = { '2v2', '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(5365.400, -1054.133, 355.209, 171.379),
+            vector4(5371.000, -1058.000, 355.209, 165.000),
+            vector4(5360.000, -1050.000, 355.209, 175.000)
+        },
+        teamB = {
+            vector4(5362.789, -1157.215, 355.209, 359.840),
+            vector4(5358.000, -1162.000, 355.209, 355.000),
+            vector4(5366.500, -1153.000, 355.209, 4.000)
+        },
+        spectator = vector4(5367.149, -1110.734, 380.209, 2.671)
+    },
+
+    {
+        id     = 'arena2',
+        name   = "ARENA 2",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena2.png',
+        center = vector3(4053.109, 0.296, 195.994),
+        radius = 105.0,
+        modes  = { '2v2', '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(3989.586, -6.934, 195.994, 276.539)
+        },
+        teamB = {
+            vector4(4106.084, -4.232, 195.994, 95.518)
+        },
+        spectator = vector4(4053.109, 0.296, 220.994, 255.171)
+    },
+
+    {
+        id     = 'arena3',
+        name   = "ARENA 3",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena3.png',
+        center = vector3(-147.057, -4347.000, 191.805),
+        radius = 105.0,
+        modes  = { '2v2', '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(-211.899, -4348.358, 191.501, 267.509)
+        },
+        teamB = {
+            vector4(-83.160, -4347.987, 191.501, 90.946)
+        },
+        spectator = vector4(-147.057, -4347.000, 216.805, 95.589)
+    },
+
+    {
+        id     = 'arena4',
+        name   = "ARENA 4",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena4.png',
+        center = vector3(4400.804, 2800.000, 548.195),
+        radius = 70.0,
+        modes  = { '2v2', '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(4384.621, 2830.983, 549.169, 208.419)
+        },
+        teamB = {
+            vector4(4421.670, 2768.009, 549.168, 27.544)
+        },
+        spectator = vector4(4400.804, 2800.000, 573.195, 89.810)
+    },
+
+    {
+        id     = 'arena5',
+        name   = "ARENA 5",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena5.png',
+        center = vector3(4014.105, 1311.000, 678.667),
+        radius = 75.0,
+        modes  = { '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(3985.851, 1344.412, 679.641, 229.956)
+        },
+        teamB = {
+            vector4(4044.031, 1290.699, 679.641, 62.625)
+        },
+        spectator = vector4(4014.105, 1311.000, 703.667, 265.684)
+    },
+
+    {
+        id     = 'arena6',
+        name   = "ARENA 6",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena6.png',
+        center = vector3(4278.000, 1483.000, 678.663),
+        radius = 70.0,
+        modes  = { '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(4301.730, 1449.314, 679.641, 33.482)
+        },
+        teamB = {
+            vector4(4260.077, 1515.170, 679.641, 199.076)
+        },
+        spectator = vector4(4278.000, 1483.000, 703.663, 62.279)
+    },
+
+    {
+        id     = 'csspy',
+        name   = "CS SPY",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/CSSPY.png',
+        center = vector3(-3543.997, 1358.995, 310.357),
+        radius = 70.0,
+        modes  = { '2v2', '3v3', '4v4' },
+        weapons = nil,
+        teamA = {
+            vector4(-3560.441, 1361.208, 310.361, 272.545)
+        },
+        teamB = {
+            vector4(-3529.229, 1361.143, 310.361, 92.474)
+        },
+        spectator = vector4(-3543.997, 1358.995, 335.357, 198.740)
+    },
+
+    {
+        id     = 'dust',
+        name   = "DUST",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Dust.png',
+        center = vector3(-3180.145, -348.759, 556.591),
+        radius = 70.0,
+        modes  = { '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(-3181.165, -365.372, 556.530, 4.052)
+        },
+        teamB = {
+            vector4(-3180.019, -331.783, 556.530, 176.138)
+        },
+        spectator = vector4(-3180.145, -348.759, 581.591, 126.360)
+    },
+
+    {
+        id     = 'helizone1',
+        name   = "HELIZONE 1",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Helizone1.png',
+        center = vector3(1830.628, -3152.800, 399.520),
+        radius = 110.0,
+        modes  = { '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(1862.077, -3193.385, 397.720, 32.101)
+        },
+        teamB = {
+            vector4(1796.781, -3096.550, 397.720, 216.662)
+        },
+        spectator = vector4(1830.628, -3152.800, 424.520, 357.470)
+    },
+
+    {
+        id     = 'helizone2',
+        name   = "HELIZONE 2",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Helizone2.png',
+        center = vector3(-2559.248, -1404.797, 419.369),
+        radius = 90.0,
+        modes  = { '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(-2607.187, -1380.811, 420.467, 236.369)
+        },
+        teamB = {
+            vector4(-2516.310, -1427.585, 419.369, 65.272)
+        },
+        spectator = vector4(-2559.248, -1404.797, 444.369, 89.565)
+    },
+
+    {
+        id     = 'lego',
+        name   = "LEGO",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Lego.png',
+        center = vector3(-2360.094, -1154.271, 328.661),
+        radius = 70.0,
+        modes  = { '1v1', '2v2', '3v3' },
+        weapons = nil,
+        teamA = {
+            vector4(-2375.008, -1154.197, 328.661, 267.510)
+        },
+        teamB = {
+            vector4(-2344.829, -1154.091, 328.661, 93.119)
+        },
+        spectator = vector4(-2360.094, -1154.271, 353.661, 182.057)
+    },
+
+    {
+        id     = 'neon1',
+        name   = "NEON 1",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon1.png',
+        center = vector3(-2446.467, -1810.070, 100.366),
+        radius = 95.0,
+        modes  = { '2v2', '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(-2397.956, -1843.997, 100.366, 2.390)
+        },
+        teamB = {
+            vector4(-2488.829, -1772.787, 100.366, 177.706)
+        },
+        spectator = vector4(-2446.467, -1810.070, 125.366, 271.634)
+    },
+
+    {
+        id     = 'neon2',
+        name   = "NEON 2",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon2.png',
+        center = vector3(-230.341, -3398.187, 558.460),
+        radius = 100.0,
+        modes  = { '2v2', '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(-276.366, -3359.641, 558.460, 181.054)
+        },
+        teamB = {
+            vector4(-185.726, -3431.047, 558.460, 2.256)
+        },
+        spectator = vector4(-230.341, -3398.187, 583.460, 300.476)
+    },
+
+    {
+        id     = 'neon3',
+        name   = "NEON 3",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon3.png',
+        center = vector3(-2179.281, -2369.165, 500.729),
+        radius = 100.0,
+        modes  = { '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(-2129.834, -2404.000, 500.729, 6.108)
+        },
+        teamB = {
+            vector4(-2221.316, -2333.808, 500.729, 183.404)
+        },
+        spectator = vector4(-2179.281, -2369.165, 525.729, 277.813)
+    },
+
+    {
+        id     = 'neon4',
+        name   = "NEON 4",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon4.png',
+        center = vector3(-3197.236, -478.799, 318.881),
+        radius = 75.0,
+        modes  = { '1v1', '2v2', '3v3' },
+        weapons = nil,
+        teamA = {
+            vector4(-3242.604, -474.384, 318.881, 264.448)
+        },
+        teamB = {
+            vector4(-3166.541, -475.246, 318.881, 91.951)
+        },
+        spectator = vector4(-3197.236, -478.799, 343.881, 205.417)
+    },
+
+    {
+        id     = 'skatepark',
+        name   = "SKATEPARK",
+        image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/SkatePark.png',
+        center = vector3(-2595.843, -2218.091, 1271.626),
+        radius = 105.0,
+        modes  = { '3v3', '4v4', '5v5' },
+        weapons = nil,
+        teamA = {
+            vector4(-2614.650, -2278.546, 1267.654, 321.623)
+        },
+        teamB = {
+            vector4(-2567.187, -2181.128, 1271.643, 148.659)
+        },
+        spectator = vector4(-2595.843, -2218.091, 1296.626, 74.756)
+    },
 }
 
 -- Training area (single bucket, no ranked impact)
