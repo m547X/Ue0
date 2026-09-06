@@ -480,7 +480,15 @@ Config.Boundary = {
     -- off with the rest of the screen tints: the NUI already draws a warning
     -- frame and a countdown, which reads without washing the picture out
     tintScreen    = false,
-    pulseHud      = true
+    pulseHud      = true,
+
+    -- How far above or below the map's centre height a player may go before
+    -- they count as having left. The zone is a cylinder: `radius` covers the
+    -- ground, this covers the air, and the two are measured separately so a
+    -- roof or an upper deck does not eat into the radius. A map can override
+    -- it with its own `height` field. Generous on purpose — it is here to
+    -- catch someone who has left the arena entirely, not to police a ramp.
+    verticalLimit = 250.0
 }
 
 -- ============================================================================

@@ -837,10 +837,16 @@ Config.Maps = {
     -- Imported arenas.
     --
     -- `radius` is the combat boundary and was not part of the source, so it
-    -- is derived: 1.6x the distance from the centre to the furthest spawn,
-    -- with a floor of 70m. That always contains both spawns with room to
-    -- fight in, but it is a guess at the real size of each arena — walk one
-    -- and adjust if the boundary warning fires too early or too late.
+    -- is a guess: 2.5x the horizontal distance from the centre to the furthest
+    -- spawn, with a floor of 150m. Deliberately generous — a zone that is too
+    -- big is invisible to players, while one that is too small tells someone
+    -- standing in the middle of the arena to return to it.
+    --
+    -- To set an exact number instead of living with the guess: join the map,
+    -- walk to the edge of the playable area and run /pvpzone. It prints how
+    -- far out you are, so the real radius is that reading plus a few metres.
+    -- Height is measured separately (Config.Boundary.verticalLimit), so a
+    -- radius only ever has to cover the ground.
     --
     -- Every map below carries a single spawn per team except Arena 1, which
     -- came with alternates. `teamA`/`teamB` are lists and the server cycles
@@ -856,7 +862,7 @@ Config.Maps = {
         name   = "ماين كرافت",
         image  = 'https://r2.fivemanage.com/EX1FJXysrxR5lQr7eorEh/Screenshot_147.png',
         center = vector3(-1952.404, -1503.301, 321.060),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '1v1', '2v2' },
         weapons = nil,
         teamA = {
@@ -873,7 +879,7 @@ Config.Maps = {
         name   = "AIR SKATE 1",
         image  = 'https://r2.fivemanage.com/EX1FJXysrxR5lQr7eorEh/Screenshot_164.png',
         center = vector3(-2101.788, -1785.290, 651.131),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '1v1', '2v2', '3v3' },
         weapons = nil,
         teamA = {
@@ -890,7 +896,7 @@ Config.Maps = {
         name   = "AIR SKATE 2",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/AirSkate2.png',
         center = vector3(-3353.411, -815.803, 102.633),
-        radius = 75.0,
+        radius = 150.0,
         modes  = { '1v1', '2v2', '3v3' },
         weapons = nil,
         teamA = {
@@ -907,7 +913,7 @@ Config.Maps = {
         name   = "AIR SKATE 3",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/AirSkate3.png',
         center = vector3(-2912.725, -1034.516, 101.000),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '2v2', '3v3', '4v4' },
         weapons = nil,
         teamA = {
@@ -924,7 +930,7 @@ Config.Maps = {
         name   = "ARENA 1",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena1.png',
         center = vector3(5367.149, -1110.734, 355.209),
-        radius = 100.0,
+        radius = 155.0,
         modes  = { '2v2', '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -945,7 +951,7 @@ Config.Maps = {
         name   = "ARENA 2",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena2.png',
         center = vector3(4053.109, 0.296, 195.994),
-        radius = 105.0,
+        radius = 160.0,
         modes  = { '2v2', '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -962,7 +968,7 @@ Config.Maps = {
         name   = "ARENA 3",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena3.png',
         center = vector3(-147.057, -4347.000, 191.805),
-        radius = 105.0,
+        radius = 165.0,
         modes  = { '2v2', '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -979,7 +985,7 @@ Config.Maps = {
         name   = "ARENA 4",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena4.png',
         center = vector3(4400.804, 2800.000, 548.195),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '2v2', '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -996,7 +1002,7 @@ Config.Maps = {
         name   = "ARENA 5",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena5.png',
         center = vector3(4014.105, 1311.000, 678.667),
-        radius = 75.0,
+        radius = 150.0,
         modes  = { '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1013,7 +1019,7 @@ Config.Maps = {
         name   = "ARENA 6",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena6.png',
         center = vector3(4278.000, 1483.000, 678.663),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1030,7 +1036,7 @@ Config.Maps = {
         name   = "CS SPY",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/CSSPY.png',
         center = vector3(-3543.997, 1358.995, 310.357),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '2v2', '3v3', '4v4' },
         weapons = nil,
         teamA = {
@@ -1047,7 +1053,7 @@ Config.Maps = {
         name   = "DUST",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Dust.png',
         center = vector3(-3180.145, -348.759, 556.591),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1064,7 +1070,7 @@ Config.Maps = {
         name   = "HELIZONE 1",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Helizone1.png',
         center = vector3(1830.628, -3152.800, 399.520),
-        radius = 110.0,
+        radius = 165.0,
         modes  = { '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1081,7 +1087,7 @@ Config.Maps = {
         name   = "HELIZONE 2",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Helizone2.png',
         center = vector3(-2559.248, -1404.797, 419.369),
-        radius = 90.0,
+        radius = 150.0,
         modes  = { '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1098,7 +1104,7 @@ Config.Maps = {
         name   = "LEGO",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Lego.png',
         center = vector3(-2360.094, -1154.271, 328.661),
-        radius = 70.0,
+        radius = 150.0,
         modes  = { '1v1', '2v2', '3v3' },
         weapons = nil,
         teamA = {
@@ -1115,7 +1121,7 @@ Config.Maps = {
         name   = "NEON 1",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon1.png',
         center = vector3(-2446.467, -1810.070, 100.366),
-        radius = 95.0,
+        radius = 150.0,
         modes  = { '2v2', '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1132,7 +1138,7 @@ Config.Maps = {
         name   = "NEON 2",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon2.png',
         center = vector3(-230.341, -3398.187, 558.460),
-        radius = 100.0,
+        radius = 155.0,
         modes  = { '2v2', '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1149,7 +1155,7 @@ Config.Maps = {
         name   = "NEON 3",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon3.png',
         center = vector3(-2179.281, -2369.165, 500.729),
-        radius = 100.0,
+        radius = 155.0,
         modes  = { '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {
@@ -1166,7 +1172,7 @@ Config.Maps = {
         name   = "NEON 4",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon4.png',
         center = vector3(-3197.236, -478.799, 318.881),
-        radius = 75.0,
+        radius = 150.0,
         modes  = { '1v1', '2v2', '3v3' },
         weapons = nil,
         teamA = {
@@ -1183,7 +1189,7 @@ Config.Maps = {
         name   = "SKATEPARK",
         image  = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/SkatePark.png',
         center = vector3(-2595.843, -2218.091, 1271.626),
-        radius = 105.0,
+        radius = 160.0,
         modes  = { '3v3', '4v4', '5v5' },
         weapons = nil,
         teamA = {

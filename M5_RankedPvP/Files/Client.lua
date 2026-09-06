@@ -1245,9 +1245,23 @@ local function boundaryCheck()
 
     local pos = GetEntityCoords(playerPed())
     local c   = State.map.center
-    local dist = #(pos - vector3(c.x, c.y, c.z))
 
-    if dist > State.map.radius then
+    -- A combat zone is a cylinder, not a sphere. Measuring in three dimensions
+    -- meant every metre climbed was a metre stolen from the radius, so on an
+    -- arena with ramps, roofs or an upper deck a player standing in the middle
+    -- of the map could read as being outside it. Height is checked on its own,
+    -- with a limit generous enough to ignore normal arena geometry and tight
+    -- enough to still catch someone who has left the map entirely.
+    local dx, dy = pos.x - c.x, pos.y - c.y
+    local flat   = math.sqrt(dx * dx + dy * dy)
+    local climb  = math.abs(pos.z - c.z)
+    local vLimit = State.map.height or Config.Boundary.verticalLimit or 200.0
+
+    local overFlat  = flat  - State.map.radius
+    local overClimb = climb - vLimit
+    local dist = math.max(overFlat, overClimb) + State.map.radius
+
+    if overFlat > 0 or overClimb > 0 then
         if not State.outside then
             State.outside = true
             State.outsideUntil = ms() + ((State.settings.boundaryWarning or Config.Boundary.countdownFrom) * 1000)
@@ -1272,6 +1286,37 @@ local function boundaryCheck()
         stopScreenEffect(Config.Effects.outOfBoundsEffect)
     end
 end
+
+--- Prints where you are relative to the current map's zone.
+---
+--- The imported arenas came without a boundary size, so every radius in the
+--- config is a guess. Rather than leaving it at that: stand at the edge of the
+--- playable area and run this. It reports the horizontal distance from the
+--- centre, so the radius that arena actually wants is that number plus a
+--- little headroom.
+RegisterCommand('pvpzone', function()
+    local m = State.map
+    if not m or not m.center or not m.radius then
+        print('[M5RP] not in a match or training session with a map')
+        nui({ action = 'toast', kind = 'warning', message = _L('No live match.'),
+              title = _L('MATCH') })
+        return
+    end
+
+    local pos = GetEntityCoords(playerPed())
+    local dx, dy = pos.x - m.center.x, pos.y - m.center.y
+    local flat  = math.sqrt(dx * dx + dy * dy)
+    local climb = pos.z - m.center.z
+    local vLimit = m.height or Config.Boundary.verticalLimit or 200.0
+
+    local line = ('%s | flat %.1fm of %.0fm | height %+.1fm of %.0fm | %s')
+        :format(m.name or m.id or '?', flat, m.radius, climb, vLimit,
+                (flat > m.radius or math.abs(climb) > vLimit) and 'OUTSIDE' or 'inside')
+    print('[M5RP] ' .. line)
+    print(('[M5RP] centre %.3f %.3f %.3f — you %.3f %.3f %.3f')
+        :format(m.center.x, m.center.y, m.center.z, pos.x, pos.y, pos.z))
+    nui({ action = 'toast', kind = 'info', message = line, title = 'ZONE' })
+end, false)
 
 -- ============================================================================
 -- 09. MATCH THREAD

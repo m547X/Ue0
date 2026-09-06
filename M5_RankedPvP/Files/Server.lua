@@ -3345,7 +3345,8 @@ function Match.deploy(m, userId)
             name   = m.map.name,
             image  = m.map.image,
             center = { x = m.map.center.x, y = m.map.center.y, z = m.map.center.z },
-            radius = m.map.radius
+            radius = m.map.radius,
+            height = m.map.height
         } or nil,
         roster   = roster,
         settings = {
