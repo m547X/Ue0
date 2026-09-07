@@ -337,7 +337,7 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
 .sitem.epic::before{background:var(--rar-epic)}
 .sitem.legendary::before{background:var(--rar-legendary)}
 
-.si-rar{position:absolute;top:8px;left:8px;z-index:2;font-size:8px;font-weight:700;
+.si-rar{position:absolute;top:8px;left:8px;z-index:5;font-size:8px;font-weight:700;
   letter-spacing:.18em;padding:3px 7px;border-radius:5px;
   background:rgba(0,0,0,.75)}
 
@@ -1569,6 +1569,59 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
   mask-composite:exclude}
 .fr-gradient.fr-anim::after{animation:frSlide var(--fr-speed) linear infinite}
 @keyframes frSlide{from{background-position:0% 50%}to{background-position:300% 50%}}
+
+/* ==========================================================================
+   DECORATIONS — the drawn artwork a frame wears
+   The drawings live in the sprite in index.html and take their colours from
+   --fr and --fr2, so one drawing serves every frame that asks for it.
+   ========================================================================== */
+.deco{position:absolute;pointer-events:none;color:var(--fr)}
+.deco svg{display:block;width:100%;height:100%;overflow:visible;
+  fill:currentColor}
+
+/* Around a portrait: bigger than the circle it wraps, so the drawing hangs
+   off the rim instead of being trapped inside it. */
+.deco-av{inset:-24%;z-index:4;
+  filter:drop-shadow(0 0 calc(2px + var(--fr-glow) / 3) var(--fr))}
+/* a drawing hangs below the portrait, so the name is given room to clear it */
+.slot-av.deco-on + .slot-name{margin-top:24px}
+.demo-av.deco-on{margin-bottom:20px}
+/* a picture supplied by the server, in place of one of the drawings */
+.deco-img{background-size:contain;background-repeat:no-repeat;
+  background-position:center;filter:none}
+
+/* Nothing here sits perfectly still — a decoration that never moves reads as
+   part of the portrait rather than as something worn over it. */
+.deco-orbs   {animation:decoTurn  calc(var(--fr-speed) * 3) linear infinite}
+.deco-vines,
+.deco-laurel,
+.deco-wings,
+.deco-crystals{animation:decoFloat calc(var(--fr-speed) * 1.6) ease-in-out infinite}
+/* the rig reads as an aim, so it holds its angle and only breathes */
+.deco-tech   {animation:decoLick  calc(var(--fr-speed) * 1.2) ease-in-out infinite}
+.deco-flames {animation:decoLick  calc(var(--fr-speed) / 4) ease-in-out infinite}
+@keyframes decoTurn {to{transform:rotate(360deg)}}
+@keyframes decoFloat{0%,100%{transform:translateY(-1.6%)}50%{transform:translateY(1.6%)}}
+@keyframes decoLick {0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+
+/* A corner spray. The drawing hangs off the top-left; the other three are the
+   same one flipped, which is why a single shape dresses a whole card. */
+/* z-index 0 puts the spray over the card artwork but behind everything that
+   has to stay readable — the name, the portrait and the rank plate. It grows
+   into the card the way a vine would, rather than across the player. */
+.deco-cn{inset:0;z-index:0;animation:none}
+.deco-cn i{position:absolute;display:block;width:36%;max-width:78px;
+  aspect-ratio:1 / 1;
+  filter:drop-shadow(0 0 calc(1px + var(--fr-glow) / 4) var(--fr))}
+/* physical corners on purpose: the drawing is aimed inward from the top-left,
+   and a mirrored layout would have to flip it back to keep it pointing right */
+.deco-cn i:nth-child(1){top:0;left:0}
+.deco-cn i:nth-child(2){top:0;right:0;transform:scaleX(-1)}
+.deco-cn i:nth-child(3){bottom:0;left:0;transform:scaleY(-1)}
+.deco-cn i:nth-child(4){bottom:0;right:0;transform:scale(-1)}
+/* the bottom pair sits over the rank plate, so it is dialled back there */
+.deco-cn i:nth-child(3),
+.deco-cn i:nth-child(4){opacity:.55}
 
 /* The store preview: a small card standing in for the real one. It gets a
    lighter ground than a seat so the effect is visible against something, and

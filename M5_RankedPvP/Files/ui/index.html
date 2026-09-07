@@ -63,6 +63,222 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12l6 6L20 6" stroke="currentColor" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></symbol>
+
+    <!-- ================================================================ -->
+    <!-- DECORATIONS — the drawn artwork a frame can wear                  -->
+    <!--                                                                   -->
+    <!-- d-av-*  wraps a portrait. Drawn in a 200x200 box around a circle  -->
+    <!--         of r=62 at the centre, so the artwork sits on the rim and -->
+    <!--         spills outside it the way Discord's decorations do.       -->
+    <!-- d-cn-*  a corner spray for a card. Drawn in a 100x100 box hanging -->
+    <!--         off the TOP-LEFT corner; the other three corners are the  -->
+    <!--         same drawing flipped, so one shape dresses a whole card.  -->
+    <!--                                                                   -->
+    <!-- Both use currentColor for the main tone and var(--fr2) for the    -->
+    <!-- second, so one drawing takes the colours of whatever frame wears  -->
+    <!-- it. Custom properties reach into a <use> shadow tree, so this     -->
+    <!-- works without a copy of each drawing per colour.                  -->
+    <!-- ================================================================ -->
+
+    <!-- floating lights, the way a glow decoration orbits an avatar -->
+    <symbol id="d-av-orbs" viewBox="0 0 200 200">
+      <g fill="currentColor">
+        <circle cx="100" cy="26" r="9"/>
+        <circle cx="158" cy="52" r="6.5" fill="var(--fr2,currentColor)"/>
+        <circle cx="174" cy="112" r="10"/>
+        <circle cx="132" cy="170" r="7" fill="var(--fr2,currentColor)"/>
+        <circle cx="62"  cy="176" r="9"/>
+        <circle cx="22"  cy="122" r="6" fill="var(--fr2,currentColor)"/>
+        <circle cx="30"  cy="58"  r="8"/>
+      </g>
+      <g fill="var(--fr2,currentColor)" opacity=".85">
+        <circle cx="140" cy="30" r="3"/><circle cx="184" cy="80" r="2.6"/>
+        <circle cx="166" cy="148" r="3.2"/><circle cx="94" cy="184" r="2.8"/>
+        <circle cx="24"  cy="88" r="3"/><circle cx="58" cy="24" r="2.6"/>
+      </g>
+    </symbol>
+
+    <!-- a thorned vine climbing round it, leaves and all -->
+    <symbol id="d-av-vines" viewBox="0 0 200 200">
+      <g fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round">
+        <path d="M100 22C58 22 24 56 24 100c0 20 8 38 20 51"/>
+        <path d="M100 178c42 0 76-34 76-78 0-20-8-38-20-51"/>
+      </g>
+      <g fill="var(--fr2,currentColor)">
+        <path d="M74 24c-12-6-26-2-32 8 12 6 26 2 32-8z"/>
+        <path d="M30 66c-13 2-22 13-21 25 13-2 22-13 21-25z"/>
+        <path d="M36 140c-11 7-14 21-8 31 11-7 14-21 8-31z"/>
+        <path d="M126 176c12 6 26 2 32-8-12-6-26-2-32 8z"/>
+        <path d="M170 134c13-2 22-13 21-25-13 2-22 13-21 25z"/>
+        <path d="M164 60c11-7 14-21 8-31-11 7-14 21-8 31z"/>
+      </g>
+      <g fill="currentColor">
+        <path d="M52 40l-9-7 11-1zM22 104l-11 2 8-8zM52 162l-10 6 2-11z"/>
+        <path d="M148 160l9 7-11 1zM178 96l11-2-8 8zM148 38l10-6-2 11z"/>
+      </g>
+    </symbol>
+
+    <!-- shards standing out of the rim -->
+    <symbol id="d-av-crystals" viewBox="0 0 200 200">
+      <g fill="currentColor">
+        <path d="M100 6l11 34-11 14-11-14z"/>
+        <path d="M167 44l4 33-27 12-4-22z" fill="var(--fr2,currentColor)"/>
+        <path d="M194 112l-22 25-22-13 9-20z"/>
+        <path d="M138 190l-27-14 4-24 22 5z" fill="var(--fr2,currentColor)"/>
+        <path d="M56 192l-24-19 15-20 20 11z"/>
+        <path d="M8 118l6-31 24 7 1 22z" fill="var(--fr2,currentColor)"/>
+        <path d="M28 40l28-16 11 21-16 16z"/>
+      </g>
+      <g fill="none" stroke="var(--fr2,currentColor)" stroke-width="2" opacity=".7">
+        <path d="M100 6v48M171 77l-27 12M172 137l-22-13M115 176l-4-24M47 173l20-11M14 87l24 7M56 24l11 21"/>
+      </g>
+    </symbol>
+
+    <!-- fire licking up around it -->
+    <symbol id="d-av-flames" viewBox="0 0 200 200">
+      <g fill="currentColor">
+        <path d="M100 4c14 18 8 30 2 40 10-2 16-10 18-20 12 16 14 34 6 48-6-16-16-22-26-24-12 2-22 10-28 26-9-16-6-36 8-52 1 10 6 18 16 22-6-12-10-24 4-40z"/>
+        <path d="M28 44c12 8 12 20 10 30 8-6 10-16 8-26 12 14 14 32 4 44-2-14-10-20-18-22-10 2-16 8-20 22-8-14-4-32 8-44 0 8 4 14 12 16-6-8-10-14-4-20z"/>
+        <path d="M172 44c-12 8-12 20-10 30-8-6-10-16-8-26-12 14-14 32-4 44 2-14 10-20 18-22 10 2 16 8 20 22 8-14 4-32-8-44 0 8-4 14-12 16 6-8 10-14 4-20z"/>
+      </g>
+      <g fill="var(--fr2,currentColor)" opacity=".9">
+        <path d="M46 150c8 8 8 20 4 28 10-8 12-20 8-30 10 14 10 30 0 40-4-12-10-16-16-16-8 2-12 8-14 18-6-12-2-28 8-38 0 6 4 10 10 12-4-6-6-10 0-14z"/>
+        <path d="M154 150c-8 8-8 20-4 28-10-8-12-20-8-30-10 14-10 30 0 40 4-12 10-16 16-16 8 2 12 8 14 18 6-12 2-28-8-38 0 6-4 10-10 12 4-6 6-10 0-14z"/>
+      </g>
+    </symbol>
+
+    <!-- a pair of wings, the way a rank badge grows them -->
+    <symbol id="d-av-wings" viewBox="0 0 200 200">
+      <!-- four feathers a side, fanned out and swept back from the rim -->
+      <g fill="currentColor">
+        <path d="M66 84C48 74 26 60 6 54c6 13 24 28 46 38z"/>
+        <path d="M66 93C46 89 20 81 -2 77c9 13 28 23 52 27z"/>
+        <path d="M66 103C48 105 22 107 2 103c11 11 32 17 56 13z"/>
+        <path d="M67 112C51 118 31 130 18 141c15 0 36-8 53-21z"/>
+        <path d="M134 84c18-10 40-24 60-30-6 13-24 28-46 38z"/>
+        <path d="M134 93c20-4 46-12 68-16-9 13-28 23-52 27z"/>
+        <path d="M134 103c18 2 44 4 64 0-11 11-32 17-56 13z"/>
+        <path d="M133 112c16 6 36 18 49 29-15 0-36-8-53-21z"/>
+      </g>
+      <g fill="var(--fr2,currentColor)" opacity=".9">
+        <path d="M66 97C56 93 42 89 30 88c7 8 20 14 36 16z"/>
+        <path d="M134 97c10-4 24-8 36-9-7 8-20 14-36 16z"/>
+      </g>
+    </symbol>
+
+    <!-- a laurel wreath, open at the top -->
+    <symbol id="d-av-laurel" viewBox="0 0 200 200">
+      <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+        <path d="M84 188C42 178 14 142 14 100c0-24 9-45 24-60"/>
+        <path d="M116 188c42-10 70-46 70-88 0-24-9-45-24-60"/>
+      </g>
+      <g fill="var(--fr2,currentColor)">
+        <path d="M28 54c-12-4-25 1-30 11 12 4 25-1 30-11zM16 92c-13 0-24 9-25 20 13 0 24-9 25-20zM22 132c-12 5-18 17-14 28 12-5 18-17 14-28zM44 166c-9 9-10 23-3 31 9-9 10-23 3-31z"/>
+        <path d="M172 54c12-4 25 1 30 11-12 4-25-1-30-11zM184 92c13 0 24 9 25 20-13 0-24-9-25-20zM178 132c12 5 18 17 14 28-12-5-18-17-14-28zM156 166c9 9 10 23 3 31-9-9-10-23-3-31z"/>
+      </g>
+      <path d="M100 178l7 14h-14z" fill="currentColor"/>
+    </symbol>
+
+    <!-- a targeting rig: brackets, ticks and a readout chip -->
+    <symbol id="d-av-tech" viewBox="0 0 200 200">
+      <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+        <path d="M40 44A78 78 0 0016 96"/>
+        <path d="M160 156a78 78 0 0024-52"/>
+        <path d="M64 186a78 78 0 01-40-38"/>
+        <path d="M136 14a78 78 0 0140 38"/>
+      </g>
+      <g stroke="var(--fr2,currentColor)" stroke-width="3" stroke-linecap="round">
+        <path d="M100 2v14M100 184v14M2 100h14M184 100h14"/>
+        <path d="M30 30l10 10M170 30l-10 10M30 170l10-10M170 170l-10-10" opacity=".8"/>
+      </g>
+      <g fill="currentColor">
+        <path d="M78 190h44l-6 9H84z"/>
+        <rect x="90" y="2" width="20" height="6" rx="3"/>
+      </g>
+      <g fill="var(--fr2,currentColor)" opacity=".9">
+        <circle cx="16" cy="96" r="4"/><circle cx="184" cy="104" r="4"/>
+      </g>
+    </symbol>
+
+    <!-- ---- corner sprays, hung off the top-left of a card ---- -->
+
+    <!-- a rose vine climbing in from the corner -->
+    <symbol id="d-cn-vines" viewBox="0 0 100 100">
+      <path d="M-2 6C22 6 44 20 56 44c8 16 22 28 46 32" fill="none"
+            stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+      <path d="M4 -2C16 16 20 38 14 60" fill="none"
+            stroke="currentColor" stroke-width="3.4" stroke-linecap="round" opacity=".85"/>
+      <g fill="var(--fr2,currentColor)">
+        <path d="M20 10c-9-6-21-4-27 4 9 6 21 4 27-4z"/>
+        <path d="M46 30c-4-10-15-16-25-13 4 10 15 16 25 13z"/>
+        <path d="M8 36c-10 3-16 13-14 23 10-3 16-13 14-23z"/>
+        <path d="M66 56c-2-11-12-19-22-18 2 11 12 19 22 18z"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="34" cy="20" r="7"/><circle cx="34" cy="20" r="3.4" fill="var(--fr2,currentColor)"/>
+        <circle cx="62" cy="52" r="5.5"/><circle cx="62" cy="52" r="2.6" fill="var(--fr2,currentColor)"/>
+        <circle cx="10" cy="52" r="4.5"/><circle cx="10" cy="52" r="2" fill="var(--fr2,currentColor)"/>
+        <path d="M48 14l-8-4 9-2zM24 44l-9 2 6-7z"/>
+      </g>
+    </symbol>
+
+    <!-- a cluster of shards growing out of the corner -->
+    <symbol id="d-cn-crystals" viewBox="0 0 100 100">
+      <g fill="currentColor">
+        <path d="M-4 -4l44 22-16 18-30-14z"/>
+        <path d="M46 6l16 30-18 8-12-26z" fill="var(--fr2,currentColor)"/>
+        <path d="M8 42l24 14-8 20-20-16z"/>
+        <path d="M62 46l20 8-10 18-16-12z" fill="var(--fr2,currentColor)"/>
+      </g>
+      <g fill="none" stroke="var(--fr2,currentColor)" stroke-width="2" opacity=".65">
+        <path d="M0 0l40 18M46 6l-2 38M8 42l16 34M62 46l10 26"/>
+      </g>
+    </symbol>
+
+    <!-- fire creeping along the two edges -->
+    <symbol id="d-cn-flames" viewBox="0 0 100 100">
+      <g fill="currentColor">
+        <path d="M2 0c10 14 6 24 0 32 8-2 14-8 16-16 10 12 12 26 4 38-4-12-12-18-20-20V0z"/>
+        <path d="M44 2c8 10 4 18 0 24 6-2 10-6 12-12 8 10 8 20 2 30-4-10-10-14-16-16z"/>
+        <path d="M2 52c10 8 4 16 0 22 6-2 10-6 12-12 8 10 8 20 2 30-4-10-10-14-16-16z"/>
+      </g>
+      <g fill="var(--fr2,currentColor)" opacity=".85">
+        <path d="M74 0c6 8 2 14 0 18 5-2 8-5 9-10 6 8 6 16 2 24-3-8-8-11-13-12z"/>
+        <path d="M0 84c8 6 4 12 0 16 5-2 8-5 9-10 6 8 6 16 2 24-3-8-8-11-13-12z"/>
+      </g>
+    </symbol>
+
+    <!-- a hard bracket with ticks and a chip, for the sci-fi frames -->
+    <symbol id="d-cn-tech" viewBox="0 0 100 100">
+      <g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="square">
+        <path d="M2 46V10a8 8 0 018-8h34"/>
+      </g>
+      <g stroke="var(--fr2,currentColor)" stroke-width="3" stroke-linecap="round">
+        <path d="M14 58v10M14 74v6M56 14h10M72 14h6"/>
+      </g>
+      <g fill="currentColor">
+        <rect x="2" y="56" width="6" height="26" rx="3"/>
+        <rect x="56" y="2" width="26" height="6" rx="3"/>
+        <path d="M22 22h18v4H26v14h-4z"/>
+      </g>
+      <circle cx="90" cy="10" r="4" fill="var(--fr2,currentColor)"/>
+      <circle cx="10" cy="90" r="4" fill="var(--fr2,currentColor)"/>
+    </symbol>
+
+    <!-- scattered sparkles, the quietest of the sprays -->
+    <symbol id="d-cn-stars" viewBox="0 0 100 100">
+      <g fill="currentColor">
+        <path d="M14 4l4 12 12 4-12 4-4 12-4-12-12-4 12-4z"/>
+        <path d="M56 26l3 8 8 3-8 3-3 8-3-8-8-3 8-3z" fill="var(--fr2,currentColor)"/>
+        <path d="M26 56l3 8 8 3-8 3-3 8-3-8-8-3 8-3z" fill="var(--fr2,currentColor)"/>
+        <path d="M78 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>
+        <path d="M6 78l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>
+      </g>
+      <g fill="var(--fr2,currentColor)" opacity=".8">
+        <circle cx="44" cy="10" r="2.4"/><circle cx="70" cy="40" r="2"/>
+        <circle cx="10" cy="42" r="2"/><circle cx="40" cy="74" r="2.4"/>
+      </g>
+    </symbol>
   </defs>
 </svg>
 

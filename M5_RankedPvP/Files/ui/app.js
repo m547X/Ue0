@@ -659,7 +659,9 @@ function renderSlots() {
     const cos = cosmeticsOf(m, isMe);
     const art = cos && imgUrl(cos.cardImage);
     const fx  = cosmeticClasses(cos, 'card');
-    const avFx = frameOn(cos, 'avatar') ? frameClasses(cos, true) : '';
+    const avDeco = decoLayer(cos, 'avatar');
+    const avFx = (frameOn(cos, 'avatar') ? frameClasses(cos, true) : '')
+               + (avDeco ? ' deco-on' : '');
     const fxVars = cosmeticVars(cos);
 
     /* The plate is tinted by the player's tier, so the whole bottom of the
@@ -694,8 +696,9 @@ function renderSlots() {
       'slot filled' + (m.leader ? ' leader' : '') + (art ? ' art' : '') + fx, `
       ${art ? `<div class="slot-art" style="background-image:url(&quot;${esc(art)}&quot;)"></div>` : ''}
       ${effectLayers(cos && cos.effect)}
+      ${decoLayer(cos, 'card')}
       <div class="slot-top">
-        <div class="slot-av${avFx}">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
+        <div class="slot-av${avFx}">${esc(initial(m.name))}${avDeco}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
         ${cos && cos.title
           ? `<div class="slot-title"${cos.titleColor ? ` style="color:${esc(cos.titleColor)}"` : ''}>${esc(String(cos.title).toUpperCase())}</div>`
@@ -1538,11 +1541,14 @@ function renderStore(store) {
         const pc = previewCos(tab.kind, it);
         /* An avatar decoration has to be previewed on an avatar — shown as a
            card border it would look like something else entirely. */
+        const pcDeco = decoLayer(pc, 'avatar');
         const onAv = frameOn(pc, 'avatar');
         face = `<div class="ci-art fx-demo${cosmeticClasses(pc, 'card')}"
                      style="${cosmeticVars(pc)}">
                   ${effectLayers(pc.effect)}
-                  ${onAv ? `<span class="demo-av${frameClasses(pc, true)}"></span>` : ''}
+                  ${decoLayer(pc, 'card')}
+                  ${onAv ? `<span class="demo-av${frameClasses(pc, true)}${
+                              pcDeco ? ' deco-on' : ''}">${pcDeco}</span>` : ''}
                   <span class="ci-blank">${esc(it.name)}</span>
                 </div>`;
       } else {
@@ -1992,7 +1998,17 @@ const EFFECT_LAYERS = {
    a glow and a style, and the stylesheet builds the border from those. That
    means a frame nobody wrote CSS for still works. */
 const FRAME_STYLES = ['solid', 'double', 'dashed', 'dots', 'gradient',
-                      'corners', 'studs', 'ticks', 'ribbon', 'spin', 'halo'];
+                      'corners', 'studs', 'ticks', 'ribbon', 'spin', 'halo',
+                      /* no line at all — for a frame that is only its drawing */
+                      'bare'];
+
+/* The drawn decorations. A portrait wears one whole drawing around it; a card
+   wears a corner spray, the same shape at each of its four corners. Not every
+   drawing suits both, so each list says which it has. */
+const ART_AVATAR = ['orbs', 'vines', 'crystals', 'flames', 'wings', 'laurel', 'tech'];
+const ART_CORNER = ['vines', 'crystals', 'flames', 'tech', 'stars'];
+/* anything with a dot or a slash in it is a picture, not one of the drawings */
+const artIsFile = (v) => /[./]/.test(String(v || ''));
 /* A frame decorates the card, the portrait, or both. The portrait is the
    Discord-shaped case: a decoration around the avatar rather than a border
    around everything. */
@@ -2020,6 +2036,34 @@ function frameClasses(cos, round) {
   if (cos.frameAnimated) out += ' fr-anim';
   if (cssNum(cos.frameGlow, 0, 60, 0) > 0) out += ' fr-lit';
   return out;
+}
+
+/** The drawn artwork a frame carries, for whichever place is being built.
+    `avatar` is one drawing wrapped round the portrait, the way Discord hangs
+    one off an avatar; `card` is a corner spray, drawn once and flipped into
+    each of the four corners. A frame with no `art` gets nothing here. */
+function decoLayer(cos, where) {
+  if (!frameOn(cos, where)) return '';
+  const art = cos.frameArt;
+  if (!art) return '';
+
+  if (artIsFile(art)) {
+    // a picture the server pointed at: only the portrait wears one, since a
+    // single image cannot be flipped into four corners and still read right
+    return where === 'avatar'
+      ? `<span class="deco deco-av deco-img" style="background-image:url('${esc(imgUrl(art))}')"></span>`
+      : '';
+  }
+
+  const id = safeId(art);
+  if (where === 'avatar') {
+    if (!ART_AVATAR.includes(id)) return '';
+    return `<span class="deco deco-av deco-${id}">
+      <svg viewBox="0 0 200 200"><use href="#d-av-${id}"/></svg></span>`;
+  }
+  if (!ART_CORNER.includes(id)) return '';
+  const corner = `<i><svg viewBox="0 0 100 100"><use href="#d-cn-${id}"/></svg></i>`;
+  return `<span class="deco deco-cn deco-${id}">${corner.repeat(4)}</span>`;
 }
 
 /** The extra classes an element needs to carry an effect and a frame. */
@@ -2071,6 +2115,7 @@ function previewCos(kind, it) {
              effectColor2: it.color2, effectSpeed: it.speed };
   }
   return { frame: it.style || 'solid', frameTarget: it.target || 'card',
+           frameArt: it.art,
            frameColor: it.color, frameColor2: it.color2,
            frameWidth: it.width, frameGlow: it.glow,
            frameAnimated: it.animated, frameSpeed: it.speed };

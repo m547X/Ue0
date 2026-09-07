@@ -6258,9 +6258,10 @@ function Store.payload(userId)
                 -- how it is drawn; the interface builds the rest from these
                 anim = def.anim, speed = def.speed,
                 style = def.style, width = def.width, target = def.target,
+                art = def.art,
                 glow = def.glow, animated = def.animated == true,
                 owned = d.owned[kind][def.id] == true,
-                equipped = (kind == 'card' and d.card or d.title) == def.id
+                equipped = d[kind] == def.id
             }
         end
         return out
@@ -6371,6 +6372,9 @@ function Store.cosmetics(userId)
 
         frame        = (frame and frame.id ~= 'none') and (frame.style or 'solid') or nil,
         frameTarget  = frame and frame.target or nil,
+        -- the drawn decoration, if the frame carries one: either the name of
+        -- one of the built-in drawings or a picture under Files/ui/img
+        frameArt     = frame and frame.art or nil,
         frameColor   = frame and frame.color or nil,
         frameColor2  = frame and frame.color2 or nil,
         frameWidth   = frame and frame.width or nil,
