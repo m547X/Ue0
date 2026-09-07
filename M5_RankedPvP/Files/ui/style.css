@@ -1372,19 +1372,27 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
 /* ==========================================================================
    FRAMES — built from --fr, --fr2, --fr-w, --fr-glow and --fr-speed
    ========================================================================== */
-.fr{position:relative;--fr-w:2px;--fr-glow:0px;--fr-speed:6s;
-  --fr:var(--edge);--fr2:var(--fr)}
+/* The defaults live on the page, not on .fr: a frame's colours are set on the
+   seat, and the portrait inside it is a .fr of its own. Declaring them on .fr
+   would have the portrait shadow the seat's values with these fallbacks, and
+   every avatar decoration would come out the same faint blue. */
+:root{--fr-w:2px;--fr-glow:0px;--fr-speed:6s;--fr:var(--edge);--fr2:var(--fr)}
+.fr{position:relative}
 /* an inset ring, so a frame never changes the size of what it wraps */
 .fr::after{content:'';position:absolute;inset:0;z-index:3;border-radius:inherit;
   pointer-events:none}
-/* the glow, when the item asked for one */
-.fr-lit::after{box-shadow:0 0 var(--fr-glow) calc(var(--fr-glow) / -3) var(--fr)}
+/* The glow, when the item asked for one. It is drawn twice, inward and
+   outward: a seat clips its own overflow, so the outward half never reaches
+   the player on a card — and a store tile has room for it, so both stay. */
+.fr-lit::after{box-shadow:inset 0 0 var(--fr-glow) calc(var(--fr-glow) / -3) var(--fr),
+                          0 0 var(--fr-glow) calc(var(--fr-glow) / -3) var(--fr)}
 
 .fr-solid::after{border:var(--fr-w) solid var(--fr)}
 .fr-dashed::after{border:var(--fr-w) dashed var(--fr)}
 .fr-double::after{border:var(--fr-w) solid var(--fr);
   box-shadow:inset 0 0 0 var(--fr-w) rgba(0,0,0,.55),
              inset 0 0 0 calc(var(--fr-w) * 2) var(--fr),
+             inset 0 0 var(--fr-glow) calc(var(--fr-glow) / -3) var(--fr),
              0 0 var(--fr-glow) calc(var(--fr-glow) / -3) var(--fr)}
 
 /* only the four corners, drawn with two crossed gradients */
@@ -1400,6 +1408,152 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
     linear-gradient(var(--fr),var(--fr)) 100% 100%  / var(--c) var(--fr-w),
     linear-gradient(var(--fr),var(--fr)) 100% 100%  / var(--fr-w) var(--c);
   background-repeat:no-repeat}
+
+/* a row of dots around the edge */
+.fr-dots::after{
+  --d:var(--fr-w);
+  --g:calc(var(--fr-w) * 3);
+  background:
+    repeating-linear-gradient(90deg,var(--fr) 0 var(--d),transparent var(--d) var(--g)) 0 0      / 100% var(--fr-w),
+    repeating-linear-gradient(90deg,var(--fr) 0 var(--d),transparent var(--d) var(--g)) 0 100%   / 100% var(--fr-w),
+    repeating-linear-gradient(180deg,var(--fr) 0 var(--d),transparent var(--d) var(--g)) 0 0     / var(--fr-w) 100%,
+    repeating-linear-gradient(180deg,var(--fr) 0 var(--d),transparent var(--d) var(--g)) 100% 0  / var(--fr-w) 100%;
+  background-repeat:no-repeat}
+
+/* a solid block at each corner */
+.fr-studs::after{
+  --c:calc(var(--fr-w) * 4);
+  background:
+    linear-gradient(var(--fr),var(--fr)) 0 0       / var(--c) var(--c),
+    linear-gradient(var(--fr),var(--fr)) 100% 0    / var(--c) var(--c),
+    linear-gradient(var(--fr),var(--fr)) 0 100%    / var(--c) var(--c),
+    linear-gradient(var(--fr),var(--fr)) 100% 100% / var(--c) var(--c);
+  background-repeat:no-repeat}
+
+/* a thin line all the way round, with a longer mark at each corner */
+.fr-ticks::after{
+  --c:26px;
+  /* a neutral hairline, not a faded --fr: --fr is an arbitrary colour from the
+     config and CEF has no color-mix() to fade it with */
+  border:1px solid var(--edge-soft);
+  background:
+    linear-gradient(var(--fr),var(--fr)) 0 0        / var(--c) var(--fr-w),
+    linear-gradient(var(--fr),var(--fr)) 0 0        / var(--fr-w) var(--c),
+    linear-gradient(var(--fr),var(--fr)) 100% 0     / var(--c) var(--fr-w),
+    linear-gradient(var(--fr),var(--fr)) 100% 0     / var(--fr-w) var(--c),
+    linear-gradient(var(--fr),var(--fr)) 0 100%     / var(--c) var(--fr-w),
+    linear-gradient(var(--fr),var(--fr)) 0 100%     / var(--fr-w) var(--c),
+    linear-gradient(var(--fr),var(--fr)) 100% 100%  / var(--c) var(--fr-w),
+    linear-gradient(var(--fr),var(--fr)) 100% 100%  / var(--fr-w) var(--c);
+  background-repeat:no-repeat;background-origin:border-box}
+
+/* a bar across the top, with a hairline round the rest */
+.fr-ribbon::after{
+  border:1px solid var(--edge-soft);
+  background:linear-gradient(90deg,var(--fr),var(--fr2),var(--fr)) no-repeat 0 0 / 100% var(--fr-w);
+  background-origin:border-box}
+
+/* a ring of colour turning around it — the avatar decoration */
+.fr-spin::after{
+  border:var(--fr-w) solid transparent;
+  background:conic-gradient(from 0deg,var(--fr),var(--fr2),var(--fr)) border-box;
+  -webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+  mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude}
+/* The ring is turned by rotating it, which only reads as a turn on something
+   round — on a card the rotating rectangle swings its corners out across the
+   artwork. A card gets the colour travelling along the border instead. */
+.fr-round.fr-spin::after{animation:frSpin var(--fr-speed) linear infinite}
+.fr-spin:not(.fr-round)::after{
+  background:linear-gradient(120deg,var(--fr),var(--fr2),var(--fr)) border-box;
+  background-size:300% 100%;
+  animation:frSlide var(--fr-speed) linear infinite}
+@keyframes frSpin{to{transform:rotate(360deg)}}
+
+/* a soft ring bleeding outward, no hard edge */
+.fr-halo::after{
+  box-shadow:0 0 0 var(--fr-w) var(--fr),
+             0 0 calc(var(--fr-w) * 7) calc(var(--fr-w) * 0) var(--fr2),
+             0 0 calc(var(--fr-w) * 14) calc(var(--fr-w) * 1) var(--fr);
+  animation:frHalo calc(var(--fr-speed) / 2) ease-in-out infinite}
+@keyframes frHalo{
+  0%,100%{box-shadow:0 0 0 var(--fr-w) var(--fr),
+                     0 0 calc(var(--fr-w) * 6)  0 var(--fr2),
+                     0 0 calc(var(--fr-w) * 11) 0 var(--fr)}
+  50%    {box-shadow:0 0 0 var(--fr-w) var(--fr),
+                     0 0 calc(var(--fr-w) * 9)  0 var(--fr2),
+                     0 0 calc(var(--fr-w) * 18) 0 var(--fr)}}
+/* On a card the same halo has to breathe inward — a seat clips its overflow,
+   and a ring bleeding outward would be sliced off at the border. */
+.fr-halo:not(.fr-round)::after{
+  animation-name:frHaloIn}
+@keyframes frHaloIn{
+  0%,100%{box-shadow:inset 0 0 0 var(--fr-w) var(--fr),
+                     inset 0 0 calc(var(--fr-w) * 4) calc(var(--fr-w) * -1) var(--fr2),
+                     inset 0 0 calc(var(--fr-w) * 8) calc(var(--fr-w) * -2) var(--fr)}
+  50%    {box-shadow:inset 0 0 0 var(--fr-w) var(--fr),
+                     inset 0 0 calc(var(--fr-w) * 6)  calc(var(--fr-w) * -1) var(--fr2),
+                     inset 0 0 calc(var(--fr-w) * 12) calc(var(--fr-w) * -2) var(--fr)}}
+
+/* ---- the same frames worn by a portrait ----
+   A portrait is a circle, and a circle clips its own background: corner studs,
+   corner brackets and a bar across the top all fall outside the disc and get
+   cut away. On .fr-round those shapes are redrawn as arcs, which is what the
+   shape wants to be on something round anyway. */
+.fr-round.fr-corners::after,
+.fr-round.fr-ticks::after,
+.fr-round.fr-dots::after,
+.fr-round.fr-ribbon::after{
+  border:var(--fr-w) solid transparent;
+  /* each variant below re-states the whole `background` shorthand: the square
+     versions set a size and a position per layer, and an image-only override
+     would inherit those and paint a single 26px smear. */
+  -webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+  mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude}
+
+/* four long arcs on the diagonals — the bracket, bent round */
+.fr-round.fr-corners::after{
+  background:conic-gradient(
+    transparent 0 22deg,   var(--fr) 22deg 68deg,
+    transparent 68deg 112deg,  var(--fr) 112deg 158deg,
+    transparent 158deg 202deg, var(--fr) 202deg 248deg,
+    transparent 248deg 292deg, var(--fr) 292deg 338deg,
+    transparent 338deg 360deg) border-box}
+
+/* four short marks at the compass points */
+.fr-round.fr-ticks::after{
+  background:conic-gradient(
+    var(--fr) 0 7deg,      transparent 7deg 83deg,
+    var(--fr) 83deg 97deg, transparent 97deg 173deg,
+    var(--fr) 173deg 187deg, transparent 187deg 263deg,
+    var(--fr) 263deg 277deg, transparent 277deg 353deg,
+    var(--fr) 353deg 360deg) border-box}
+
+/* a beaded ring */
+.fr-round.fr-dots::after{
+  background:repeating-conic-gradient(var(--fr) 0 5deg,transparent 5deg 15deg) border-box}
+
+/* the banner, curved over the top of the head */
+.fr-round.fr-ribbon::after{
+  background:conic-gradient(from -56deg,
+    var(--fr) 0 22deg, var(--fr2) 22deg 90deg, var(--fr) 90deg 112deg,
+    transparent 112deg 360deg) border-box}
+
+/* rivets sitting on the rim rather than at the corners of a box */
+.fr-round.fr-studs::after{
+  --o:calc(var(--fr-w) * 1.6);
+  --r:var(--fr-w);
+  border:0;
+  background:
+    radial-gradient(circle at 50% var(--o),var(--fr) 0 var(--r),transparent var(--r)),
+    radial-gradient(circle at calc(100% - var(--o)) 50%,var(--fr) 0 var(--r),transparent var(--r)),
+    radial-gradient(circle at 50% calc(100% - var(--o)),var(--fr) 0 var(--r),transparent var(--r)),
+    radial-gradient(circle at var(--o) 50%,var(--fr) 0 var(--r),transparent var(--r));
+  box-shadow:inset 0 0 0 1px var(--fr),
+             0 0 var(--fr-glow) calc(var(--fr-glow) / -3) var(--fr)}
 
 /* a gradient border needs a painted edge rather than a ring of shadow */
 .fr-gradient::after{
@@ -1436,6 +1590,12 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
 /* the preview has no rank plate, so the flames go back to the bottom edge */
 .fx-demo.fx-flames .fx-layer i{bottom:-14%;height:52%}
 .fx-demo.fr-gradient.fr-anim::after{animation-duration:calc(var(--fr-speed) / 2)}
+
+/* an avatar decoration is previewed on a portrait, not on the tile's edge */
+.demo-av{position:relative;z-index:2;display:block;width:52px;height:52px;
+  margin:0 auto 10px;border-radius:50%;
+  background:linear-gradient(145deg,var(--avatar-from),var(--avatar-to))}
+.fx-demo{display:flex;flex-direction:column;align-items:center;justify-content:center}
 
 /* ---------- RANK PLATE ----------
    The bottom of a seat is the player's rank, so it gets its own glass plate

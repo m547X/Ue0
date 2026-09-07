@@ -6257,7 +6257,7 @@ function Store.payload(userId)
                 color2 = def.color2,
                 -- how it is drawn; the interface builds the rest from these
                 anim = def.anim, speed = def.speed,
-                style = def.style, width = def.width,
+                style = def.style, width = def.width, target = def.target,
                 glow = def.glow, animated = def.animated == true,
                 owned = d.owned[kind][def.id] == true,
                 equipped = (kind == 'card' and d.card or d.title) == def.id
@@ -6370,6 +6370,7 @@ function Store.cosmetics(userId)
         effectSpeed  = effect and effect.speed or nil,
 
         frame        = (frame and frame.id ~= 'none') and (frame.style or 'solid') or nil,
+        frameTarget  = frame and frame.target or nil,
         frameColor   = frame and frame.color or nil,
         frameColor2  = frame and frame.color2 or nil,
         frameWidth   = frame and frame.width or nil,

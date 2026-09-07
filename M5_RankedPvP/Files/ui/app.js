@@ -658,7 +658,8 @@ function renderSlots() {
 
     const cos = cosmeticsOf(m, isMe);
     const art = cos && imgUrl(cos.cardImage);
-    const fx  = cosmeticClasses(cos);
+    const fx  = cosmeticClasses(cos, 'card');
+    const avFx = frameOn(cos, 'avatar') ? frameClasses(cos, true) : '';
     const fxVars = cosmeticVars(cos);
 
     /* The plate is tinted by the player's tier, so the whole bottom of the
@@ -694,7 +695,7 @@ function renderSlots() {
       ${art ? `<div class="slot-art" style="background-image:url(&quot;${esc(art)}&quot;)"></div>` : ''}
       ${effectLayers(cos && cos.effect)}
       <div class="slot-top">
-        <div class="slot-av">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
+        <div class="slot-av${avFx}">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
         ${cos && cos.title
           ? `<div class="slot-title"${cos.titleColor ? ` style="color:${esc(cos.titleColor)}"` : ''}>${esc(String(cos.title).toUpperCase())}</div>`
@@ -1535,9 +1536,13 @@ function renderStore(store) {
            fields the real card uses. Buying one of these blind was the thing
            to avoid. */
         const pc = previewCos(tab.kind, it);
-        face = `<div class="ci-art fx-demo${cosmeticClasses(pc)}"
+        /* An avatar decoration has to be previewed on an avatar — shown as a
+           card border it would look like something else entirely. */
+        const onAv = frameOn(pc, 'avatar');
+        face = `<div class="ci-art fx-demo${cosmeticClasses(pc, 'card')}"
                      style="${cosmeticVars(pc)}">
                   ${effectLayers(pc.effect)}
+                  ${onAv ? `<span class="demo-av${frameClasses(pc, true)}"></span>` : ''}
                   <span class="ci-blank">${esc(it.name)}</span>
                 </div>`;
       } else {
@@ -1986,7 +1991,16 @@ const EFFECT_LAYERS = {
 /* A frame is not a fixed design any more: the config gives width, colours,
    a glow and a style, and the stylesheet builds the border from those. That
    means a frame nobody wrote CSS for still works. */
-const FRAME_STYLES = ['solid', 'double', 'dashed', 'gradient', 'corners'];
+const FRAME_STYLES = ['solid', 'double', 'dashed', 'dots', 'gradient',
+                      'corners', 'studs', 'ticks', 'ribbon', 'spin', 'halo'];
+/* A frame decorates the card, the portrait, or both. The portrait is the
+   Discord-shaped case: a decoration around the avatar rather than a border
+   around everything. */
+const frameOn = (cos, what) => {
+  if (!cos || !safeId(cos.frame)) return false;
+  const t = cos.frameTarget || 'card';
+  return t === 'both' || t === what;
+};
 
 const safeId = (v) => (v && v !== 'none') ? String(v).replace(/[^a-z0-9_-]/gi, '') : '';
 const cssNum = (v, lo, hi, dflt) => {
@@ -1994,19 +2008,30 @@ const cssNum = (v, lo, hi, dflt) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
 };
 
+/** The frame classes on their own, for whichever element wears it.
+    `round` marks a portrait: the box-shaped styles (corner studs, corner
+    brackets, a bar across the top) would be clipped away by the circle, so
+    the stylesheet swaps them for their arc equivalents. */
+function frameClasses(cos, round) {
+  const style = safeId(cos && cos.frame);
+  if (!style) return '';
+  let out = ` fr fr-${FRAME_STYLES.includes(style) ? style : 'solid'}`;
+  if (round) out += ' fr-round';
+  if (cos.frameAnimated) out += ' fr-anim';
+  if (cssNum(cos.frameGlow, 0, 60, 0) > 0) out += ' fr-lit';
+  return out;
+}
+
 /** The extra classes an element needs to carry an effect and a frame. */
-function cosmeticClasses(cos) {
+function cosmeticClasses(cos, what) {
   if (!cos) return '';
   let out = '';
-  const fx = safeId(cos.effect);
-  if (fx) out += ` fx fx-${fx}`;
-
-  const style = safeId(cos.frame);
-  if (style) {
-    out += ` fr fr-${FRAME_STYLES.includes(style) ? style : 'solid'}`;
-    if (cos.frameAnimated) out += ' fr-anim';
-    if (cssNum(cos.frameGlow, 0, 60, 0) > 0) out += ' fr-lit';
+  // an effect always plays on the card, never on the portrait
+  if (what !== 'avatar') {
+    const fx = safeId(cos.effect);
+    if (fx) out += ` fx fx-${fx}`;
   }
+  if (frameOn(cos, what || 'card')) out += frameClasses(cos);
   return out;
 }
 
@@ -2045,7 +2070,8 @@ function previewCos(kind, it) {
     return { effect: it.anim || it.id, effectColor: it.color,
              effectColor2: it.color2, effectSpeed: it.speed };
   }
-  return { frame: it.style || 'solid', frameColor: it.color, frameColor2: it.color2,
+  return { frame: it.style || 'solid', frameTarget: it.target || 'card',
+           frameColor: it.color, frameColor2: it.color2,
            frameWidth: it.width, frameGlow: it.glow,
            frameAnimated: it.animated, frameSpeed: it.speed };
 }

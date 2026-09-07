@@ -1803,39 +1803,66 @@ Config.Store = {
     },
 
     -- ---- FRAMES --------------------------------------------------------
-    -- The border drawn around the card. Built from these numbers rather than
-    -- from a fixed list, so you can make your own without touching any code.
+    -- Built from these numbers rather than from a fixed list, so you can make
+    -- your own without touching any code.
     --
-    --   style   how the border is drawn:
+    --   target  what it decorates:
+    --             card    the border around the whole player card (default)
+    --             avatar  a decoration around the portrait, the way Discord
+    --                     puts one around an avatar
+    --             both    the same treatment on each
+    --
+    --   style   how it is drawn:
     --             solid     one line
     --             double    a line, a gap, then a second line
     --             dashed    a dashed line
+    --             dots      a row of dots around the edge
     --             gradient  the line runs color -> color2 -> color
     --             corners   only the four corners are drawn
+    --             studs     a block at each corner
+    --             ticks     a thin line, with a longer mark at each corner
+    --             ribbon    a bar across the top
+    --             spin      a ring of colour turning around it
+    --             halo      a soft ring bleeding outward, no hard edge
+    --
+    --           A portrait is round, so a shape that lives at the corners of a
+    --           box is drawn as its arc on target = 'avatar': corners and
+    --           ticks become marks around the rim, studs become rivets on it,
+    --           and the ribbon curves over the top of the head.
+    --
     --   width   thickness in pixels (1 to 6 reads well)
     --   color   the main tone
-    --   color2  the second tone. Only `gradient` uses it; leave it out and the
-    --           gradient runs in one colour.
-    --   glow    how far the border bleeds outward, in pixels. 0 or absent for
-    --           a flat border.
-    --   animated  true makes a gradient travel around the card. Only means
-    --           anything for style = 'gradient'.
-    --   speed   seconds for one full trip when animated. Default 6.
+    --   color2  the far end of a gradient, a spin or a halo. Leave it out and
+    --           the second tone is the first one.
+    --   glow    how far it bleeds outward, in pixels. 0 or absent for flat.
+    --   animated  a gradient that travels around. Only means anything for
+    --           style = 'gradient'; spin and halo always move.
+    --   speed   seconds for one full trip. Default 6.
     --
     -- `id` is just a name for the row: copy a line, change the id and the
     -- colours, and that is a new frame in the store.
     frames = {
         { id = 'none',    name = '—',        rarity = 'common',    price = 0,    default = true },
+
+        -- ---- around the card ----
         { id = 'steel',   name = 'Steel',    rarity = 'common',    price = 200,
           style = 'double',   width = 2, color = '#8B93A3' },
         { id = 'dash',    name = 'Marker',   rarity = 'common',    price = 250,
           style = 'dashed',   width = 2, color = '#6FB8FF' },
+        { id = 'beads',   name = 'Beads',    rarity = 'common',    price = 300,
+          style = 'dots',     width = 3, color = '#B9C1CC' },
         { id = 'corners', name = 'Bracket',  rarity = 'rare',      price = 450,
           style = 'corners',  width = 3, color = '#2FDD9B', glow = 14 },
+        { id = 'studs',   name = 'Rivets',   rarity = 'rare',      price = 500,
+          style = 'studs',    width = 3, color = '#F5C542', glow = 12 },
         { id = 'gold',    name = 'Gold',     rarity = 'rare',      price = 600,
           style = 'solid',    width = 2, color = '#F5C542', glow = 22 },
+        { id = 'ticks',   name = 'Precision',rarity = 'rare',      price = 650,
+          style = 'ticks',    width = 2, color = '#3FA9FF', glow = 12 },
         { id = 'crimson', name = 'Crimson',  rarity = 'rare',      price = 700,
           style = 'solid',    width = 3, color = '#FF3B4E', glow = 24 },
+        { id = 'banner',  name = 'Banner',   rarity = 'epic',      price = 900,
+          style = 'ribbon',   width = 4, color = '#C158FF', color2 = '#3FA9FF', glow = 16 },
         { id = 'neon',    name = 'Neon',     rarity = 'epic',      price = 1200,
           style = 'gradient', width = 2, color = '#3FA9FF', color2 = '#C158FF', animated = true },
         { id = 'toxic',   name = 'Toxic',    rarity = 'epic',      price = 1400,
@@ -1843,8 +1870,27 @@ Config.Store = {
         { id = 'royal',   name = 'Royal',    rarity = 'legendary', price = 2500,
           style = 'gradient', width = 3, color = '#F5C542', color2 = '#FF4757', animated = true, glow = 20 },
         { id = 'prism',   name = 'Prism',    rarity = 'legendary', price = 3000,
-          style = 'gradient', width = 3, color = '#3FA9FF', color2 = '#FF7A3C', animated = true, glow = 26, speed = 3 }
+          style = 'gradient', width = 3, color = '#3FA9FF', color2 = '#FF7A3C', animated = true, glow = 26, speed = 3 },
+
+        -- ---- around the portrait, the way Discord decorates an avatar ----
+        { id = 'av_ring',   name = 'Ring',      rarity = 'common',    price = 300,
+          target = 'avatar', style = 'double',  width = 2, color = '#6FB8FF' },
+        { id = 'av_studs',  name = 'Bolts',     rarity = 'rare',      price = 550,
+          target = 'avatar', style = 'studs',   width = 3, color = '#F5C542', glow = 12 },
+        { id = 'av_halo',   name = 'Halo',      rarity = 'rare',      price = 800,
+          target = 'avatar', style = 'halo',    width = 3, color = '#F5C542', color2 = '#FF7A3C' },
+        { id = 'av_spin',   name = 'Vortex',    rarity = 'epic',      price = 1500,
+          target = 'avatar', style = 'spin',    width = 3, color = '#3FA9FF', color2 = '#C158FF', speed = 4 },
+        { id = 'av_ember',  name = 'Cinder',    rarity = 'epic',      price = 1700,
+          target = 'avatar', style = 'spin',    width = 4, color = '#FF7A3C', color2 = '#FFD24A', speed = 3 },
+
+        -- ---- portrait and card together ----
+        { id = 'both_void', name = 'Void',      rarity = 'legendary', price = 3200,
+          target = 'both',   style = 'spin',    width = 3, color = '#C158FF', color2 = '#3FA9FF', speed = 5, glow = 18 },
+        { id = 'both_sun',  name = 'Solar',     rarity = 'legendary', price = 3500,
+          target = 'both',   style = 'halo',    width = 4, color = '#FFD24A', color2 = '#FF4757', glow = 24 }
     }
+
 }
 
 Config.Rewards = {
