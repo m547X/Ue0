@@ -430,9 +430,17 @@ CREATE TABLE IF NOT EXISTS `m5_player_store` (
   `title`      VARCHAR(48) NOT NULL DEFAULT 'none',
   `effect`     VARCHAR(48) NOT NULL DEFAULT 'none',
   `frame`      VARCHAR(48) NOT NULL DEFAULT 'none',
+  `avatar`     VARCHAR(48) NOT NULL DEFAULT 'none',
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Already have this table from an earlier build? The resource adds the newer
+-- columns on start, but you can run these by hand instead. Each is safe to
+-- skip if the column is already there.
+-- ALTER TABLE `m5_player_store` ADD COLUMN `effect` VARCHAR(48) NOT NULL DEFAULT 'none';
+-- ALTER TABLE `m5_player_store` ADD COLUMN `frame`  VARCHAR(48) NOT NULL DEFAULT 'none';
+-- ALTER TABLE `m5_player_store` ADD COLUMN `avatar` VARCHAR(48) NOT NULL DEFAULT 'none';
 
 CREATE TABLE IF NOT EXISTS `m5_player_items` (
   `user_id`     INT UNSIGNED NOT NULL,

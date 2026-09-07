@@ -641,7 +641,8 @@ all best-of configurable.
 
 **Progression** — placement matches with a weighted placement score, seasons with
 soft/hard reset, archived leaderboards, season rewards, levels and XP, daily and
-weekly missions, achievements, titles, badges, frames.
+weekly missions, achievements, titles, badges, card effects, card frames and
+avatar decorations.
 
 **Integrity** — leave penalties that escalate to ranked bans, AFK detection that
 ignores countdowns and spectating, ranked bans separate from server bans, and

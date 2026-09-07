@@ -658,10 +658,13 @@ function renderSlots() {
 
     const cos = cosmeticsOf(m, isMe);
     const art = cos && imgUrl(cos.cardImage);
-    const fx  = cosmeticClasses(cos, 'card');
-    const avDeco = decoLayer(cos, 'avatar');
-    const avFx = (frameOn(cos, 'avatar') ? frameClasses(cos, true) : '')
+    const fx  = cosmeticClasses(cos);
+    const avDeco = decoLayer(cos && cos.avatar, 'avatar');
+    const avFx = frameClasses(cos && cos.avatar, true)
                + (avDeco ? ' deco-on' : '');
+    /* the portrait carries its own colours: it is a separate purchase from
+       the card's frame, and the two rarely match */
+    const avVars = frameVars(cos && cos.avatar);
     const fxVars = cosmeticVars(cos);
 
     /* The plate is tinted by the player's tier, so the whole bottom of the
@@ -696,9 +699,9 @@ function renderSlots() {
       'slot filled' + (m.leader ? ' leader' : '') + (art ? ' art' : '') + fx, `
       ${art ? `<div class="slot-art" style="background-image:url(&quot;${esc(art)}&quot;)"></div>` : ''}
       ${effectLayers(cos && cos.effect)}
-      ${decoLayer(cos, 'card')}
+      ${decoLayer(cos && cos.frame, 'card')}
       <div class="slot-top">
-        <div class="slot-av${avFx}">${esc(initial(m.name))}${avDeco}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
+        <div class="slot-av${avFx}"${avVars ? ` style="${avVars}"` : ''}>${esc(initial(m.name))}${avDeco}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
         ${cos && cos.title
           ? `<div class="slot-title"${cos.titleColor ? ` style="color:${esc(cos.titleColor)}"` : ''}>${esc(String(cos.title).toUpperCase())}</div>`
@@ -1507,7 +1510,8 @@ function renderStore(store) {
     cards:   { list: 'cards',   kind: 'card',   grid: 'card-grid'  },
     titles:  { list: 'titles',  kind: 'title',  grid: 'title-grid' },
     effects: { list: 'effects', kind: 'effect', grid: 'card-grid'  },
-    frames:  { list: 'frames',  kind: 'frame',  grid: 'card-grid'  }
+    frames:  { list: 'frames',  kind: 'frame',  grid: 'card-grid'  },
+    avatars: { list: 'avatars', kind: 'avatar', grid: 'card-grid'  }
   };
   const tab   = TABS[S.storeTab] || TABS.cards;
   const items = d[tab.list] || [];
@@ -1533,22 +1537,23 @@ function renderStore(store) {
       let face;
       if (tab.kind === 'title') {
         face = `<div class="ti-face" style="color:${esc(it.color || 'var(--text)')}">${esc(it.name)}</div>`;
-      } else if (tab.kind === 'effect' || tab.kind === 'frame') {
-        /* An effect or a frame is invisible in a list, so each one is shown
-           playing on a small stand-in card, built from exactly the same
-           fields the real card uses. Buying one of these blind was the thing
-           to avoid. */
+      } else if (tab.kind === 'effect' || tab.kind === 'frame'
+                 || tab.kind === 'avatar') {
+        /* An effect, a frame or a decoration is invisible in a list, so each
+           one is shown playing on a small stand-in, built from exactly the
+           same fields the real seat uses. Buying one of these blind was the
+           thing to avoid. */
         const pc = previewCos(tab.kind, it);
-        /* An avatar decoration has to be previewed on an avatar — shown as a
-           card border it would look like something else entirely. */
-        const pcDeco = decoLayer(pc, 'avatar');
-        const onAv = frameOn(pc, 'avatar');
-        face = `<div class="ci-art fx-demo${cosmeticClasses(pc, 'card')}"
-                     style="${cosmeticVars(pc)}">
+        /* An avatar decoration is previewed on a portrait — shown as a card
+           border it would look like something else entirely. */
+        const av = pc.avatar;
+        const pcDeco = decoLayer(av, 'avatar');
+        face = `<div class="ci-art fx-demo${cosmeticClasses(pc)}"
+                     style="${av ? frameVars(av) : cosmeticVars(pc)}">
                   ${effectLayers(pc.effect)}
-                  ${decoLayer(pc, 'card')}
-                  ${onAv ? `<span class="demo-av${frameClasses(pc, true)}${
-                              pcDeco ? ' deco-on' : ''}">${pcDeco}</span>` : ''}
+                  ${decoLayer(pc.frame, 'card')}
+                  ${av ? `<span class="demo-av${frameClasses(av, true)}${
+                            pcDeco ? ' deco-on' : ''}">${pcDeco}</span>` : ''}
                   <span class="ci-blank">${esc(it.name)}</span>
                 </div>`;
       } else {
@@ -2003,20 +2008,12 @@ const FRAME_STYLES = ['solid', 'double', 'dashed', 'dots', 'gradient',
                       'bare'];
 
 /* The drawn decorations. A portrait wears one whole drawing around it; a card
-   wears a corner spray, the same shape at each of its four corners. Not every
-   drawing suits both, so each list says which it has. */
+   wears a corner spray, the same shape at each of its four corners. The two
+   are drawn differently, so each place has its own list. */
 const ART_AVATAR = ['orbs', 'vines', 'crystals', 'flames', 'wings', 'laurel', 'tech'];
 const ART_CORNER = ['vines', 'crystals', 'flames', 'tech', 'stars'];
 /* anything with a dot or a slash in it is a picture, not one of the drawings */
 const artIsFile = (v) => /[./]/.test(String(v || ''));
-/* A frame decorates the card, the portrait, or both. The portrait is the
-   Discord-shaped case: a decoration around the avatar rather than a border
-   around everything. */
-const frameOn = (cos, what) => {
-  if (!cos || !safeId(cos.frame)) return false;
-  const t = cos.frameTarget || 'card';
-  return t === 'both' || t === what;
-};
 
 const safeId = (v) => (v && v !== 'none') ? String(v).replace(/[^a-z0-9_-]/gi, '') : '';
 const cssNum = (v, lo, hi, dflt) => {
@@ -2024,27 +2021,32 @@ const cssNum = (v, lo, hi, dflt) => {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
 };
 
-/** The frame classes on their own, for whichever element wears it.
+/* A frame and an avatar decoration are separate purchases worn in separate
+   places, but they are built from the same recipe — a style, a drawing and
+   some colours — so one set of helpers draws either. `worn` is that recipe:
+   cos.frame is the one round the card, cos.avatar the one round the
+   portrait, and either may be absent. */
+
+/** The classes an element needs to wear one recipe.
     `round` marks a portrait: the box-shaped styles (corner studs, corner
     brackets, a bar across the top) would be clipped away by the circle, so
     the stylesheet swaps them for their arc equivalents. */
-function frameClasses(cos, round) {
-  const style = safeId(cos && cos.frame);
+function frameClasses(worn, round) {
+  const style = safeId(worn && worn.style);
   if (!style) return '';
   let out = ` fr fr-${FRAME_STYLES.includes(style) ? style : 'solid'}`;
   if (round) out += ' fr-round';
-  if (cos.frameAnimated) out += ' fr-anim';
-  if (cssNum(cos.frameGlow, 0, 60, 0) > 0) out += ' fr-lit';
+  if (worn.animated) out += ' fr-anim';
+  if (cssNum(worn.glow, 0, 60, 0) > 0) out += ' fr-lit';
   return out;
 }
 
-/** The drawn artwork a frame carries, for whichever place is being built.
+/** The drawn artwork a recipe carries, for the place that wears it.
     `avatar` is one drawing wrapped round the portrait, the way Discord hangs
     one off an avatar; `card` is a corner spray, drawn once and flipped into
-    each of the four corners. A frame with no `art` gets nothing here. */
-function decoLayer(cos, where) {
-  if (!frameOn(cos, where)) return '';
-  const art = cos.frameArt;
+    each of the four corners. A recipe with no `art` gets nothing here. */
+function decoLayer(worn, where) {
+  const art = worn && worn.art;
   if (!art) return '';
 
   if (artIsFile(art)) {
@@ -2066,35 +2068,36 @@ function decoLayer(cos, where) {
   return `<span class="deco deco-cn deco-${id}">${corner.repeat(4)}</span>`;
 }
 
-/** The extra classes an element needs to carry an effect and a frame. */
-function cosmeticClasses(cos, what) {
+/** The classes a card needs: its effect, and the frame around it. An effect
+    plays on the card only — the portrait has its own decoration. */
+function cosmeticClasses(cos) {
   if (!cos) return '';
-  let out = '';
-  // an effect always plays on the card, never on the portrait
-  if (what !== 'avatar') {
-    const fx = safeId(cos.effect);
-    if (fx) out += ` fx fx-${fx}`;
-  }
-  if (frameOn(cos, what || 'card')) out += frameClasses(cos);
-  return out;
+  const fx = safeId(cos.effect);
+  return (fx ? ` fx fx-${fx}` : '') + frameClasses(cos.frame, false);
 }
 
-/** The custom properties those classes are drawn from. */
+/** The custom properties a card's effect and frame are drawn from. */
 function cosmeticVars(cos) {
   if (!cos) return '';
   const bits = [];
   if (cos.effectColor)  bits.push(`--fx:${esc(cos.effectColor)}`);
   if (cos.effectColor2) bits.push(`--fx2:${esc(cos.effectColor2)}`);
   if (cos.effectSpeed)  bits.push(`--fx-speed:${cssNum(cos.effectSpeed, 0.2, 5, 1)}`);
-
-  if (safeId(cos.frame)) {
-    bits.push(`--fr:${esc(cos.frameColor || '#8B93A3')}`);
-    bits.push(`--fr2:${esc(cos.frameColor2 || cos.frameColor || '#8B93A3')}`);
-    bits.push(`--fr-w:${cssNum(cos.frameWidth, 1, 6, 2)}px`);
-    bits.push(`--fr-glow:${cssNum(cos.frameGlow, 0, 60, 0)}px`);
-    bits.push(`--fr-speed:${cssNum(cos.frameSpeed, 1, 30, 6)}s`);
-  }
+  const f = frameVars(cos.frame);
+  if (f) bits.push(f);
   return bits.join(';');
+}
+
+/** The custom properties one recipe is drawn from, wherever it is worn. */
+function frameVars(worn) {
+  if (!worn || !safeId(worn.style)) return '';
+  return [
+    `--fr:${esc(worn.color || '#8B93A3')}`,
+    `--fr2:${esc(worn.color2 || worn.color || '#8B93A3')}`,
+    `--fr-w:${cssNum(worn.width, 1, 6, 2)}px`,
+    `--fr-glow:${cssNum(worn.glow, 0, 60, 0)}px`,
+    `--fr-speed:${cssNum(worn.speed, 1, 30, 6)}s`
+  ].join(';');
 }
 
 /** The elements an effect animates, when it needs any. */
@@ -2105,7 +2108,9 @@ function effectLayers(effect) {
     new Array(n).fill('<i></i>').join('')}</span>`;
 }
 
-/** Everything a store tile needs to preview one item, from its own fields. */
+/** Everything a store tile needs to preview one item, from its own fields.
+    It builds the same shape the server sends for a worn one, so the tile and
+    the seat are drawn by the same code and cannot drift apart. */
 function previewCos(kind, it) {
   // the 'none' row is the one that turns the slot off, so it previews as bare
   if (it.id === 'none') return {};
@@ -2114,11 +2119,10 @@ function previewCos(kind, it) {
     return { effect: it.anim || it.id, effectColor: it.color,
              effectColor2: it.color2, effectSpeed: it.speed };
   }
-  return { frame: it.style || 'solid', frameTarget: it.target || 'card',
-           frameArt: it.art,
-           frameColor: it.color, frameColor2: it.color2,
-           frameWidth: it.width, frameGlow: it.glow,
-           frameAnimated: it.animated, frameSpeed: it.speed };
+  const worn = { style: it.style || 'solid', art: it.art,
+                 color: it.color, color2: it.color2, width: it.width,
+                 glow: it.glow, animated: it.animated, speed: it.speed };
+  return kind === 'avatar' ? { avatar: worn } : { frame: worn };
 }
 
 function hudCfg(part) {

@@ -1802,17 +1802,18 @@ Config.Store = {
         { id = 'storm',   name = 'Storm',     rarity = 'legendary', price = 2200, anim = 'storm',   color = '#F5C542' }
     },
 
-    -- ---- FRAMES --------------------------------------------------------
-    -- Built from these numbers rather than from a fixed list, so you can make
-    -- your own without touching any code.
+    -- ---- FRAMES AND AVATAR DECORATIONS ---------------------------------
+    -- Two separate slots, bought and worn on their own:
     --
-    --   target  what it decorates:
-    --             card    the border around the whole player card (default)
-    --             avatar  a decoration around the portrait, the way Discord
-    --                     puts one around an avatar
-    --             both    the same treatment on each
+    --   frames   the border around the whole player card
+    --   avatars  the decoration around the portrait, the way Discord puts
+    --            one around an avatar
     --
-    --   style   how it is drawn:
+    -- They share every field below, because they are the same recipe drawn in
+    -- two places. Both are built from these numbers rather than from a fixed
+    -- list, so you can make your own without touching any code.
+    --
+    --   style   how the line is drawn:
     --             solid     one line
     --             double    a line, a gap, then a second line
     --             dashed    a dashed line
@@ -1824,20 +1825,20 @@ Config.Store = {
     --             ribbon    a bar across the top
     --             spin      a ring of colour turning around it
     --             halo      a soft ring bleeding outward, no hard edge
-    --             bare      no line at all — for a frame that is only its
+    --             bare      no line at all — for one that is only its
     --                       drawing, see `art` below
     --
-    --           A portrait is round, so a shape that lives at the corners of a
-    --           box is drawn as its arc on target = 'avatar': corners and
-    --           ticks become marks around the rim, studs become rivets on it,
-    --           and the ribbon curves over the top of the head.
+    --           A portrait is round, so a shape that lives at the corners of
+    --           a box is drawn as its arc in `avatars`: corners and ticks
+    --           become marks around the rim, studs become rivets on it, and
+    --           the ribbon curves over the top of the head.
     --
     --   art     a drawing worn on top of the line — this is the part that
-    --           makes a frame look like a Discord decoration rather than a
-    --           border. It takes the frame's colours, so one drawing serves
-    --           any number of frames.
+    --           makes one look like a Discord decoration rather than a
+    --           border. It takes its colours from the row, so one drawing
+    --           serves any number of rows.
     --
-    --             on target = 'avatar', the whole drawing wraps the portrait:
+    --             in `avatars`, the whole drawing wraps the portrait:
     --               orbs      lights floating around it
     --               vines     a thorned vine climbing round it
     --               crystals  shards standing out of the rim
@@ -1846,24 +1847,23 @@ Config.Store = {
     --               laurel    a laurel wreath, open at the top
     --               tech      a targeting rig: brackets, ticks and a chip
     --
-    --             on target = 'card', a spray in each of the four corners:
+    --             in `frames`, a spray in each of the four corners:
     --               vines     a rose vine climbing in
     --               crystals  a cluster of shards
     --               flames    fire creeping along the edges
     --               tech      a hard bracket with ticks and a chip
     --               stars     scattered sparkles
     --
-    --           A name that has no drawing on that side is simply skipped, so
-    --           `art = 'wings'` with target = 'both' wings the portrait and
-    --           leaves the card to its border.
+    --           A name with no drawing on that side is simply skipped, so a
+    --           frame asking for 'wings' keeps its border and gains nothing.
     --
-    --           You can point it at your own picture instead: put the file in
-    --           Files/ui/img and write the name, e.g. art = 'img/deco.png'.
-    --           Anything with a dot or a slash in it is read as a file. A
-    --           picture is drawn around the portrait only — one image cannot
-    --           be flipped into four corners and still look right — and it
-    --           keeps its own colours, so an APNG lifted from a decoration
-    --           pack lands the way it was drawn.
+    --           An avatar decoration can point at your own picture instead:
+    --           put the file in Files/ui/img and write the name, e.g.
+    --           art = 'img/deco.png'. Anything with a dot or a slash in it is
+    --           read as a file. A picture is only ever drawn around the
+    --           portrait — one image cannot be flipped into four corners and
+    --           still look right — and it keeps its own colours, so an APNG
+    --           lifted from a decoration pack lands the way it was drawn.
     --
     --   width   thickness in pixels (1 to 6 reads well)
     --   color   the main tone
@@ -1874,12 +1874,14 @@ Config.Store = {
     --           style = 'gradient'; spin and halo always move.
     --   speed   seconds for one full trip. Default 6.
     --
-    -- `id` is just a name for the row: copy a line, change the id and the
-    -- colours, and that is a new frame in the store.
+    -- `id` is just a name for the row, and the two lists are separate, so the
+    -- same id can appear in both — that is how a set is sold as a matching
+    -- pair. Copy a line, change the id and the colours, and that is a new one
+    -- in the store.
     frames = {
         { id = 'none',    name = '—',        rarity = 'common',    price = 0,    default = true },
 
-        -- ---- around the card ----
+        -- ---- lines ----
         { id = 'steel',   name = 'Steel',    rarity = 'common',    price = 200,
           style = 'double',   width = 2, color = '#8B93A3' },
         { id = 'dash',    name = 'Marker',   rarity = 'common',    price = 250,
@@ -1902,76 +1904,90 @@ Config.Store = {
           style = 'gradient', width = 2, color = '#3FA9FF', color2 = '#C158FF', animated = true },
         { id = 'toxic',   name = 'Toxic',    rarity = 'epic',      price = 1400,
           style = 'gradient', width = 3, color = '#2FDD9B', color2 = '#C7FF3F', animated = true, glow = 18 },
+        { id = 'void',    name = 'Void',     rarity = 'epic',      price = 1800,
+          style = 'spin',     width = 3, color = '#C158FF', color2 = '#3FA9FF', speed = 5, glow = 18 },
+        { id = 'solar',   name = 'Solar',    rarity = 'epic',      price = 1900,
+          style = 'halo',     width = 4, color = '#FFD24A', color2 = '#FF4757', glow = 24 },
         { id = 'royal',   name = 'Royal',    rarity = 'legendary', price = 2500,
           style = 'gradient', width = 3, color = '#F5C542', color2 = '#FF4757', animated = true, glow = 20 },
         { id = 'prism',   name = 'Prism',    rarity = 'legendary', price = 3000,
           style = 'gradient', width = 3, color = '#3FA9FF', color2 = '#FF7A3C', animated = true, glow = 26, speed = 3 },
 
-        -- ---- around the portrait, the way Discord decorates an avatar ----
-        { id = 'av_ring',   name = 'Ring',      rarity = 'common',    price = 300,
-          target = 'avatar', style = 'double',  width = 2, color = '#6FB8FF' },
-        { id = 'av_studs',  name = 'Bolts',     rarity = 'rare',      price = 550,
-          target = 'avatar', style = 'studs',   width = 3, color = '#F5C542', glow = 12 },
-        { id = 'av_halo',   name = 'Halo',      rarity = 'rare',      price = 800,
-          target = 'avatar', style = 'halo',    width = 3, color = '#F5C542', color2 = '#FF7A3C' },
-        { id = 'av_spin',   name = 'Vortex',    rarity = 'epic',      price = 1500,
-          target = 'avatar', style = 'spin',    width = 3, color = '#3FA9FF', color2 = '#C158FF', speed = 4 },
-        { id = 'av_ember',  name = 'Cinder',    rarity = 'epic',      price = 1700,
-          target = 'avatar', style = 'spin',    width = 4, color = '#FF7A3C', color2 = '#FFD24A', speed = 3 },
-
-        -- ---- portrait and card together ----
-        { id = 'both_void', name = 'Void',      rarity = 'legendary', price = 3200,
-          target = 'both',   style = 'spin',    width = 3, color = '#C158FF', color2 = '#3FA9FF', speed = 5, glow = 18 },
-        { id = 'both_sun',  name = 'Solar',     rarity = 'legendary', price = 3500,
-          target = 'both',   style = 'halo',    width = 4, color = '#FFD24A', color2 = '#FF4757', glow = 24 },
-
-        -- ---- drawn decorations round the portrait ----
-        { id = 'av_orbs',    name = 'Wisps',     rarity = 'rare',      price = 900,
-          target = 'avatar', style = 'bare',   art = 'orbs',
-          color = '#2FE6C8', color2 = '#7CFFE6', glow = 18, speed = 8 },
-        { id = 'av_thorns',  name = 'Thorns',    rarity = 'rare',      price = 1000,
-          target = 'avatar', style = 'solid',  art = 'vines',   width = 2,
-          color = '#2FDD9B', color2 = '#C7FF3F', glow = 10 },
-        { id = 'av_shards',  name = 'Shards',    rarity = 'epic',      price = 1600,
-          target = 'avatar', style = 'bare',   art = 'crystals',
-          color = '#6FB8FF', color2 = '#C158FF', glow = 16 },
-        { id = 'av_pyre',    name = 'Pyre',      rarity = 'epic',      price = 1800,
-          target = 'avatar', style = 'solid',  art = 'flames',  width = 2,
-          color = '#FF7A3C', color2 = '#FFD24A', glow = 20 },
-        { id = 'av_visor',   name = 'Visor',     rarity = 'epic',      price = 1900,
-          target = 'avatar', style = 'ticks',  art = 'tech',    width = 2,
-          color = '#3FA9FF', color2 = '#EAF1F8', glow = 14 },
-        { id = 'av_wings',   name = 'Seraph',    rarity = 'legendary', price = 3400,
-          target = 'avatar', style = 'solid',  art = 'wings',   width = 2,
-          color = '#EAF1F8', color2 = '#F5C542', glow = 22 },
-        { id = 'av_laurel',  name = 'Champion',  rarity = 'legendary', price = 3800,
-          target = 'avatar', style = 'double', art = 'laurel',  width = 2,
-          color = '#F5C542', color2 = '#FFE9A8', glow = 20 },
-
-        -- ---- drawn decorations in the corners of the card ----
-        { id = 'cn_roses',   name = 'Dark Roses',rarity = 'epic',      price = 2000,
-          style = 'solid',   art = 'vines',    width = 2,
-          color = '#C158FF', color2 = '#7A3FCF', glow = 14 },
-        { id = 'cn_geode',   name = 'Geode',     rarity = 'epic',      price = 2100,
-          style = 'bare',    art = 'crystals',
-          color = '#3FA9FF', color2 = '#8FE3FF', glow = 12 },
-        { id = 'cn_ember',   name = 'Ashfall',   rarity = 'epic',      price = 2300,
-          style = 'solid',   art = 'flames',   width = 2,
-          color = '#FF4757', color2 = '#FFD24A', glow = 16 },
-        { id = 'cn_grid',    name = 'Uplink',    rarity = 'rare',      price = 1100,
+        -- ---- drawings in the corners of the card ----
+        { id = 'uplink',  name = 'Uplink',   rarity = 'rare',      price = 1100,
           style = 'ticks',   art = 'tech',     width = 2,
           color = '#2FDD9B', color2 = '#EAF1F8', glow = 10 },
-        { id = 'cn_night',   name = 'Starlit',   rarity = 'rare',      price = 1200,
+        { id = 'starlit', name = 'Starlit',  rarity = 'rare',      price = 1200,
           style = 'bare',    art = 'stars',
           color = '#EAF1F8', color2 = '#6FB8FF', glow = 12 },
-
-        -- ---- the whole set: portrait and card, one motif ----
-        { id = 'both_briar', name = 'Briar',     rarity = 'legendary', price = 4200,
-          target = 'both',   style = 'solid',  art = 'vines',   width = 2,
+        { id = 'roses',   name = 'Dark Roses',rarity = 'epic',     price = 2000,
+          style = 'solid',   art = 'vines',    width = 2,
+          color = '#C158FF', color2 = '#7A3FCF', glow = 14 },
+        { id = 'geode',   name = 'Geode',    rarity = 'epic',      price = 2100,
+          style = 'bare',    art = 'crystals',
+          color = '#3FA9FF', color2 = '#8FE3FF', glow = 12 },
+        { id = 'ashfall', name = 'Ashfall',  rarity = 'epic',      price = 2300,
+          style = 'solid',   art = 'flames',   width = 2,
+          color = '#FF4757', color2 = '#FFD24A', glow = 16 },
+        { id = 'briar',   name = 'Briar',    rarity = 'legendary', price = 3200,
+          style = 'solid',   art = 'vines',    width = 2,
           color = '#C158FF', color2 = '#2FDD9B', glow = 18 },
-        { id = 'both_forge', name = 'Forge',     rarity = 'legendary', price = 4500,
-          target = 'both',   style = 'gradient', art = 'flames', width = 3,
+        { id = 'forge',   name = 'Forge',    rarity = 'legendary', price = 3400,
+          style = 'gradient', art = 'flames',  width = 3,
           color = '#FF7A3C', color2 = '#FFD24A', animated = true, glow = 22 }
+    },
+
+    -- The decoration around the portrait. Same fields as a frame; the ids
+    -- shared with the list above are the matching halves of a set.
+    avatars = {
+        { id = 'none',    name = '—',        rarity = 'common',    price = 0,    default = true },
+
+        -- ---- rings ----
+        { id = 'ring',    name = 'Ring',     rarity = 'common',    price = 300,
+          style = 'double',  width = 2, color = '#6FB8FF' },
+        { id = 'bolts',   name = 'Bolts',    rarity = 'rare',      price = 550,
+          style = 'studs',   width = 3, color = '#F5C542', glow = 12 },
+        { id = 'halo',    name = 'Halo',     rarity = 'rare',      price = 800,
+          style = 'halo',    width = 3, color = '#F5C542', color2 = '#FF7A3C' },
+        { id = 'vortex',  name = 'Vortex',   rarity = 'epic',      price = 1500,
+          style = 'spin',    width = 3, color = '#3FA9FF', color2 = '#C158FF', speed = 4 },
+        { id = 'cinder',  name = 'Cinder',   rarity = 'epic',      price = 1700,
+          style = 'spin',    width = 4, color = '#FF7A3C', color2 = '#FFD24A', speed = 3 },
+
+        -- ---- drawings worn round the portrait ----
+        { id = 'wisps',   name = 'Wisps',    rarity = 'rare',      price = 900,
+          style = 'bare',    art = 'orbs',
+          color = '#2FE6C8', color2 = '#7CFFE6', glow = 18, speed = 8 },
+        { id = 'thorns',  name = 'Thorns',   rarity = 'rare',      price = 1000,
+          style = 'solid',   art = 'vines',    width = 2,
+          color = '#2FDD9B', color2 = '#C7FF3F', glow = 10 },
+        { id = 'shards',  name = 'Shards',   rarity = 'epic',      price = 1600,
+          style = 'bare',    art = 'crystals',
+          color = '#6FB8FF', color2 = '#C158FF', glow = 16 },
+        { id = 'pyre',    name = 'Pyre',     rarity = 'epic',      price = 1800,
+          style = 'solid',   art = 'flames',   width = 2,
+          color = '#FF7A3C', color2 = '#FFD24A', glow = 20 },
+        { id = 'visor',   name = 'Visor',    rarity = 'epic',      price = 1900,
+          style = 'ticks',   art = 'tech',     width = 2,
+          color = '#3FA9FF', color2 = '#EAF1F8', glow = 14 },
+        { id = 'seraph',  name = 'Seraph',   rarity = 'legendary', price = 3400,
+          style = 'solid',   art = 'wings',    width = 2,
+          color = '#EAF1F8', color2 = '#F5C542', glow = 22 },
+        { id = 'champion',name = 'Champion', rarity = 'legendary', price = 3800,
+          style = 'double',  art = 'laurel',   width = 2,
+          color = '#F5C542', color2 = '#FFE9A8', glow = 20 },
+
+        -- ---- the halves that match a frame of the same name ----
+        { id = 'void',    name = 'Void',     rarity = 'epic',      price = 1600,
+          style = 'spin',    width = 3, color = '#C158FF', color2 = '#3FA9FF', speed = 5, glow = 18 },
+        { id = 'solar',   name = 'Solar',    rarity = 'epic',      price = 1700,
+          style = 'halo',    width = 4, color = '#FFD24A', color2 = '#FF4757', glow = 24 },
+        { id = 'briar',   name = 'Briar',    rarity = 'legendary', price = 3000,
+          style = 'solid',   art = 'vines',    width = 2,
+          color = '#C158FF', color2 = '#2FDD9B', glow = 18 },
+        { id = 'forge',   name = 'Forge',    rarity = 'legendary', price = 3200,
+          style = 'solid',   art = 'flames',   width = 3,
+          color = '#FF7A3C', color2 = '#FFD24A', glow = 22 }
     }
 
 }

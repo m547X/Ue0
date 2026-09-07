@@ -633,6 +633,7 @@ local SCHEMA = {
   `title` VARCHAR(48) NOT NULL DEFAULT 'none',
   `effect` VARCHAR(48) NOT NULL DEFAULT 'none',
   `frame` VARCHAR(48) NOT NULL DEFAULT 'none',
+  `avatar` VARCHAR(48) NOT NULL DEFAULT 'none',
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
@@ -729,8 +730,9 @@ local function migrateRankPools()
     local pools = Config.RankPools or {}
     local legacy = pools.legacy or pools.default or '1v1'
 
-    -- the store gained an effect and a frame slot; same idempotent shape
-    for _, col in ipairs({ 'effect', 'frame' }) do
+    -- the store gained an effect, a frame and an avatar slot; same idempotent
+    -- shape, so a server that already has some of them only gets the rest
+    for _, col in ipairs({ 'effect', 'frame', 'avatar' }) do
         local there = tonumber(DB.scalar(
             [[SELECT COUNT(*) FROM information_schema.TABLES
               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_player_store']], { db }) or 0) or 0
@@ -6168,7 +6170,8 @@ local STORE_KINDS = {
     { kind = 'card',   list = 'cards',   column = 'card',   fallback = 'default' },
     { kind = 'title',  list = 'titles',  column = 'title',  fallback = 'none' },
     { kind = 'effect', list = 'effects', column = 'effect', fallback = 'none' },
-    { kind = 'frame',  list = 'frames',  column = 'frame',  fallback = 'none' }
+    { kind = 'frame',  list = 'frames',  column = 'frame',  fallback = 'none' },
+    { kind = 'avatar', list = 'avatars', column = 'avatar', fallback = 'none' }
 }
 
 local StoreById = {}          -- [kind][id] = def
@@ -6257,8 +6260,7 @@ function Store.payload(userId)
                 color2 = def.color2,
                 -- how it is drawn; the interface builds the rest from these
                 anim = def.anim, speed = def.speed,
-                style = def.style, width = def.width, target = def.target,
-                art = def.art,
+                style = def.style, width = def.width, art = def.art,
                 glow = def.glow, animated = def.animated == true,
                 owned = d.owned[kind][def.id] == true,
                 equipped = d[kind] == def.id
@@ -6356,6 +6358,24 @@ function Store.cosmetics(userId)
     local title  = storeDef('title',  d.title)
     local effect = storeDef('effect', d.effect)
     local frame  = storeDef('frame',  d.frame)
+    local avatar = storeDef('avatar', d.avatar)
+
+    -- A frame and an avatar decoration are the same recipe worn in two
+    -- places, so they are packed the same way and the interface only has to
+    -- learn it once.
+    local function worn(def)
+        if not def or def.id == 'none' then return nil end
+        return {
+            style    = def.style or 'solid',
+            art      = def.art,
+            color    = def.color,
+            color2   = def.color2,
+            width    = def.width,
+            glow     = def.glow,
+            animated = def.animated == true or nil,
+            speed    = def.speed
+        }
+    end
 
     return {
         card      = d.card,
@@ -6370,17 +6390,10 @@ function Store.cosmetics(userId)
         effectColor2 = effect and effect.color2 or nil,
         effectSpeed  = effect and effect.speed or nil,
 
-        frame        = (frame and frame.id ~= 'none') and (frame.style or 'solid') or nil,
-        frameTarget  = frame and frame.target or nil,
-        -- the drawn decoration, if the frame carries one: either the name of
-        -- one of the built-in drawings or a picture under Files/ui/img
-        frameArt     = frame and frame.art or nil,
-        frameColor   = frame and frame.color or nil,
-        frameColor2  = frame and frame.color2 or nil,
-        frameWidth   = frame and frame.width or nil,
-        frameGlow    = frame and frame.glow or nil,
-        frameAnimated= frame and frame.animated == true or nil,
-        frameSpeed   = frame and frame.speed or nil
+        -- the border round the card, and the decoration round the portrait:
+        -- two separate slots, bought and worn on their own
+        frame        = worn(frame),
+        avatar       = worn(avatar)
     }
 end
 
