@@ -1225,6 +1225,107 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
 
 .slot-foot{margin-top:auto;width:100%;padding:0 12px 12px;text-align:center}
 
+/* ==========================================================================
+   CARD COSMETICS — effects and frames
+   Everything here is drawn by the stylesheet: no images, no files to ship, and
+   nothing that asks the compositor for a blur. Each one is tinted from --fx
+   (effect) and --fr / --fr2 (frame), set per player from what they bought, so
+   the same animation can be sold in any number of colours.
+   ========================================================================== */
+
+.fx{position:relative}
+/* the layers an effect animates, above the card art and under everything else */
+.fx-layer{position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none;
+  border-radius:inherit}
+.fx-layer i{position:absolute;display:block}
+
+/* ---- glow: a slow halo in the item's colour ---- */
+.fx-glow{box-shadow:0 0 0 1px var(--fx),0 0 26px -6px var(--fx);
+  animation:fxGlow 2.8s ease-in-out infinite}
+@keyframes fxGlow{
+  0%,100%{box-shadow:0 0 0 1px var(--fx),0 0 22px -8px var(--fx)}
+  50%    {box-shadow:0 0 0 1px var(--fx),0 0 40px -4px var(--fx)}}
+
+/* ---- scan: a line sweeping down the card ---- */
+.fx-scan .fx-layer i{left:0;right:0;height:26%;
+  background:linear-gradient(180deg,transparent,var(--fx),transparent);
+  opacity:.45;animation:fxScan 3.2s linear infinite}
+@keyframes fxScan{from{transform:translateY(-120%)}to{transform:translateY(430%)}}
+
+/* ---- holo: a sheen crossing on the diagonal ---- */
+.fx-holo .fx-layer i{top:-60%;bottom:-60%;width:36%;left:-40%;
+  transform:rotate(18deg);
+  background:linear-gradient(90deg,transparent,var(--fx),transparent);
+  opacity:.38;animation:fxHolo 3.6s ease-in-out infinite}
+@keyframes fxHolo{0%{left:-45%}55%,100%{left:115%}}
+
+/* ---- embers: particles drifting up ---- */
+.fx-embers .fx-layer i{bottom:0;width:4px;height:4px;border-radius:50%;
+  background:var(--fx);box-shadow:0 0 9px 1px var(--fx);opacity:0;
+  animation:fxEmber 4.4s linear infinite}
+.fx-embers .fx-layer i:nth-child(1){left:12%;animation-delay:0s;   animation-duration:4.2s}
+.fx-embers .fx-layer i:nth-child(2){left:28%;animation-delay:.7s;  animation-duration:5.1s}
+.fx-embers .fx-layer i:nth-child(3){left:44%;animation-delay:1.5s; animation-duration:3.8s}
+.fx-embers .fx-layer i:nth-child(4){left:61%;animation-delay:2.2s; animation-duration:4.9s}
+.fx-embers .fx-layer i:nth-child(5){left:76%;animation-delay:1.1s; animation-duration:4.4s}
+.fx-embers .fx-layer i:nth-child(6){left:90%;animation-delay:3.0s; animation-duration:5.4s}
+@keyframes fxEmber{
+  0%  {bottom:-2%;  transform:scale(.6);opacity:0}
+  12% {opacity:1}
+  80% {opacity:.55}
+  100%{bottom:102%; transform:scale(1.15);opacity:0}}
+
+/* ---- storm: an irregular flash across the whole card ---- */
+.fx-storm .fx-layer i{inset:0;
+  background:linear-gradient(160deg,transparent 30%,var(--fx) 50%,transparent 70%);
+  opacity:0;animation:fxStorm 5.2s steps(1,end) infinite}
+@keyframes fxStorm{
+  0%,86%,100%{opacity:0}
+  87%{opacity:.34} 88%{opacity:0} 90%{opacity:.5} 91%{opacity:0} 94%{opacity:.22} 95%{opacity:0}}
+
+/* ---- frames ---- */
+.fr{position:relative}
+/* drawn as an inset ring so it never changes the card's size */
+.fr::after{content:'';position:absolute;inset:0;z-index:3;border-radius:inherit;
+  pointer-events:none}
+
+.fr-steel::after{box-shadow:inset 0 0 0 2px var(--fr),inset 0 0 0 4px rgba(0,0,0,.55)}
+.fr-gold::after {box-shadow:inset 0 0 0 2px var(--fr),inset 0 0 0 4px rgba(0,0,0,.5),
+  inset 0 0 22px -6px var(--fr)}
+
+/* neon and royal run a gradient, which needs a painted border rather than a
+   ring of shadow */
+.fr-neon::after,.fr-royal::after{
+  border:2px solid transparent;
+  background:linear-gradient(var(--panel-deep),var(--panel-deep)) padding-box,
+             linear-gradient(120deg,var(--fr),var(--fr2,var(--fr)),var(--fr)) border-box;
+  background-size:auto,300% 100%;
+  -webkit-mask:linear-gradient(#000 0 0) padding-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  animation:frSlide 6s linear infinite}
+@keyframes frSlide{from{background-position:0 0,0% 50%}to{background-position:0 0,300% 50%}}
+.fr-royal::after{border-width:3px;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.6),0 0 20px -8px var(--fr)}
+
+/* The store preview: a small card standing in for the real one. It gets a
+   lighter ground than a seat so the effect is visible against something, and
+   every animation runs faster — a shopper looks at a tile for a second or two,
+   not for a whole cycle. */
+.fx-demo{position:relative;overflow:hidden;
+  background:linear-gradient(160deg,#20293a,#0b1018 70%)}
+.fx-demo .ci-blank{position:relative;z-index:2}
+.fx-demo.fx-glow{animation-duration:1.6s}
+.fx-demo.fx-scan  .fx-layer i{animation-duration:1.8s;opacity:.6}
+.fx-demo.fx-holo  .fx-layer i{animation-duration:2.0s;opacity:.5}
+.fx-demo.fx-embers .fx-layer i{animation-duration:2.2s !important;opacity:1}
+.fx-demo.fx-embers .fx-layer i:nth-child(1){animation-delay:0s}
+.fx-demo.fx-embers .fx-layer i:nth-child(2){animation-delay:.25s}
+.fx-demo.fx-embers .fx-layer i:nth-child(3){animation-delay:.5s}
+.fx-demo.fx-embers .fx-layer i:nth-child(4){animation-delay:.8s}
+.fx-demo.fx-embers .fx-layer i:nth-child(5){animation-delay:1.1s}
+.fx-demo.fx-embers .fx-layer i:nth-child(6){animation-delay:1.5s}
+.fx-demo.fx-storm .fx-layer i{animation-duration:1.4s}
+
 /* ---------- RANK PLATE ----------
    The bottom of a seat is the player's rank, so it gets its own glass plate
    rather than three loose elements floating on the card art. Everything on it

@@ -631,6 +631,8 @@ local SCHEMA = {
   `coins` BIGINT NOT NULL DEFAULT 0,
   `card` VARCHAR(48) NOT NULL DEFAULT 'default',
   `title` VARCHAR(48) NOT NULL DEFAULT 'none',
+  `effect` VARCHAR(48) NOT NULL DEFAULT 'none',
+  `frame` VARCHAR(48) NOT NULL DEFAULT 'none',
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
@@ -726,6 +728,22 @@ local function migrateRankPools()
 
     local pools = Config.RankPools or {}
     local legacy = pools.legacy or pools.default or '1v1'
+
+    -- the store gained an effect and a frame slot; same idempotent shape
+    for _, col in ipairs({ 'effect', 'frame' }) do
+        local there = tonumber(DB.scalar(
+            [[SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_player_store']], { db }) or 0) or 0
+        local has = tonumber(DB.scalar(
+            [[SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_player_store'
+                AND COLUMN_NAME = ?]], { db, col }) or 0) or 0
+        if there > 0 and has == 0 then
+            log('^3adding m5_player_store.%s', col)
+            DB.query(("ALTER TABLE `m5_player_store` ADD COLUMN `%s` VARCHAR(48) NOT NULL DEFAULT 'none'")
+                :format(col))
+        end
+    end
 
     for _, t in ipairs({ 'm5_player_ranks', 'm5_player_mmr' }) do
         local exists = tonumber(DB.scalar(
@@ -6141,20 +6159,36 @@ end
 -- "buy this id" / "equip this id" — it never sends a price, never sends a
 -- balance, and cannot equip something it does not own.
 
-Store = { cache = {} }   -- [userId] = { coins, card, title, owned = { kind = {id=true} } }
+Store = { cache = {} }   -- [userId] = { coins, <kind> = id, owned = { kind = {id=true} } }
 
-local CardById, TitleById = {}, {}
-for _, c in ipairs(Config.Store.cards  or {}) do CardById[c.id]  = c end
-for _, t in ipairs(Config.Store.titles or {}) do TitleById[t.id] = t end
+-- Every kind the store sells, in one place. Adding another is a line here plus
+-- a list in the config and a column on m5_player_store — nothing below this
+-- knows the difference between a card and a frame.
+local STORE_KINDS = {
+    { kind = 'card',   list = 'cards',   column = 'card',   fallback = 'default' },
+    { kind = 'title',  list = 'titles',  column = 'title',  fallback = 'none' },
+    { kind = 'effect', list = 'effects', column = 'effect', fallback = 'none' },
+    { kind = 'frame',  list = 'frames',  column = 'frame',  fallback = 'none' }
+}
+
+local StoreById = {}          -- [kind][id] = def
+local StoreKind = {}          -- [kind] = the entry above
+for _, k in ipairs(STORE_KINDS) do
+    StoreKind[k.kind] = k
+    StoreById[k.kind] = {}
+    for _, def in ipairs(Config.Store[k.list] or {}) do
+        StoreById[k.kind][def.id] = def
+    end
+end
 
 local function storeDef(kind, id)
-    if kind == 'card'  then return CardById[id]  end
-    if kind == 'title' then return TitleById[id] end
-    return nil
+    local by = StoreById[kind]
+    return by and by[id] or nil
 end
 
 local function storeList(kind)
-    return kind == 'card' and (Config.Store.cards or {}) or (Config.Store.titles or {})
+    local k = StoreKind[kind]
+    return k and (Config.Store[k.list] or {}) or {}
 end
 
 --- Anything priced at 0, and anything flagged default, belongs to everyone.
@@ -6165,15 +6199,16 @@ end
 function Store.load(userId)
     if Store.cache[userId] then return Store.cache[userId] end
 
-    local row = DB.single('SELECT coins, card, title FROM m5_player_store WHERE user_id = ?',
-        { userId })
+    local row = DB.single('SELECT * FROM m5_player_store WHERE user_id = ?', { userId })
     if not row then
         DB.insert('INSERT IGNORE INTO m5_player_store (user_id, coins) VALUES (?, ?)',
             { userId, Config.Store.currency.starting or 0 })
-        row = { coins = Config.Store.currency.starting or 0, card = 'default', title = 'none' }
+        row = { coins = Config.Store.currency.starting or 0 }
     end
 
-    local owned = { card = {}, title = {} }
+    local owned = {}
+    for _, k in ipairs(STORE_KINDS) do owned[k.kind] = {} end
+
     local rows = DB.query('SELECT kind, item_id FROM m5_player_items WHERE user_id = ?',
         { userId }) or {}
     for i = 1, #rows do
@@ -6182,18 +6217,17 @@ function Store.load(userId)
     end
 
     -- free items are never written to the table; they are simply always owned
-    for _, kind in ipairs({ 'card', 'title' }) do
-        for _, def in ipairs(storeList(kind)) do
-            if isFree(def) then owned[kind][def.id] = true end
+    for _, k in ipairs(STORE_KINDS) do
+        for _, def in ipairs(storeList(k.kind)) do
+            if isFree(def) then owned[k.kind][def.id] = true end
         end
     end
 
-    local data = {
-        coins = math.max(0, tonumber(row.coins) or 0),
-        card  = CardById[row.card] and row.card or 'default',
-        title = TitleById[row.title] and row.title or 'none',
-        owned = owned
-    }
+    local data = { coins = math.max(0, tonumber(row.coins) or 0), owned = owned }
+    for _, k in ipairs(STORE_KINDS) do
+        local want = row[k.column]
+        data[k.kind] = storeDef(k.kind, want) and want or k.fallback
+    end
     Store.cache[userId] = data
     return data
 end
@@ -6220,6 +6254,7 @@ function Store.payload(userId)
                 price = tonumber(def.price) or 0,
                 image = def.image or '',
                 color = def.color,
+                color2 = def.color2,
                 owned = d.owned[kind][def.id] == true,
                 equipped = (kind == 'card' and d.card or d.title) == def.id
             }
@@ -6227,13 +6262,16 @@ function Store.payload(userId)
         return out
     end
 
-    return {
+    local out = {
         enabled  = Config.Store.enabled,
         currency = Config.Store.currency.label or 'COINS',
-        coins    = d.coins,
-        cards    = pack('card'),
-        titles   = pack('title')
+        coins    = d.coins
     }
+    for _, k in ipairs(STORE_KINDS) do
+        out[k.list]     = pack(k.kind)   -- cards, titles, effects, frames
+        out['equipped' .. k.kind] = d[k.kind]
+    end
+    return out
 end
 
 --- Writes the wallet and the equipped pair. Small and rare, so it goes
@@ -6241,11 +6279,19 @@ end
 local function storeSave(userId)
     local d = Store.cache[userId]
     if not d then return end
-    DB.write([[INSERT INTO m5_player_store (user_id, coins, card, title)
-               VALUES (?,?,?,?)
-               ON DUPLICATE KEY UPDATE coins = VALUES(coins),
-                                       card = VALUES(card), title = VALUES(title)]],
-        { userId, d.coins, d.card, d.title })
+
+    local cols, marks, upd, args = { 'user_id', 'coins' }, { '?', '?' },
+                                   { 'coins = VALUES(coins)' }, { userId, d.coins }
+    for _, k in ipairs(STORE_KINDS) do
+        cols[#cols + 1]  = k.column
+        marks[#marks + 1] = '?'
+        upd[#upd + 1]    = ('%s = VALUES(%s)'):format(k.column, k.column)
+        args[#args + 1]  = d[k.kind]
+    end
+
+    DB.write(('INSERT INTO m5_player_store (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s')
+        :format(table.concat(cols, ', '), table.concat(marks, ','), table.concat(upd, ', ')),
+        args)
 end
 
 --- Adds (or removes, with a negative amount) coins. Returns the new balance.
@@ -6259,7 +6305,7 @@ end
 
 function Store.buy(userId, kind, id)
     if not Config.Store.enabled then return false, 'The store is closed.' end
-    if kind ~= 'card' and kind ~= 'title' then return false, 'Unknown item.' end
+    if not StoreKind[kind] then return false, 'Unknown item.' end
 
     local def = storeDef(kind, id)
     if not def then return false, 'Unknown item.' end
@@ -6283,7 +6329,7 @@ function Store.buy(userId, kind, id)
 end
 
 function Store.equip(userId, kind, id)
-    if kind ~= 'card' and kind ~= 'title' then return false, 'Unknown item.' end
+    if not StoreKind[kind] then return false, 'Unknown item.' end
 
     local def = storeDef(kind, id)
     if not def then return false, 'Unknown item.' end
@@ -6291,7 +6337,7 @@ function Store.equip(userId, kind, id)
     local d = Store.load(userId)
     if not d.owned[kind][id] then return false, 'You do not own that.' end
 
-    if kind == 'card' then d.card = id else d.title = id end
+    d[kind] = id
     storeSave(userId)
     return true, { kind = kind, id = id }
 end
@@ -6300,13 +6346,23 @@ end
 function Store.cosmetics(userId)
     local d = Store.cache[userId]
     if not d then return nil end
-    local card  = CardById[d.card]
-    local title = TitleById[d.title]
+
+    local card   = storeDef('card',   d.card)
+    local title  = storeDef('title',  d.title)
+    local effect = storeDef('effect', d.effect)
+    local frame  = storeDef('frame',  d.frame)
+
     return {
         card      = d.card,
         cardImage = card and card.image or '',
         title     = (title and title.id ~= 'none') and title.name or nil,
-        titleColor= title and title.color or nil
+        titleColor= title and title.color or nil,
+        -- the interface draws these itself; it only needs the id and the tint
+        effect      = (effect and effect.id ~= 'none') and effect.id or nil,
+        effectColor = effect and effect.color or nil,
+        frame       = (frame and frame.id ~= 'none') and frame.id or nil,
+        frameColor  = frame and frame.color or nil,
+        frameColor2 = frame and frame.color2 or nil
     }
 end
 

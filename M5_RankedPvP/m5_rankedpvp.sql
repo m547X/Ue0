@@ -419,3 +419,27 @@ CREATE TABLE IF NOT EXISTS `m5_player_penalties` (
   PRIMARY KEY (`id`),
   KEY `idx_pen_user` (`user_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
+-- Store: the wallet and what is equipped, then everything bought
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `m5_player_store` (
+  `user_id`    INT UNSIGNED NOT NULL,
+  `coins`      BIGINT NOT NULL DEFAULT 0,
+  `card`       VARCHAR(48) NOT NULL DEFAULT 'default',
+  `title`      VARCHAR(48) NOT NULL DEFAULT 'none',
+  `effect`     VARCHAR(48) NOT NULL DEFAULT 'none',
+  `frame`      VARCHAR(48) NOT NULL DEFAULT 'none',
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `m5_player_items` (
+  `user_id`     INT UNSIGNED NOT NULL,
+  `kind`        VARCHAR(16) NOT NULL,
+  `item_id`     VARCHAR(48) NOT NULL,
+  `price_paid`  INT NOT NULL DEFAULT 0,
+  `acquired_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`,`kind`,`item_id`),
+  KEY `idx_items_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

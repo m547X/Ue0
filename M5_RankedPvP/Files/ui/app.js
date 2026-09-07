@@ -658,6 +658,8 @@ function renderSlots() {
 
     const cos = cosmeticsOf(m, isMe);
     const art = cos && imgUrl(cos.cardImage);
+    const fx  = cosmeticClasses(cos);
+    const fxVars = cosmeticVars(cos);
 
     /* The plate is tinted by the player's tier, so the whole bottom of the
        card carries their rank colour rather than the accent. */
@@ -687,8 +689,10 @@ function renderSlots() {
       barMid = prog && prog.left > 0 ? `${num(prog.left)} ${tx('TO GO')}` : '';
     }
 
-    const slot = el('div', 'slot filled' + (m.leader ? ' leader' : '') + (art ? ' art' : ''), `
+    const slot = el('div',
+      'slot filled' + (m.leader ? ' leader' : '') + (art ? ' art' : '') + fx, `
       ${art ? `<div class="slot-art" style="background-image:url(&quot;${esc(art)}&quot;)"></div>` : ''}
+      ${effectLayers(cos && cos.effect)}
       <div class="slot-top">
         <div class="slot-av">${esc(initial(m.name))}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
@@ -706,6 +710,8 @@ function renderSlots() {
           <div class="rk-nums"><span>${barLo}</span><em>${esc(barMid)}</em><span>${barHi}</span></div>
         </div>
       </div>`);
+
+    if (fxVars) slot.setAttribute('style', fxVars);
 
     if (!isMe && iAmLeader) {
       const kick = el('button', 'slot-kick', '<svg><use href="#i-x"/></svg>');
@@ -1491,38 +1497,63 @@ function renderStore(store) {
   document.querySelectorAll('.stab').forEach((b) =>
     b.classList.toggle('active', b.dataset.stab === S.storeTab));
 
-  const items = (S.storeTab === 'titles' ? d.titles : d.cards) || [];
-  const isTitle = S.storeTab === 'titles';
+  /* tab -> the list on the payload, the kind the server expects, and how the
+     item is previewed */
+  const TABS = {
+    cards:   { list: 'cards',   kind: 'card',   grid: 'card-grid'  },
+    titles:  { list: 'titles',  kind: 'title',  grid: 'title-grid' },
+    effects: { list: 'effects', kind: 'effect', grid: 'card-grid'  },
+    frames:  { list: 'frames',  kind: 'frame',  grid: 'card-grid'  }
+  };
+  const tab   = TABS[S.storeTab] || TABS.cards;
+  const items = d[tab.list] || [];
 
   if (!items.length) {
     host.innerHTML = `<div class="empty">${esc(tx('NOTHING IN THE STORE'))}</div>`;
     return;
   }
 
-  host.innerHTML = `<div class="${isTitle ? 'title-grid' : 'card-grid'}">${
+  host.innerHTML = `<div class="${tab.grid}">${
     items.map((it) => {
       // owned but not worn -> EQUIP, not owned -> BUY, worn -> a flat label
       const action = it.equipped
         ? `<div class="si-owned">${esc(tx('EQUIPPED'))}</div>`
         : it.owned
-          ? `<button class="btn si-btn" data-store="equip" data-kind="${isTitle ? 'title' : 'card'}"
+          ? `<button class="btn si-btn" data-store="equip" data-kind="${tab.kind}"
                      data-id="${esc(it.id)}">${esc(tx('EQUIP'))}</button>`
           : `<button class="btn ghost si-btn${(d.coins < it.price) ? ' poor' : ''}"
-                     data-store="buy" data-kind="${isTitle ? 'title' : 'card'}"
+                     data-store="buy" data-kind="${tab.kind}"
                      data-id="${esc(it.id)}">
                <svg><use href="#i-coin"/></svg>${num(it.price)} ${esc(tx('BUY'))}</button>`;
 
-      const face = isTitle
-        ? `<div class="ti-face" style="color:${esc(it.color || 'var(--text)')}">${esc(it.name)}</div>`
-        : `<div class="ci-art"${it.image ? ` style="background-image:url('${esc(imgUrl(it.image))}')"` : ''}>
+      let face;
+      if (tab.kind === 'title') {
+        face = `<div class="ti-face" style="color:${esc(it.color || 'var(--text)')}">${esc(it.name)}</div>`;
+      } else if (tab.kind === 'effect' || tab.kind === 'frame') {
+        /* An effect or a frame is invisible in a list, so each one is shown
+           playing on a small stand-in card. Buying one of these blind was the
+           thing to avoid. */
+        face = `<div class="ci-art fx-demo${cosmeticClasses({
+                  effect: tab.kind === 'effect' ? it.id : null,
+                  frame:  tab.kind === 'frame'  ? it.id : null })}"
+                     style="${cosmeticVars({
+                       effectColor: tab.kind === 'effect' ? it.color : null,
+                       frameColor:  tab.kind === 'frame'  ? it.color : null,
+                       frameColor2: tab.kind === 'frame'  ? it.color2 : null })}">
+                  ${effectLayers(tab.kind === 'effect' ? it.id : null)}
+                  <span class="ci-blank">${esc(it.name)}</span>
+                </div>`;
+      } else {
+        face = `<div class="ci-art"${it.image ? ` style="background-image:url('${esc(imgUrl(it.image))}')"` : ''}>
              ${it.image ? '' : `<span class="ci-blank">${esc(it.name)}</span>`}
            </div>`;
+      }
 
       return `<div class="sitem ${it.rarity}${it.equipped ? ' on' : ''}">
         <div class="si-rar" style="color:${esc(it.rarityColor)}">${esc(it.rarityLabel)}</div>
         ${face}
         <div class="si-foot">
-          ${isTitle ? '' : `<div class="si-name">${esc(it.name)}</div>`}
+          ${tab.kind === 'title' ? '' : `<div class="si-name">${esc(it.name)}</div>`}
           ${action}
         </div>
       </div>`;
@@ -1941,6 +1972,48 @@ function cosmeticsOf(member, isMe) {
   if (member && member.cosmetics) return member.cosmetics;
   if (isMe && S.boot && S.boot.player) return S.boot.player.cosmetics || null;
   return null;
+}
+
+/* ------------------------------------------------------------ cosmetics */
+/* An effect and a frame are drawn by the interface, not shipped as images, so
+   the same three helpers build the store preview and the real card. Keeping
+   them together is what stops the two drifting apart. */
+
+/** Effects that need their own elements to animate rather than just a border. */
+const EFFECT_LAYERS = {
+  scan:   1,   // a line sweeping down
+  holo:   1,   // a sheen sweeping across
+  embers: 6,   // particles rising
+  storm:  1    // a flicker over the whole card
+};
+
+/** The extra classes an element needs to carry an effect and a frame. */
+function cosmeticClasses(cos) {
+  if (!cos) return '';
+  // 'none' is a real item in the store — the one that turns the slot off
+  const id = (v) => (v && v !== 'none') ? String(v).replace(/[^a-z0-9_-]/gi, '') : '';
+  let out = '';
+  const fx = id(cos.effect); if (fx) out += ` fx fx-${fx}`;
+  const fr = id(cos.frame);  if (fr) out += ` fr fr-${fr}`;
+  return out;
+}
+
+/** The custom properties those classes are tinted with. */
+function cosmeticVars(cos) {
+  if (!cos) return '';
+  const bits = [];
+  if (cos.effectColor) bits.push(`--fx:${esc(cos.effectColor)}`);
+  if (cos.frameColor)  bits.push(`--fr:${esc(cos.frameColor)}`);
+  if (cos.frameColor2) bits.push(`--fr2:${esc(cos.frameColor2)}`);
+  return bits.join(';');
+}
+
+/** The elements an effect animates, when it needs any. */
+function effectLayers(effect) {
+  const n = EFFECT_LAYERS[effect];
+  if (!n) return '';
+  return `<span class="fx-layer">${
+    new Array(n).fill('<i></i>').join('')}</span>`;
 }
 
 function hudCfg(part) {

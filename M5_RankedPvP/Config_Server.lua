@@ -1763,6 +1763,38 @@ Config.Store = {
         { id = 'sharpshooter', name = 'SHARPSHOOTER', rarity = 'rare',      price = 300,  color = '#3FA9FF' },
         { id = 'demon',        name = 'DEMON',        rarity = 'epic',      price = 800,  color = '#C158FF' },
         { id = 'legend',       name = 'LEGEND',       rarity = 'legendary', price = 2000, color = '#F5C542' }
+    },
+
+    -- ---- EFFECTS -------------------------------------------------------
+    -- Animation that plays over the card in the party. Every one is drawn by
+    -- the interface itself — no images, no files to ship — and `color` tints
+    -- it, so the same effect can be sold in several colours by adding another
+    -- line with a different id and colour.
+    --
+    -- The `id` picks which animation plays, so it must be one the interface
+    -- knows: none, glow, scan, embers, holo or storm. The name and the price
+    -- are yours.
+    effects = {
+        { id = 'none',   name = '—',        rarity = 'common',    price = 0,    default = true },
+        { id = 'glow',   name = 'Aura',     rarity = 'common',    price = 250,  color = '#3FA9FF' },
+        { id = 'scan',   name = 'Scanline', rarity = 'rare',      price = 500,  color = '#2FDD9B' },
+        { id = 'embers', name = 'Embers',   rarity = 'rare',      price = 650,  color = '#FF7A3C' },
+        { id = 'holo',   name = 'Hologram', rarity = 'epic',      price = 1100, color = '#C158FF' },
+        { id = 'storm',  name = 'Storm',    rarity = 'legendary', price = 2200, color = '#F5C542' }
+    },
+
+    -- ---- FRAMES --------------------------------------------------------
+    -- The border drawn around the card. Also pure interface, no files.
+    -- `color` is the main tone and `color2` the second one, used by the
+    -- frames that run a gradient.
+    --
+    -- Known ids: none, steel, gold, neon, royal.
+    frames = {
+        { id = 'none',  name = '—',     rarity = 'common',    price = 0,    default = true },
+        { id = 'steel', name = 'Steel', rarity = 'common',    price = 200,  color = '#8B93A3' },
+        { id = 'gold',  name = 'Gold',  rarity = 'rare',      price = 600,  color = '#F5C542' },
+        { id = 'neon',  name = 'Neon',  rarity = 'epic',      price = 1200, color = '#3FA9FF', color2 = '#C158FF' },
+        { id = 'royal', name = 'Royal', rarity = 'legendary', price = 2500, color = '#F5C542', color2 = '#FF4757' }
     }
 }
 
