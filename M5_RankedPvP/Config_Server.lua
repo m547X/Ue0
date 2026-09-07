@@ -1767,34 +1767,83 @@ Config.Store = {
 
     -- ---- EFFECTS -------------------------------------------------------
     -- Animation that plays over the card in the party. Every one is drawn by
-    -- the interface itself — no images, no files to ship — and `color` tints
-    -- it, so the same effect can be sold in several colours by adding another
-    -- line with a different id and colour.
+    -- the interface itself — no images, no files to ship.
     --
-    -- The `id` picks which animation plays, so it must be one the interface
-    -- knows: none, glow, scan, embers, holo or storm. The name and the price
-    -- are yours.
+    --   anim   which animation plays. One of:
+    --            glow    a halo around the card, breathing
+    --            scan    a bright band sweeping down
+    --            embers  particles drifting up
+    --            holo    a sheen crossing on the diagonal
+    --            storm   an irregular flash over the whole card
+    --            aurora  a slow wash of colour shifting across
+    --            sparkle points of light twinkling in place
+    --            rain    streaks falling down
+    --            pulse   rings expanding out from the edge
+    --            flames  fire licking up from the bottom
+    --            orbit   a light travelling around the border
+    --   color  the tint. color2 is used by the ones that blend two.
+    --   speed  1.0 is the designed pace; 0.5 is half speed, 2.0 twice.
+    --
+    -- `id` is only a name for the row, so the same animation can be sold as
+    -- many times as you like in different colours and at different speeds.
+    -- Copy a line, change the id, the colour and the price.
     effects = {
-        { id = 'none',   name = '—',        rarity = 'common',    price = 0,    default = true },
-        { id = 'glow',   name = 'Aura',     rarity = 'common',    price = 250,  color = '#3FA9FF' },
-        { id = 'scan',   name = 'Scanline', rarity = 'rare',      price = 500,  color = '#2FDD9B' },
-        { id = 'embers', name = 'Embers',   rarity = 'rare',      price = 650,  color = '#FF7A3C' },
-        { id = 'holo',   name = 'Hologram', rarity = 'epic',      price = 1100, color = '#C158FF' },
-        { id = 'storm',  name = 'Storm',    rarity = 'legendary', price = 2200, color = '#F5C542' }
+        { id = 'none',    name = '—',         rarity = 'common',    price = 0,    default = true },
+        { id = 'glow',    name = 'Aura',      rarity = 'common',    price = 250,  anim = 'glow',    color = '#3FA9FF' },
+        { id = 'sparkle', name = 'Stardust',  rarity = 'common',    price = 350,  anim = 'sparkle', color = '#EAF1F8' },
+        { id = 'scan',    name = 'Scanline',  rarity = 'rare',      price = 500,  anim = 'scan',    color = '#2FDD9B' },
+        { id = 'embers',  name = 'Embers',    rarity = 'rare',      price = 650,  anim = 'embers',  color = '#FF7A3C' },
+        { id = 'rain',    name = 'Downpour',  rarity = 'rare',      price = 700,  anim = 'rain',    color = '#6FB8FF' },
+        { id = 'pulse',   name = 'Pulse',     rarity = 'rare',      price = 750,  anim = 'pulse',   color = '#2FDD9B' },
+        { id = 'holo',    name = 'Hologram',  rarity = 'epic',      price = 1100, anim = 'holo',    color = '#C158FF' },
+        { id = 'aurora',  name = 'Aurora',    rarity = 'epic',      price = 1400, anim = 'aurora',  color = '#2FDD9B', color2 = '#C158FF' },
+        { id = 'orbit',   name = 'Orbit',     rarity = 'epic',      price = 1600, anim = 'orbit',   color = '#3FA9FF' },
+        { id = 'flames',  name = 'Inferno',   rarity = 'legendary', price = 2000, anim = 'flames',  color = '#FF7A3C', color2 = '#FFD24A' },
+        { id = 'storm',   name = 'Storm',     rarity = 'legendary', price = 2200, anim = 'storm',   color = '#F5C542' }
     },
 
     -- ---- FRAMES --------------------------------------------------------
-    -- The border drawn around the card. Also pure interface, no files.
-    -- `color` is the main tone and `color2` the second one, used by the
-    -- frames that run a gradient.
+    -- The border drawn around the card. Built from these numbers rather than
+    -- from a fixed list, so you can make your own without touching any code.
     --
-    -- Known ids: none, steel, gold, neon, royal.
+    --   style   how the border is drawn:
+    --             solid     one line
+    --             double    a line, a gap, then a second line
+    --             dashed    a dashed line
+    --             gradient  the line runs color -> color2 -> color
+    --             corners   only the four corners are drawn
+    --   width   thickness in pixels (1 to 6 reads well)
+    --   color   the main tone
+    --   color2  the second tone. Only `gradient` uses it; leave it out and the
+    --           gradient runs in one colour.
+    --   glow    how far the border bleeds outward, in pixels. 0 or absent for
+    --           a flat border.
+    --   animated  true makes a gradient travel around the card. Only means
+    --           anything for style = 'gradient'.
+    --   speed   seconds for one full trip when animated. Default 6.
+    --
+    -- `id` is just a name for the row: copy a line, change the id and the
+    -- colours, and that is a new frame in the store.
     frames = {
-        { id = 'none',  name = '—',     rarity = 'common',    price = 0,    default = true },
-        { id = 'steel', name = 'Steel', rarity = 'common',    price = 200,  color = '#8B93A3' },
-        { id = 'gold',  name = 'Gold',  rarity = 'rare',      price = 600,  color = '#F5C542' },
-        { id = 'neon',  name = 'Neon',  rarity = 'epic',      price = 1200, color = '#3FA9FF', color2 = '#C158FF' },
-        { id = 'royal', name = 'Royal', rarity = 'legendary', price = 2500, color = '#F5C542', color2 = '#FF4757' }
+        { id = 'none',    name = '—',        rarity = 'common',    price = 0,    default = true },
+        { id = 'steel',   name = 'Steel',    rarity = 'common',    price = 200,
+          style = 'double',   width = 2, color = '#8B93A3' },
+        { id = 'dash',    name = 'Marker',   rarity = 'common',    price = 250,
+          style = 'dashed',   width = 2, color = '#6FB8FF' },
+        { id = 'corners', name = 'Bracket',  rarity = 'rare',      price = 450,
+          style = 'corners',  width = 3, color = '#2FDD9B', glow = 14 },
+        { id = 'gold',    name = 'Gold',     rarity = 'rare',      price = 600,
+          style = 'solid',    width = 2, color = '#F5C542', glow = 22 },
+        { id = 'crimson', name = 'Crimson',  rarity = 'rare',      price = 700,
+          style = 'solid',    width = 3, color = '#FF3B4E', glow = 24 },
+        { id = 'neon',    name = 'Neon',     rarity = 'epic',      price = 1200,
+          style = 'gradient', width = 2, color = '#3FA9FF', color2 = '#C158FF', animated = true },
+        { id = 'toxic',   name = 'Toxic',    rarity = 'epic',      price = 1400,
+          style = 'gradient', width = 3, color = '#2FDD9B', color2 = '#C7FF3F', animated = true, glow = 18 },
+        { id = 'royal',   name = 'Royal',    rarity = 'legendary', price = 2500,
+          style = 'gradient', width = 3, color = '#F5C542', color2 = '#FF4757', animated = true, glow = 20 },
+        { id = 'prism',   name = 'Prism',    rarity = 'legendary', price = 3000,
+          style = 'gradient', width = 3, color = '#3FA9FF', color2 = '#FF7A3C', animated = true, glow = 26, speed = 3 }
     }
 }
 

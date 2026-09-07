@@ -6255,6 +6255,10 @@ function Store.payload(userId)
                 image = def.image or '',
                 color = def.color,
                 color2 = def.color2,
+                -- how it is drawn; the interface builds the rest from these
+                anim = def.anim, speed = def.speed,
+                style = def.style, width = def.width,
+                glow = def.glow, animated = def.animated == true,
                 owned = d.owned[kind][def.id] == true,
                 equipped = (kind == 'card' and d.card or d.title) == def.id
             }
@@ -6357,12 +6361,21 @@ function Store.cosmetics(userId)
         cardImage = card and card.image or '',
         title     = (title and title.id ~= 'none') and title.name or nil,
         titleColor= title and title.color or nil,
-        -- the interface draws these itself; it only needs the id and the tint
-        effect      = (effect and effect.id ~= 'none') and effect.id or nil,
-        effectColor = effect and effect.color or nil,
-        frame       = (frame and frame.id ~= 'none') and frame.id or nil,
-        frameColor  = frame and frame.color or nil,
-        frameColor2 = frame and frame.color2 or nil
+        -- The interface draws both itself, so it gets the recipe rather than
+        -- an id it would have to know the meaning of. A frame nobody has
+        -- written CSS for still works: it is only numbers and colours.
+        effect       = (effect and effect.id ~= 'none') and (effect.anim or effect.id) or nil,
+        effectColor  = effect and effect.color or nil,
+        effectColor2 = effect and effect.color2 or nil,
+        effectSpeed  = effect and effect.speed or nil,
+
+        frame        = (frame and frame.id ~= 'none') and (frame.style or 'solid') or nil,
+        frameColor   = frame and frame.color or nil,
+        frameColor2  = frame and frame.color2 or nil,
+        frameWidth   = frame and frame.width or nil,
+        frameGlow    = frame and frame.glow or nil,
+        frameAnimated= frame and frame.animated == true or nil,
+        frameSpeed   = frame and frame.speed or nil
     }
 end
 

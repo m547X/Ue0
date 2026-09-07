@@ -1531,16 +1531,13 @@ function renderStore(store) {
         face = `<div class="ti-face" style="color:${esc(it.color || 'var(--text)')}">${esc(it.name)}</div>`;
       } else if (tab.kind === 'effect' || tab.kind === 'frame') {
         /* An effect or a frame is invisible in a list, so each one is shown
-           playing on a small stand-in card. Buying one of these blind was the
-           thing to avoid. */
-        face = `<div class="ci-art fx-demo${cosmeticClasses({
-                  effect: tab.kind === 'effect' ? it.id : null,
-                  frame:  tab.kind === 'frame'  ? it.id : null })}"
-                     style="${cosmeticVars({
-                       effectColor: tab.kind === 'effect' ? it.color : null,
-                       frameColor:  tab.kind === 'frame'  ? it.color : null,
-                       frameColor2: tab.kind === 'frame'  ? it.color2 : null })}">
-                  ${effectLayers(tab.kind === 'effect' ? it.id : null)}
+           playing on a small stand-in card, built from exactly the same
+           fields the real card uses. Buying one of these blind was the thing
+           to avoid. */
+        const pc = previewCos(tab.kind, it);
+        face = `<div class="ci-art fx-demo${cosmeticClasses(pc)}"
+                     style="${cosmeticVars(pc)}">
+                  ${effectLayers(pc.effect)}
                   <span class="ci-blank">${esc(it.name)}</span>
                 </div>`;
       } else {
@@ -1979,41 +1976,78 @@ function cosmeticsOf(member, isMe) {
    the same three helpers build the store preview and the real card. Keeping
    them together is what stops the two drifting apart. */
 
-/** Effects that need their own elements to animate rather than just a border. */
+/** How many elements each animation needs. Anything absent draws on the card
+    itself and needs none. */
 const EFFECT_LAYERS = {
-  scan:   1,   // a line sweeping down
-  holo:   1,   // a sheen sweeping across
-  embers: 6,   // particles rising
-  storm:  1    // a flicker over the whole card
+  scan: 1, holo: 1, storm: 1, aurora: 1, flames: 1, orbit: 1,
+  pulse: 3, sparkle: 8, embers: 6, rain: 10
+};
+
+/* A frame is not a fixed design any more: the config gives width, colours,
+   a glow and a style, and the stylesheet builds the border from those. That
+   means a frame nobody wrote CSS for still works. */
+const FRAME_STYLES = ['solid', 'double', 'dashed', 'gradient', 'corners'];
+
+const safeId = (v) => (v && v !== 'none') ? String(v).replace(/[^a-z0-9_-]/gi, '') : '';
+const cssNum = (v, lo, hi, dflt) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt;
 };
 
 /** The extra classes an element needs to carry an effect and a frame. */
 function cosmeticClasses(cos) {
   if (!cos) return '';
-  // 'none' is a real item in the store — the one that turns the slot off
-  const id = (v) => (v && v !== 'none') ? String(v).replace(/[^a-z0-9_-]/gi, '') : '';
   let out = '';
-  const fx = id(cos.effect); if (fx) out += ` fx fx-${fx}`;
-  const fr = id(cos.frame);  if (fr) out += ` fr fr-${fr}`;
+  const fx = safeId(cos.effect);
+  if (fx) out += ` fx fx-${fx}`;
+
+  const style = safeId(cos.frame);
+  if (style) {
+    out += ` fr fr-${FRAME_STYLES.includes(style) ? style : 'solid'}`;
+    if (cos.frameAnimated) out += ' fr-anim';
+    if (cssNum(cos.frameGlow, 0, 60, 0) > 0) out += ' fr-lit';
+  }
   return out;
 }
 
-/** The custom properties those classes are tinted with. */
+/** The custom properties those classes are drawn from. */
 function cosmeticVars(cos) {
   if (!cos) return '';
   const bits = [];
-  if (cos.effectColor) bits.push(`--fx:${esc(cos.effectColor)}`);
-  if (cos.frameColor)  bits.push(`--fr:${esc(cos.frameColor)}`);
-  if (cos.frameColor2) bits.push(`--fr2:${esc(cos.frameColor2)}`);
+  if (cos.effectColor)  bits.push(`--fx:${esc(cos.effectColor)}`);
+  if (cos.effectColor2) bits.push(`--fx2:${esc(cos.effectColor2)}`);
+  if (cos.effectSpeed)  bits.push(`--fx-speed:${cssNum(cos.effectSpeed, 0.2, 5, 1)}`);
+
+  if (safeId(cos.frame)) {
+    bits.push(`--fr:${esc(cos.frameColor || '#8B93A3')}`);
+    bits.push(`--fr2:${esc(cos.frameColor2 || cos.frameColor || '#8B93A3')}`);
+    bits.push(`--fr-w:${cssNum(cos.frameWidth, 1, 6, 2)}px`);
+    bits.push(`--fr-glow:${cssNum(cos.frameGlow, 0, 60, 0)}px`);
+    bits.push(`--fr-speed:${cssNum(cos.frameSpeed, 1, 30, 6)}s`);
+  }
   return bits.join(';');
 }
 
 /** The elements an effect animates, when it needs any. */
 function effectLayers(effect) {
-  const n = EFFECT_LAYERS[effect];
+  const n = EFFECT_LAYERS[safeId(effect)];
   if (!n) return '';
   return `<span class="fx-layer">${
     new Array(n).fill('<i></i>').join('')}</span>`;
+}
+
+/** Everything a store tile needs to preview one item, from its own fields. */
+function previewCos(kind, it) {
+  // the 'none' row is the one that turns the slot off, so it previews as bare
+  if (it.id === 'none') return {};
+
+  if (kind === 'effect') {
+    return { effect: it.anim || it.id, effectColor: it.color,
+             effectColor2: it.color2, effectSpeed: it.speed };
+  }
+  return { frame: it.style || 'solid', frameColor: it.color, frameColor2: it.color2,
+           frameWidth: it.width, frameGlow: it.glow,
+           frameAnimated: it.animated, frameSpeed: it.speed };
 }
 
 function hudCfg(part) {
