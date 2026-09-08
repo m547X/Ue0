@@ -608,14 +608,52 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
   border:2px solid var(--win);animation:phBurst .62s var(--ease) forwards}
 @keyframes phBurst{from{transform:scale(.92);opacity:.85}to{transform:scale(1.75);opacity:0}}
 
-/* round result word */
-.ph-word{font-size:56px;font-weight:700;line-height:1;letter-spacing:.05em;color:var(--text);
-  text-shadow:0 0 48px var(--red-glow),0 3px 12px #000;animation:phWord .42s var(--ease)}
-.ph-word.long{font-size:38px;letter-spacing:.15em}
-.ph-word.win{color:var(--win);text-shadow:0 0 52px rgba(47,221,155,.6),0 3px 12px #000}
-.ph-word.loss{color:var(--lose);text-shadow:0 0 52px rgba(255,59,78,.55),0 3px 12px #000}
-.ph-word.draw{color:var(--gold);text-shadow:0 0 52px rgba(245,197,66,.5),0 3px 12px #000}
+/* ---------- the round band ----------
+   The word thrown across the screen as a round is decided, with a rule and a
+   diamond either side of it. FIGHT, at the moment a round goes live, drops
+   the flourish and glows instead — it is an alarm, not a verdict. */
+.ph-band{display:flex;align-items:center;justify-content:center;gap:22px;
+  width:min(96vw,1100px);animation:phWord .42s var(--ease)}
+/* the whole band is tinted from one value, so a new outcome is one line */
+.ph-band{--bnd:var(--text);--bnd-rgb:234,241,248}
+.ph-band.win {--bnd:var(--win);  --bnd-rgb:47,221,155}
+.ph-band.loss{--bnd:var(--lose); --bnd-rgb:255,59,78}
+.ph-band.draw{--bnd:var(--gold); --bnd-rgb:245,197,66}
+.ph-band.start{--bnd:#A9E4F2;    --bnd-rgb:169,228,242}
+
+.ph-rule{flex:1 1 0;max-width:230px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,var(--bnd));
+  box-shadow:0 0 14px rgba(var(--bnd-rgb),.45)}
+.ph-rule.r{background:linear-gradient(90deg,var(--bnd),transparent)}
+/* mirrored layouts put the rules on the other side, so the fades swap too */
+html[dir="rtl"] .ph-rule.l{background:linear-gradient(90deg,var(--bnd),transparent)}
+html[dir="rtl"] .ph-rule.r{background:linear-gradient(90deg,transparent,var(--bnd))}
+.ph-dia{flex:0 0 auto;width:11px;height:11px;background:var(--bnd);
+  transform:rotate(45deg);box-shadow:0 0 16px rgba(var(--bnd-rgb),.6)}
+
+.ph-word{flex:0 0 auto;font-size:74px;font-weight:900;line-height:1;letter-spacing:.05em;
+  color:var(--bnd);white-space:nowrap;
+  text-shadow:0 4px 0 rgba(0,0,0,.32),0 0 46px rgba(var(--bnd-rgb),.5),0 3px 14px #000}
+.ph-word.long{font-size:52px;letter-spacing:.1em}
 @keyframes phWord{from{transform:scale(.74);opacity:0}to{transform:scale(1);opacity:1}}
+
+/* FIGHT: no rules, no diamonds, all glow */
+.ph-band.start{gap:0}
+.ph-band.start .ph-rule,.ph-band.start .ph-dia{display:none}
+.ph-band.start .ph-word{font-size:132px;font-weight:900;letter-spacing:.02em;
+  text-shadow:0 0 26px rgba(var(--bnd-rgb),.95),0 0 70px rgba(var(--bnd-rgb),.7),
+              0 0 130px rgba(var(--bnd-rgb),.45),0 5px 0 rgba(0,0,0,.22);
+  animation:phFight .5s var(--ease)}
+.ph-band.start .ph-word.long{font-size:96px}
+@keyframes phFight{
+  0%  {transform:scale(1.45);opacity:0;filter:blur(9px)}
+  60% {transform:scale(.98);opacity:1;filter:blur(0)}
+  100%{transform:scale(1);opacity:1}}
+
+@media (max-width:1500px){
+  .ph-word{font-size:58px}
+  .ph-band.start .ph-word{font-size:104px}
+  .ph-rule{max-width:170px}}
 
 .ph-label{font-size:12px;font-weight:700;letter-spacing:.36em;color:var(--dim);
   text-shadow:0 1px 3px #000,0 0 12px rgba(0,0,0,.9)}
@@ -925,6 +963,85 @@ html[dir="rtl"] .mv-rail i{background:linear-gradient(270deg,var(--red),var(--re
   padding:15px 0 2px;font-size:10px;font-weight:700;letter-spacing:.24em;color:var(--dim-2)}
 .res-dismiss .keycap{display:inline-grid;height:26px;font-size:10px;letter-spacing:.14em;
   color:var(--dim)}
+
+/* ==========================================================================
+   PROMOTION — the rank left behind, then the one reached
+   Everything is tinted from --ru, set per player from the new rank's colour,
+   so a demotion is the same screen in a different light.
+   ========================================================================== */
+.rankwrap{position:fixed;inset:0;z-index:72;display:grid;place-items:center;
+  pointer-events:none;
+  --ru:var(--gold);--ru-rgb:245,197,66}
+.rankwrap.down{--ru:var(--lose);--ru-rgb:255,71,87}
+/* nearly opaque on purpose: this sits over the result panel, and anything
+   readable behind it turned the promotion into a double exposure */
+.ru-wash{position:absolute;inset:0;
+  background:radial-gradient(ellipse 70% 60% at 50% 46%,rgba(var(--ru-rgb),.16),transparent 68%),
+             rgba(4,6,10,.94);
+  animation:resWash .5s var(--ease)}
+
+.rankup{position:relative;display:flex;flex-direction:column;align-items:center;
+  gap:4px;padding:34px 54px 26px;text-align:center;
+  animation:resIn .5s cubic-bezier(.16,1,.3,1)}
+
+.ru-tag{font-size:56px;font-weight:900;letter-spacing:.16em;line-height:1.05;
+  color:var(--ru);
+  text-shadow:0 4px 0 rgba(0,0,0,.35),0 0 52px rgba(var(--ru-rgb),.55),0 3px 14px #000;
+  animation:resTag .55s .12s backwards cubic-bezier(.16,1,.3,1)}
+
+.ru-stage{display:flex;align-items:center;justify-content:center;gap:34px;
+  margin:18px 0 6px}
+.ru-side{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px}
+
+.ru-crest{width:86px;height:86px}
+.ru-crest svg{width:100%;height:100%;display:block}
+/* the rank left behind is dimmed right down: it is context, not the news */
+.ru-side.was{opacity:.42;filter:saturate(.5)}
+.ru-side.was .ru-crest{width:70px;height:70px}
+
+.ru-crest.big{width:132px;height:132px;
+  filter:drop-shadow(0 0 26px rgba(var(--ru-rgb),.7)) drop-shadow(0 0 60px rgba(var(--ru-rgb),.35));
+  animation:ruLand .7s .2s backwards cubic-bezier(.16,1,.3,1)}
+@keyframes ruLand{
+  0%  {transform:scale(.5) rotate(-14deg);opacity:0}
+  70% {transform:scale(1.08) rotate(2deg);opacity:1}
+  100%{transform:scale(1) rotate(0)}}
+
+/* a ring thrown outward the moment the new crest lands */
+.ru-burst{position:absolute;top:22px;left:50%;width:132px;height:132px;
+  margin-left:-66px;border-radius:50%;border:2px solid var(--ru);
+  opacity:0;animation:ruBurst .9s .42s var(--ease)}
+@keyframes ruBurst{
+  0%  {transform:scale(.55);opacity:.9}
+  100%{transform:scale(2.1); opacity:0}}
+
+.ru-arrow{color:var(--ru);opacity:.75;animation:ruArrow 1.6s ease-in-out infinite}
+.ru-arrow svg{width:46px;height:28px;display:block}
+/* mirrored layouts read right to left, so the run does too */
+html[dir="rtl"] .ru-arrow svg{transform:scaleX(-1)}
+@keyframes ruArrow{0%,100%{transform:translateX(-4px)}50%{transform:translateX(4px)}}
+
+.ru-name{font-size:13px;font-weight:700;letter-spacing:.24em;color:var(--dim)}
+.ru-name.lit{font-size:22px;letter-spacing:.2em;color:var(--ru);
+  text-shadow:0 0 30px rgba(var(--ru-rgb),.5),0 2px 8px #000}
+
+.ru-rp{min-height:18px;font-size:12px;font-weight:700;letter-spacing:.2em;
+  color:var(--dim);font-variant-numeric:tabular-nums;direction:ltr}
+.ru-rp:empty{display:none}
+
+.ru-go{margin-top:20px;min-width:190px;height:44px;font-size:12px;letter-spacing:.24em;
+  /* the overlay takes no focus, so this cannot actually be clicked — it is
+     the affordance, and the key under it is the way out */
+  pointer-events:none}
+.ru-dismiss{display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:13px 0 0;font-size:10px;font-weight:700;letter-spacing:.24em;color:var(--dim-2)}
+.ru-dismiss .keycap{display:inline-grid;height:26px;font-size:10px;letter-spacing:.14em;
+  color:var(--dim)}
+
+@media (max-width:1500px){
+  .ru-tag{font-size:42px}
+  .ru-crest.big{width:104px;height:104px}
+  .ru-burst{width:104px;height:104px;margin-left:-52px}}
 .rb-team{font-size:10px;font-weight:700;letter-spacing:.2em;margin:10px 2px 6px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rb-team.a{color:var(--team-a)}
@@ -955,16 +1072,6 @@ html[dir="rtl"] .res-board{text-align:right}
 .mvp-grid{position:relative;display:flex;gap:40px;justify-content:center}
 .mvp-grid b{display:block;font-size:35px;font-weight:700}
 .mvp-grid span{font-size:10px;letter-spacing:.24em;color:var(--dim)}
-
-.rankup{position:relative;text-align:center;padding:56px 90px}
-.ru-burst{position:absolute;inset:-30%;pointer-events:none;background:radial-gradient(circle,var(--red-glow),transparent 55%);animation:burst 2.6s var(--ease) infinite}
-@keyframes burst{0%,100%{opacity:.25;transform:scale(.9)}50%{opacity:.6;transform:scale(1.05)}}
-.ru-tag{position:relative;font-size:17px;font-weight:700;letter-spacing:.7em;color:var(--red)}
-.rankup.down .ru-tag{color:var(--dim)}
-.ru-crest{position:relative;width:176px;height:176px;margin:22px auto;animation:crestIn .8s var(--ease)}
-@keyframes crestIn{from{transform:scale(.4) rotate(-12deg);opacity:0}to{transform:none;opacity:1}}
-.ru-name{position:relative;font-size:48px;font-weight:700;letter-spacing:.08em}
-.ru-sub{position:relative;font-size:11px;letter-spacing:.44em;color:var(--dim);margin-top:5px}
 
 /* ==========================================================================
    HUB WINDOW

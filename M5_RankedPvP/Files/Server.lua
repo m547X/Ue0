@@ -4331,15 +4331,25 @@ function Match.finalize(m, winner, reason, mvpId)
                     placement = rpResult.placement, played = rpResult.played,
                     total = rpResult.total, breakdown = rpBreakdown
                 } or nil,
-                rank = {
-                    before = Rank.get(mp.rankBefore).name,
-                    after  = Rank.get(pd.rankId).name,
-                    id     = pd.rankId,
-                    up     = rpResult and rpResult.rankUp or false,
-                    down   = rpResult and rpResult.rankDown or false,
-                    color  = Rank.get(pd.rankId).color,
-                    progress = Rank.progress(pd.rp, pd.rankId, pd.placementDone)
-                }
+                -- Both ends of the move, not just the new one: the promotion
+                -- screen draws the rank left behind next to the one reached,
+                -- and a crest needs its tier and its colour to be drawn.
+                rank = (function()
+                    local was, now = Rank.get(mp.rankBefore), Rank.get(pd.rankId)
+                    return {
+                        before      = was.name,
+                        beforeId    = was.id,
+                        beforeTier  = was.tier,
+                        beforeColor = was.color,
+                        after  = now.name,
+                        id     = now.id,
+                        tier   = now.tier,
+                        color  = now.color,
+                        up     = rpResult and rpResult.rankUp or false,
+                        down   = rpResult and rpResult.rankDown or false,
+                        progress = Rank.progress(pd.rp, pd.rankId, pd.placementDone)
+                    }
+                end)()
             }
 
             if rpResult and rpResult.rankUp then

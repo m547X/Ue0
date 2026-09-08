@@ -2440,7 +2440,8 @@ function phaseReset() {
   const phase = $('phase');
   phase.classList.remove('go', 'last');
   $('phase-dial').classList.remove('hidden');
-  $('phase-word').classList.add('hidden');
+  $('phase-band').classList.add('hidden');
+  $('phase-band').className = 'ph-band hidden';
   $('phase-score').classList.add('hidden');
   $('phase-round').textContent = '';
   $('phase-label').textContent = '';
@@ -2490,16 +2491,31 @@ function renderRound(d) {
       } else {
         clearInterval(renderRound._t);
         phase.classList.remove('last');
-        phase.classList.add('go');
-        num.textContent = tx('GO');
-        num.classList.add('go');
-        replay(num, 'tick');
-        // ring snaps closed behind the word
+        $('phase-label').textContent = '';
         arc.classList.remove('run');
         arc.style.strokeDashoffset = '0';
-        $('phase-label').textContent = '';
         Sfx.play('go');
-        renderRound._h = setTimeout(() => phase.classList.add('hidden'), 950);
+
+        const bc = bannerCfg();
+        if (bc.enabled === false) {
+          // no banner: the dial says GO the way it always did
+          phase.classList.add('go');
+          num.textContent = tx('GO');
+          num.classList.add('go');
+          replay(num, 'tick');
+          renderRound._h = setTimeout(() => phase.classList.add('hidden'), 950);
+        } else {
+          /* The dial has done its job; the word takes the screen from here.
+             The round chip goes too — the HUD already carries it, and two of
+             them a hundred pixels apart just looked like a mistake. */
+          $('phase-dial').classList.add('hidden');
+          $('phase-round').textContent = '';
+          // through the locale table, so a configured word is still
+          // translated when there is a translation for it
+          showBand(tx(bc.startWord || 'FIGHT'), 'start');
+          renderRound._h = setTimeout(() => phase.classList.add('hidden'),
+                                      cssNum(bc.startMs, 300, 6000, 1500));
+        }
       }
       n -= 1;
     };
@@ -2513,41 +2529,85 @@ function renderRound(d) {
 
     const draw = !d.winner || d.winner === 0;
     const won  = !draw && d.winner === d.myTeam;
-    const word = $('phase-word');
-    word.textContent = draw ? tx('DRAW') : (won ? tx('ROUND WON') : tx('ROUND LOST'));
-    word.className = 'ph-word ' + (draw ? 'draw' : (won ? 'win' : 'loss'))
-                   + (word.textContent.length > 6 ? ' long' : '');
+    const bc = bannerCfg();
+    if (bc.enabled !== false) {
+      showBand(tx(draw ? 'DRAW' : (won ? 'VICTORY' : 'DEFEAT')),
+               draw ? 'draw' : (won ? 'win' : 'loss'));
+    }
 
-    $('phase-round').textContent = `${tx('ROUND')} ${d.round}`;
-    if (d.reason && d.reason !== 'DRAW') $('phase-label').textContent = tx(d.reason);
+    if (bc.showRound !== false) {
+      $('phase-round').textContent = `${tx('ROUND')} ${d.round}`;
+      if (d.reason && d.reason !== 'DRAW') $('phase-label').textContent = tx(d.reason);
 
-    // Lua's {[1]=x,[2]=y} arrives as {"1":x,"2":y}; accept both shapes
-    const sc = d.scores || {};
-    $('phase-score-a').textContent = (sc.a !== undefined) ? sc.a : (sc['1'] || 0);
-    $('phase-score-b').textContent = (sc.b !== undefined) ? sc.b : (sc['2'] || 0);
-    $('phase-score').classList.remove('hidden');
+      // Lua's {[1]=x,[2]=y} arrives as {"1":x,"2":y}; accept both shapes
+      const sc = d.scores || {};
+      $('phase-score-a').textContent = (sc.a !== undefined) ? sc.a : (sc['1'] || 0);
+      $('phase-score-b').textContent = (sc.b !== undefined) ? sc.b : (sc['2'] || 0);
+      $('phase-score').classList.remove('hidden');
+    }
 
     Sfx.play(won ? 'roundwin' : 'roundloss');
-    renderRound._h = setTimeout(() => phase.classList.add('hidden'), 4200);
+    renderRound._h = setTimeout(() => phase.classList.add('hidden'),
+                                cssNum(bc.endMs, 600, 10000, 2600));
 
   } else if (d.phase === 'live') {
-    phaseReset();
-    phase.classList.add('hidden');
+    /* The band is already up — the countdown put FIGHT there the moment it
+       ran out, and this arrives right behind it. Clearing the phase here
+       would take the word away before anyone read it. */
+    if (!$('phase-band').classList.contains('start')) {
+      phaseReset();
+      phase.classList.add('hidden');
+    }
   }
 }
 
+/** What the round banner was configured to look like, with sane defaults. */
+function bannerCfg() {
+  return hudCfg('banner') || {};
+}
+
+/** Puts one word on the band, in one of its outcomes. */
+function showBand(word, kind) {
+  const band = $('phase-band');
+  const w = $('phase-word');
+  w.textContent = word;
+  w.classList.toggle('long', String(word).length > 8);
+  band.className = 'ph-band';
+  // the entrance is on .ph-band itself, so it has to be restarted by hand
+  void band.offsetWidth;
+  band.className = 'ph-band ' + kind;
+}
+
 /** Takes the result panel off the screen. Called by the dismiss key, by the
-    auto-close timer, and by the cleanup that ends the match for good. */
+    auto-close timer, and by the cleanup that ends the match for good.
+
+    The promotion screen sits on top of the result, so one press takes that
+    first and the next one takes the result: the news is never swept away by
+    the same keystroke that acknowledges it. */
 function closeResult() {
+  const rank = $('modal-rank');
+  if (rank && !rank.classList.contains('hidden')) {
+    closeRankChange();
+    return;
+  }
+
   clearTimeout(renderMatchEnd._t);
   const modal = $('modal-result');
   if (modal) modal.classList.add('hidden');
 }
 
-function renderMatchEnd(d, dismissHint, autoClose) {
+function renderMatchEnd(d, dismissHint, autoClose, rankCfg) {
   if (!d) return;
   const modal = $('modal-result');
   modal.classList.remove('hidden');
+  // the match is over, so the round banner goes with it
+  $('phase').classList.add('hidden');
+  phaseReset();
+
+  /* What the promotion screen will need when its turn comes, a few seconds
+     from now — after the result has landed and the MVP has had its moment. */
+  renderMatchEnd._rank = Object.assign({ rank: d.rank, rp: d.rp },
+    { dismissHint: dismissHint }, rankCfg || {});
   // nothing else should be on screen behind the result
   toggleScoreboard(false);
   $('hud').classList.add('hidden');
@@ -2638,20 +2698,76 @@ function renderMatchEnd(d, dismissHint, autoClose) {
     <div class="rb-team b">${esc(teamName(2))}</div>${rows(2)}`;
 
   Sfx.play(d.result === 'DEFEAT' ? 'defeat' : 'victory');
-  setTimeout(() => { if (d.mvp) showMVP(d.mvp, () => maybeRankChange(d)); else maybeRankChange(d); }, 2600);
+  const rank = () => maybeRankChange(d, renderMatchEnd._rank);
+  setTimeout(() => { if (d.mvp) showMVP(d.mvp, rank); else rank(); }, 2600);
 }
 
-function maybeRankChange(d) {
-  if (!d.rank || (!d.rank.up && !d.rank.down)) return;
-  const modal = $('modal-rank');
-  modal.classList.remove('hidden');
-  $('rankup-root').classList.toggle('down', !!d.rank.down);
-  $('rankup-tag').textContent = d.rank.up ? 'RANK UP' : 'RANK DOWN';
-  $('rankup-name').textContent = String(d.rank.after || '').toUpperCase();
-  $('rankup-sub').textContent = d.rank.up ? 'NEW RANK' : 'DEMOTED';
-  $('rankup-crest').innerHTML = crest(tierOf(d.rank.id), d.rank.color);
-  Sfx.play(d.rank.up ? 'rankup' : 'rankdown');
-  setTimeout(() => modal.classList.add('hidden'), 5200);
+/** Opens the promotion screen, but only for a ranked match that moved. */
+function maybeRankChange(d, cfg) {
+  const c = cfg || {};
+  if (c.enabled === false) return;
+  if (!d.ranked || !d.rank || (!d.rank.up && !d.rank.down)) return;
+  showRankChange(c);
+}
+
+/** The promotion screen: the crest left behind, then the one reached. It
+    stays up until it is dismissed — the news deserves more than a timeout —
+    and the key that closes the result closes this first. */
+function showRankChange(p) {
+  const wrap = $('modal-rank');
+  if (!wrap || !p || !p.rank) return;
+
+  const r = p.rank;
+  const up = r.up === true;
+  wrap.className = 'rankwrap' + (up ? '' : ' down');
+  if (r.color) {
+    wrap.style.setProperty('--ru', r.color);
+    const rgb = hexRgb(r.color);
+    if (rgb) wrap.style.setProperty('--ru-rgb', rgb);
+  } else {
+    wrap.style.removeProperty('--ru');
+    wrap.style.removeProperty('--ru-rgb');
+  }
+
+  /* The tier is on the payload now, but an older server only sent the id —
+     fall back to looking it up so the crest is never the blank one. */
+  const wasTier = r.beforeTier || tierOf(r.beforeId);
+  const nowTier = r.tier || tierOf(r.id);
+
+  $('rank-tag').textContent = tx(up ? 'RANK UP' : 'RANK DOWN');
+  $('rank-old').innerHTML = crest(wasTier, r.beforeColor);
+  $('rank-new').innerHTML = crest(nowTier, r.color);
+  $('rank-old-name').textContent = String(r.before || '').toUpperCase();
+  $('rank-new-name').textContent = String(r.after || '').toUpperCase();
+  $('rank-rp').textContent = (p.rp && p.rp.after !== undefined)
+    ? `${num(p.rp.after)} RP` : '';
+
+  const hint = $('rank-dismiss');
+  if (hint) {
+    hint.classList.toggle('hidden', !p.dismissHint);
+    if (p.dismissHint) $('rank-key').textContent = p.dismissHint;
+  }
+
+  wrap.classList.remove('hidden');
+  Sfx.play(up ? 'rankup' : 'rankdown');
+
+  clearTimeout(showRankChange._t);
+  const auto = cssNum(p.autoClose, 0, 600, 0);
+  if (auto > 0) showRankChange._t = setTimeout(closeRankChange, auto * 1000);
+}
+
+function closeRankChange() {
+  clearTimeout(showRankChange._t);
+  const wrap = $('modal-rank');
+  if (wrap) wrap.classList.add('hidden');
+}
+
+/** '#F5C542' -> '245,197,66', for the rgba() the tints are built from. */
+function hexRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return '';
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
 function showMVP(mvp, done) {
@@ -2830,17 +2946,18 @@ window.addEventListener('message', (e) => {
     case 'killfeed': addKillFeed(d.data); break;
     case 'event': showEvent(d.data); break;
     case 'round': renderRound(d.data); break;
-    case 'matchEnd': renderMatchEnd(d.data, d.dismissHint, d.autoClose); break;
+    case 'matchEnd': renderMatchEnd(d.data, d.dismissHint, d.autoClose, d.rankCfg); break;
     case 'closeResult': closeResult(); break;
 
     case 'matchCleanup':
       // the result overlay goes with everything else: nothing survives the
       // match it belonged to
       ['hud', 'killfeed', 'phase', 'showcase', 'boundary', 'spectate', 'combat-banner',
-       'modal-result', 'modal-mvp', 'surrender'].forEach((id) => {
+       'modal-result', 'modal-rank', 'modal-mvp', 'surrender'].forEach((id) => {
         const n = $(id); if (n) n.classList.add('hidden');
       });
       hideShowcase();
+      closeRankChange();
       closeResult();
       toggleScoreboard(false);
       $('killfeed').innerHTML = '';

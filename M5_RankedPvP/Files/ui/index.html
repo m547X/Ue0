@@ -63,6 +63,8 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12l6 6L20 6" stroke="currentColor" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></symbol>
+    <!-- the run between the rank left behind and the one reached -->
+    <symbol id="i-rankarrow" viewBox="0 0 40 24"><path d="M2 12h28M24 5l8 7-8 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 
     <!-- ================================================================ -->
     <!-- DECORATIONS — the drawn artwork a frame can wear                  -->
@@ -444,7 +446,15 @@
       <div class="ph-num" id="phase-count">3</div>
     </div>
 
-    <div class="ph-word hidden" id="phase-word"></div>
+    <!-- The word thrown across the screen: FIGHT as the round goes live,
+         VICTORY or DEFEAT when it is decided. The rules and diamonds are the
+         flourish either side of it; the FIGHT variant hides them and glows
+         instead. -->
+    <div class="ph-band hidden" id="phase-band">
+      <i class="ph-rule l"></i><span class="ph-dia"></span>
+      <b class="ph-word" id="phase-word"></b>
+      <span class="ph-dia"></span><i class="ph-rule r"></i>
+    </div>
 
     <div class="ph-label" id="phase-label"></div>
 
@@ -601,6 +611,34 @@
     </div>
   </div>
 
+  <!-- Promotion. Shown after the result is dismissed, and only when the rank
+       actually moved: the crest left behind, then the one reached. Like the
+       result it takes no focus, so the same key closes it. -->
+  <div id="modal-rank" class="rankwrap hidden">
+    <div class="ru-wash"></div>
+    <div class="rankup" id="rank-root">
+      <div class="ru-tag" id="rank-tag">RANK UP</div>
+      <div class="ru-stage">
+        <div class="ru-side was">
+          <div class="ru-crest" id="rank-old"></div>
+          <div class="ru-name" id="rank-old-name"></div>
+        </div>
+        <div class="ru-arrow"><svg viewBox="0 0 40 24"><use href="#i-rankarrow"/></svg></div>
+        <div class="ru-side now">
+          <div class="ru-burst"></div>
+          <div class="ru-crest big" id="rank-new"></div>
+          <div class="ru-name lit" id="rank-new-name"></div>
+        </div>
+      </div>
+      <div class="ru-rp" id="rank-rp"></div>
+      <button class="btn ru-go" id="rank-continue" data-i18n="CONTINUE">CONTINUE</button>
+      <div class="ru-dismiss hidden" id="rank-dismiss">
+        <span class="keycap" id="rank-key">BACKSPACE</span>
+        <span data-i18n="CLOSE">CLOSE</span>
+      </div>
+    </div>
+  </div>
+
   <!-- MVP -->
   <div id="modal-mvp" class="modal hidden">
     <div class="mvp">
@@ -616,16 +654,6 @@
     </div>
   </div>
 
-  <!-- Rank change -->
-  <div id="modal-rank" class="modal hidden">
-    <div class="rankup" id="rankup-root">
-      <div class="ru-burst"></div>
-      <div class="ru-tag" id="rankup-tag">RANK UP</div>
-      <div class="ru-crest" id="rankup-crest"></div>
-      <div class="ru-name" id="rankup-name">IRON I</div>
-      <div class="ru-sub" id="rankup-sub">NEW RANK</div>
-    </div>
-  </div>
 </div>
 
 <!-- ==================================================================== -->

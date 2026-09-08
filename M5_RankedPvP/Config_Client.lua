@@ -376,6 +376,28 @@ Config.HUD = {
         autoClose = 20
     },
 
+    -- The word thrown across the screen as a round starts and ends: FIGHT when
+    -- it goes live, VICTORY or DEFEAT when it is decided.
+    banner = {
+        enabled   = true,
+        -- shown the moment the countdown runs out and the freeze lifts
+        startWord = 'FIGHT',
+        -- how long each one stays up, in milliseconds
+        startMs   = 1500,
+        endMs     = 2600,
+        -- The round number and the score still sit under the word. Turn this
+        -- off for a bare banner.
+        showRound = true
+    },
+
+    -- The promotion screen, shown once the result panel is dismissed and only
+    -- when the rank actually changed.
+    rankChange = {
+        enabled = true,
+        -- Seconds before it closes on its own. 0 = only the key closes it.
+        autoClose = 0
+    },
+
     killFeed = {
         enabled   = true,
         position  = 'right', -- 'right' | 'left'

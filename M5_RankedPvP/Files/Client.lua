@@ -838,6 +838,7 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
         showcase = Config.HUD.showcase,
         player   = Config.HUD.player,
         weapon   = Config.HUD.weapon,
+        banner   = Config.HUD.banner,
         show     = {
             health = Config.HUD.showHealth  ~= false,
             armor  = Config.HUD.showArmor   ~= false,
@@ -995,7 +996,10 @@ RegisterNetEvent('m5rp:cl:end', function(data)
     local rc = (Config.HUD and Config.HUD.result) or {}
     nui({ action = 'matchEnd', data = data,
           dismissHint = rc.enabled ~= false and (rc.display or 'BACKSPACE') or nil,
-          autoClose   = rc.autoClose })
+          autoClose   = rc.autoClose,
+          -- the promotion screen waits behind the result and is closed by the
+          -- same key, so it gets the same hint
+          rankCfg     = (Config.HUD and Config.HUD.rankChange) or {} })
     hook('onMatchEnd', {
         matchId = data.matchId, result = data.result,
         scores = data.scores, rp = data.rp
