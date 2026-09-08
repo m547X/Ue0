@@ -1689,11 +1689,32 @@ function Security.allow(pd, bucketName)
     return true
 end
 
+--- The whitelist and the blacklist, indexed once.
+---
+--- This is asked on every reported shot and again on every reported hit, and
+--- it used to be two linear scans of the config lists — up to sixty string
+--- comparisons a bullet, per player. The lists are fixed at load, so they are
+--- turned into sets here and the question becomes two table reads.
+local WeaponAllowSet, WeaponDenySet
+local function weaponSets()
+    if not WeaponAllowSet then
+        WeaponAllowSet, WeaponDenySet = {}, {}
+        for _, w in ipairs(Config.Weapons.allowed or {}) do
+            WeaponAllowSet[tostring(w):upper()] = true
+        end
+        for _, w in ipairs(Config.Weapons.blacklisted or {}) do
+            WeaponDenySet[tostring(w):upper()] = true
+        end
+    end
+    return WeaponAllowSet, WeaponDenySet
+end
+
 function Security.weaponAllowed(weaponName)
     if not weaponName or weaponName == '' then return false end
+    local allow, deny = weaponSets()
     weaponName = weaponName:upper()
-    if inList(Config.Weapons.blacklisted, weaponName) then return false end
-    return inList(Config.Weapons.allowed, weaponName)
+    if deny[weaponName] then return false end
+    return allow[weaponName] == true
 end
 
 function Security.isMelee(weaponName)
@@ -3177,15 +3198,18 @@ end
 local function playerListPayload(m)
     local out = {}
     for userId, mp in pairs(m.players) do
+        -- resolved once: srcOf touches GetPlayerName, and this used to ask it
+        -- three times for the same player on a list rebuilt every second
+        local s = srcOf(userId)
         out[#out + 1] = {
-            userId = userId, serverId = srcOf(userId),
+            userId = userId, serverId = s,
             name = mp.name, team = mp.team,
             alive = mp.alive, connected = mp.connected,
             kills = mp.kills, deaths = mp.deaths, assists = mp.assists,
             headshots = mp.headshots, damage = math.floor(mp.damage),
             score = mp.score, rank = mp.rankName, rankId = mp.rankId,
             avatar = avatarFor(userId),
-            ping = srcOf(userId) and (GetPlayerPing(srcOf(userId)) or 0) or 0
+            ping = s and (GetPlayerPing(s) or 0) or 0
         }
     end
     table.sort(out, function(a, b)

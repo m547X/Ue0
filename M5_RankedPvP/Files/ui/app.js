@@ -1963,12 +1963,17 @@ function idTag(userId, on) {
 }
 
 /* A row of ticks rather than one continuous bar. The nodes are only rebuilt
-   when the tick count changes — every other frame just toggles a class. */
+   when the tick count changes, and a bar already showing the right number of
+   ticks does nothing at all — it remembers what it drew, so most HUD ticks
+   never touch the DOM. */
 function segBar(host, filled, total) {
   if (!host) return;
   if (host.children.length !== total) {
     host.innerHTML = new Array(total).fill('<i></i>').join('');
+    host._seg = -1;
   }
+  if (host._seg === filled) return;
+  host._seg = filled;
   for (let i = 0; i < total; i++) host.children[i].classList.toggle('on', i < filled);
 }
 
@@ -2140,12 +2145,19 @@ const SKULL = '<span class="av-skull"><svg><use href="#i-skull"/></svg></span>';
 function renderFaces(hostId, players, meId) {
   const host = $(hostId);
   if (!host) return;
-  host.innerHTML = players.map((p) => {
+  const html = players.map((p) => {
     const dead  = isDown(p);
     const state = (p.connected === false) ? ' gone' : (dead ? ' down' : '');
     const mine  = p.userId === meId ? ' me' : '';
     return avatarCell(p, 'face' + state + mine, dead ? SKULL : '');
   }).join('');
+  /* The row of portraits is rebuilt on every HUD push, roughly once a
+     second, and for most of a round it comes out identical. Building the
+     string is cheap; handing it to innerHTML is a parse and a relayout, so
+     that only happens when the row actually changed. */
+  if (host._html === html) return;
+  host._html = html;
+  host.innerHTML = html;
 }
 
 function renderHud(d) {
@@ -2166,14 +2178,21 @@ function renderHud(d) {
   // one pip per round won, out of the rounds needed to take the match
   const need = (S.matchInfo && S.matchInfo.settings && S.matchInfo.settings.roundsToWin)
                || Math.ceil((d.maxRounds || 0) / 2) || 0;
+  const pipHost = $('hud-pips');
   if (need > 0 && !d.ffa) {
-    const pips = (won) => `<div class="pips ${won.side}">${
-      Array.from({ length: need }, (_, i) =>
-        `<i class="${i < won.n ? 'on' : ''}"></i>`).join('')}</div>`;
-    $('hud-pips').innerHTML = pips({ side: 'a', n: d.scores.a }) + pips({ side: 'b', n: d.scores.b });
-    $('hud-pips').style.display = '';
+    // the pips only move when a round is won, so the score is the signature
+    const sig = `${need}:${d.scores.a}:${d.scores.b}`;
+    if (pipHost._sig !== sig) {
+      pipHost._sig = sig;
+      const pips = (won) => `<div class="pips ${won.side}">${
+        Array.from({ length: need }, (_, i) =>
+          `<i class="${i < won.n ? 'on' : ''}"></i>`).join('')}</div>`;
+      pipHost.innerHTML = pips({ side: 'a', n: d.scores.a }) + pips({ side: 'b', n: d.scores.b });
+    }
+    pipHost.style.display = '';
   } else {
-    $('hud-pips').style.display = 'none';
+    pipHost._sig = null;
+    pipHost.style.display = 'none';
   }
 
   /* Each side's panel carries its own score, so the state of the series is
@@ -2363,14 +2382,20 @@ function renderLocalHud(d) {
   const gun = $('hud-gun');
   gun.classList.toggle('hidden', wcfg.enabled === false || show.weapon === false);
 
+  /* The name and the artwork only change when the weapon does — which is
+     rarely, next to the five ticks a second this runs at. Rewriting
+     backgroundImage every tick made the browser re-resolve the same URL. */
   const raw = String(d.weapon || '');
-  $('hud-weapon-name').textContent = raw.replace('WEAPON_', '').replace(/_/g, ' ') || '—';
+  if (raw !== renderLocalHud._gun) {
+    renderLocalHud._gun = raw;
+    $('hud-weapon-name').textContent = raw.replace('WEAPON_', '').replace(/_/g, ' ') || '—';
 
-  // configured artwork wins; anything unlisted keeps the drawn silhouette
-  const art = $('gc-art');
-  const src = imgUrl((wcfg.images || {})[raw]);
-  if (src) { art.style.backgroundImage = `url("${src}")`; art.classList.add('art'); }
-  else { art.style.backgroundImage = ''; art.classList.remove('art'); }
+    // configured artwork wins; anything unlisted keeps the drawn silhouette
+    const art = $('gc-art');
+    const src = imgUrl((wcfg.images || {})[raw]);
+    if (src) { art.style.backgroundImage = `url("${src}")`; art.classList.add('art'); }
+    else { art.style.backgroundImage = ''; art.classList.remove('art'); }
+  }
 
   const clip = d.clip || 0;
   const max  = d.clipMax || 0;
@@ -2898,6 +2923,9 @@ window.addEventListener('message', (e) => {
 
     case 'matchSetup': {
       S.matchInfo = d.data || null;
+      // a new match can carry different weapon artwork, so the cached name
+      // that skips redrawing it must not survive into it
+      renderLocalHud._gun = null;
       const hint = S.matchInfo && S.matchInfo.scoreboardHint;
       $('sb-hint').textContent = hint ? `${tx('HOLD')} ${hint}` : '';
       $('sb-hint').style.display = hint ? '' : 'none';
@@ -2959,6 +2987,12 @@ window.addEventListener('message', (e) => {
       hideShowcase();
       closeRankChange();
       closeResult();
+      // the caches that skip a redraw belong to the match that filled them
+      ['hud-faces-a', 'hud-faces-b'].forEach((id) => {
+        const n = $(id); if (n) n._html = null;
+      });
+      $('hud-pips')._sig = null;
+      renderLocalHud._gun = null;
       toggleScoreboard(false);
       $('killfeed').innerHTML = '';
       S.hud = null;

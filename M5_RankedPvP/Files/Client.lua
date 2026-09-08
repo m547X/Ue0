@@ -183,6 +183,34 @@ local spectateThreadRunning = false
 local clearBots
 local idleVisualGuard
 
+-- ---------------------------------------------------------------------------
+-- The natives on the per frame path, held as upvalues.
+--
+-- A native is a global, and every call through a global name is a hash lookup
+-- in the environment table. The match loop runs these sixty times a second,
+-- some of them several times over, so binding them once here turns each of
+-- those lookups into a register read. Nothing else changes: these are the
+-- same functions under the same names.
+-- ---------------------------------------------------------------------------
+local GetGameTimer          = GetGameTimer
+local PlayerPedId           = PlayerPedId
+local PlayerId              = PlayerId
+local GetEntityCoords       = GetEntityCoords
+local GetEntityHealth       = GetEntityHealth
+local GetPedArmour          = GetPedArmour
+local IsEntityDead          = IsEntityDead
+local IsPedShooting         = IsPedShooting
+local IsControlPressed      = IsControlPressed
+local DisableControlAction  = DisableControlAction
+local GetActivePlayers      = GetActivePlayers
+local GetPlayerPed          = GetPlayerPed
+local GetPlayerServerId     = GetPlayerServerId
+local DoesEntityExist       = DoesEntityExist
+local GetGameplayCamRot     = GetGameplayCamRot
+local GetCurrentPedWeapon   = GetCurrentPedWeapon
+local math_abs, math_floor, math_max, math_sqrt =
+      math.abs, math.floor, math.max, math.sqrt
+
 local function ms() return GetGameTimer() end
 
 local function dbg(fmt, ...)
@@ -207,10 +235,15 @@ local function hook(name, data)
     TriggerEvent('m5rp:' .. name, data)
 end
 
-local function weaponNameFromHash(hash)
-    -- resolve the readable name from the whitelist so the server always gets a
-    -- name it can validate instead of a raw hash
-    for _, name in ipairs({
+--- The whitelist the server validates against, hashed once.
+---
+--- This used to be a table literal walked with GetHashKey on every lookup —
+--- a fresh 33 entry table and up to 33 native calls, on the HUD tick five
+--- times a second and again on every death. Hashing it once at load turns
+--- that into a single table read.
+local WEAPON_NAME_BY_HASH = {}
+do
+    local names = {
         'WEAPON_UNARMED','WEAPON_KNIFE','WEAPON_BAT',
         'WEAPON_PISTOL','WEAPON_PISTOL_MK2','WEAPON_COMBATPISTOL','WEAPON_APPISTOL',
         'WEAPON_HEAVYPISTOL','WEAPON_VINTAGEPISTOL','WEAPON_SNSPISTOL',
@@ -222,16 +255,20 @@ local function weaponNameFromHash(hash)
         'WEAPON_PUMPSHOTGUN','WEAPON_SAWNOFFSHOTGUN','WEAPON_ASSAULTSHOTGUN','WEAPON_HEAVYSHOTGUN',
         'WEAPON_SNIPERRIFLE','WEAPON_HEAVYSNIPER','WEAPON_MARKSMANRIFLE',
         'WEAPON_COMBATMG','WEAPON_MG'
-    }) do
-        if GetHashKey(name) == hash then return name end
+    }
+    for i = 1, #names do
+        WEAPON_NAME_BY_HASH[GetHashKey(names[i])] = names[i]
     end
-    return nil
 end
 
-local function currentWeaponName()
-    local ok, hash = GetCurrentPedWeapon(playerPed(), true)
+local function weaponNameFromHash(hash)
+    return WEAPON_NAME_BY_HASH[hash]
+end
+
+local function currentWeaponName(ped)
+    local ok, hash = GetCurrentPedWeapon(ped or playerPed(), true)
     if not ok then return 'WEAPON_UNARMED' end
-    return weaponNameFromHash(hash) or 'WEAPON_UNARMED'
+    return WEAPON_NAME_BY_HASH[hash] or 'WEAPON_UNARMED'
 end
 
 local function serverIdOfPed(ped)
@@ -318,19 +355,21 @@ end
 --- is disabled and weapons cannot be dropped — so an empty hand mid fight is
 --- always something else's doing, and the player has no way to recover from it.
 local nextRearm = 0
-local function rearmGuard()
+local function rearmGuard(ped)
     local cfg = Config.Loadout or {}
     if cfg.rearmWhenEmpty == false then return end
     if not State.roundLive or not State.alive or State.frozen then return end
 
-    local lo = State.loadout
-    if not lo or not lo.weapons or #lo.weapons == 0 then return end
-
+    -- the clock before the loadout: this runs every frame and only does its
+    -- work once a second, so the cheapest test comes first
     local t = ms()
     if t < nextRearm then return end
+
+    local lo = State.loadout
+    if not lo or not lo.weapons or #lo.weapons == 0 then return end
     nextRearm = t + math.floor(((cfg.rearmEvery or 1.0) * 1000))
 
-    local ped = playerPed()
+    ped = ped or playerPed()
     for i = 1, #lo.weapons do
         if HasPedGotWeapon(ped, GetHashKey(lo.weapons[i].name), false) then return end
     end
@@ -1186,8 +1225,8 @@ AddEventHandler('gameEventTriggered', function(name, args)
 end)
 
 --- Per frame combat scan. Only ever runs inside a live round while alive.
-local function combatScan()
-    local ped = playerPed()
+local function combatScan(ped)
+    ped = ped or playerPed()
 
     -- ---- shooting ------------------------------------------------------
     if IsPedShooting(ped) then
@@ -1239,7 +1278,7 @@ local function combatScan()
 
         TriggerServerEvent('m5rp:sv:combat', 'death', {
             killer = killer,
-            weapon = currentWeaponName()
+            weapon = currentWeaponName(ped)
         })
     end
 end
@@ -1286,14 +1325,24 @@ end)
 --- through here, and the state is tracked so a repeated call costs nothing.
 local boundaryShown = false
 
+local boundarySeconds, boundaryDistance = -1, -1
+
 showBoundary = function(seconds, distance)
+    -- The panel shows whole seconds and whole metres, and this is called on
+    -- every frame the player is outside. Only a message that would change
+    -- something on screen is worth sending.
+    if boundaryShown and seconds == boundarySeconds and distance == boundaryDistance then
+        return
+    end
     boundaryShown = true
+    boundarySeconds, boundaryDistance = seconds, distance
     nui({ action = 'boundary', active = true, seconds = seconds, distance = distance })
 end
 
 hideBoundary = function()
     if not boundaryShown then return end
     boundaryShown = false
+    boundarySeconds, boundaryDistance = -1, -1
     nui({ action = 'boundary', active = false })
     stopScreenEffect(Config.Effects.outOfBoundsEffect)
 end
@@ -1305,7 +1354,7 @@ clearBoundary = function()
     hideBoundary()
 end
 
-local function boundaryCheck()
+local function boundaryCheck(pos)
     if not State.map or not State.map.center or not State.map.radius then return end
     -- Nothing to measure until the player has actually been put in the arena.
     -- Between the match setup and the spawn teleport they are still standing
@@ -1313,8 +1362,8 @@ local function boundaryCheck()
     -- zone they have not been placed in yet is what started this.
     if not State.alive then clearBoundary() return end
 
-    local pos = GetEntityCoords(playerPed())
-    local c   = State.map.center
+    pos = pos or GetEntityCoords(playerPed())
+    local c = State.map.center
 
     -- A combat zone is a cylinder, not a sphere. Measuring in three dimensions
     -- meant every metre climbed was a metre stolen from the radius, so on an
@@ -1323,13 +1372,13 @@ local function boundaryCheck()
     -- with a limit generous enough to ignore normal arena geometry and tight
     -- enough to still catch someone who has left the map entirely.
     local dx, dy = pos.x - c.x, pos.y - c.y
-    local flat   = math.sqrt(dx * dx + dy * dy)
-    local climb  = math.abs(pos.z - c.z)
+    local flat   = math_sqrt(dx * dx + dy * dy)
+    local climb  = math_abs(pos.z - c.z)
     local vLimit = State.map.height or Config.Boundary.verticalLimit or 200.0
 
     local overFlat  = flat  - State.map.radius
     local overClimb = climb - vLimit
-    local dist = math.max(overFlat, overClimb) + State.map.radius
+    local dist = math_max(overFlat, overClimb) + State.map.radius
 
     if overFlat > 0 or overClimb > 0 then
         if not State.outside then
@@ -1340,8 +1389,8 @@ local function boundaryCheck()
             end
         end
 
-        local left = math.max(0, math.ceil((State.outsideUntil - ms()) / 1000))
-        showBoundary(left, math.floor(dist - State.map.radius))
+        local left = math_max(0, math.ceil((State.outsideUntil - ms()) / 1000))
+        showBoundary(left, math_floor(dist - State.map.radius))
 
         if ms() >= State.outsideUntil then
             State.outside = false
@@ -1395,19 +1444,22 @@ end, false)
 -- 09. MATCH THREAD
 -- ============================================================================
 
-local function pushActivity()
+local function pushActivity(ped, pos)
     -- The AFK detector is fed from real inputs: movement, camera, shooting and
     -- interaction. Nothing is sent while nothing happens.
-    local ped = playerPed()
-    local pos = GetEntityCoords(ped)
+    ped = ped or playerPed()
+    pos = pos or GetEntityCoords(ped)
     local heading = GetGameplayCamRot(2).z
 
     local movedOk = #(pos - State.lastPos) >= 1.5
-    local camOk   = math.abs(((heading - State.lastCamHeading + 180) % 360) - 180) >= 4.0
-    local acted   = IsPedShooting(ped) or IsControlPressed(0, 24) or IsControlPressed(0, 25)
-                    or IsControlPressed(0, 38)
+    local camOk   = math_abs(((heading - State.lastCamHeading + 180) % 360) - 180) >= 4.0
+    -- short circuit order matters here: three of these are natives, and the
+    -- first one that answers yes ends the question
+    local acted   = movedOk or camOk
+                    or IsPedShooting(ped) or IsControlPressed(0, 24)
+                    or IsControlPressed(0, 25) or IsControlPressed(0, 38)
 
-    if movedOk or camOk or acted then
+    if acted then
         State.lastPos = pos
         State.lastCamHeading = heading
         local t = ms()
@@ -1418,8 +1470,12 @@ local function pushActivity()
     end
 end
 
+-- read once: the config does not change while the resource runs, and this is
+-- called on every frame of every round
+local NO_WEAPON_WHEEL = Config.Display.disableWeaponWheel == true
+
 local function applyMatchRestrictions()
-    if Config.Display.disableWeaponWheel then
+    if NO_WEAPON_WHEEL then
         DisableControlAction(0, 37, true)   -- weapon wheel
         DisableControlAction(0, 157, true)  -- weapon slots 1..
         DisableControlAction(0, 158, true)
@@ -1441,20 +1497,31 @@ local function applyMatchRestrictions()
     DisableControlAction(0, 167, true)
 end
 
-local function drawTeammateTags()
+local function drawTeammateTags(myPed, myPos)
     if not Config.Display.teammateNameplates or State.ffa then return end
 
-    local myPos = GetEntityCoords(playerPed())
+    -- Nothing to draw until the server has sent a scoreboard to resolve teams
+    -- from, and this runs every frame — so it leaves before touching a native.
+    local teams = State.teamOfServerId
+    if not teams then return end
+
+    local myTeam = State.team
+    local names  = State.nameOfServerId
+    local range  = Config.Display.nameplateDistance
+    myPed = myPed or playerPed()
+    myPos = myPos or GetEntityCoords(myPed)
+
     for _, player in ipairs(GetActivePlayers()) do
-        local ped = GetPlayerPed(player)
-        if ped ~= playerPed() and DoesEntityExist(ped) then
-            local sid = GetPlayerServerId(player)
-            local pos = GetEntityCoords(ped)
-            local dist = #(myPos - pos)
-            if dist <= Config.Display.nameplateDistance then
-                -- teams are resolved from the HUD scoreboard sent by the server
-                if State.teamOfServerId and State.teamOfServerId[sid] == State.team then
-                    local name = State.nameOfServerId and State.nameOfServerId[sid] or ''
+        -- The team is a table read; the ped, its coordinates and the distance
+        -- are three natives and a vector. Asking the cheap question first
+        -- skips all of that for everyone who is not on your side, which on a
+        -- busy server is nearly everyone.
+        local sid = GetPlayerServerId(player)
+        if teams[sid] == myTeam then
+            local ped = GetPlayerPed(player)
+            if ped ~= myPed and DoesEntityExist(ped) then
+                local pos = GetEntityCoords(ped)
+                if #(myPos - pos) <= range then
                     SetDrawOrigin(pos.x, pos.y, pos.z + 1.05, 0)
                     SetTextFont(4)
                     SetTextScale(0.30, 0.30)
@@ -1462,7 +1529,7 @@ local function drawTeammateTags()
                     SetTextCentre(true)
                     SetTextOutline()
                     BeginTextCommandDisplayText('STRING')
-                    AddTextComponentSubstringPlayerName(name)
+                    AddTextComponentSubstringPlayerName(names and names[sid] or '')
                     EndTextCommandDisplayText(0.0, 0.0)
                     ClearDrawOrigin()
                 end
@@ -1477,6 +1544,9 @@ startMatchThread = function()
 
     Citizen.CreateThread(function()
         local hudAcc = 0
+        -- the last card the interface was sent, so an unchanged one is not
+        -- sent again. It lives with the thread, so a new match always pushes.
+        local lastHud = {}
 
         while State.inMatch do
             local liveCombat = State.roundLive and State.alive and not State.spectating
@@ -1486,30 +1556,38 @@ startMatchThread = function()
             local wait = (liveCombat or State.frozen) and 0 or 200
 
             if liveCombat then
-                combatScan()
+                -- One PlayerPedId for the whole frame. Every helper below used
+                -- to ask for it again — a dozen native calls a frame, and more
+                -- inside the nameplate loop — for a value that cannot change
+                -- between them.
+                local ped = playerPed()
+                -- and one GetEntityCoords: the zone check, the AFK detector
+                -- and the nameplates each asked for the same position
+                local pos = GetEntityCoords(ped)
+
+                combatScan(ped)
                 applyMatchRestrictions()
-                boundaryCheck()
-                rearmGuard()
-                pushActivity()
+                boundaryCheck(pos)
+                rearmGuard(ped)
+                pushActivity(ped, pos)
 
                 -- spawn protection shimmer
                 if State.spawnProtectUntil > ms() then
-                    SetEntityInvincible(playerPed(), true)
-                    SetEntityAlpha(playerPed(), Config.Effects.spawnProtectionAlpha, false)
+                    SetEntityInvincible(ped, true)
+                    SetEntityAlpha(ped, Config.Effects.spawnProtectionAlpha, false)
                 else
                     if State.spawnProtectUntil ~= 0 then
                         State.spawnProtectUntil = 0
-                        SetEntityInvincible(playerPed(), false)
-                        ResetEntityAlpha(playerPed())
+                        SetEntityInvincible(ped, false)
+                        ResetEntityAlpha(ped)
                     end
                 end
 
-                drawTeammateTags()
+                drawTeammateTags(ped, pos)
 
                 hudAcc = hudAcc + 16
                 if hudAcc >= Config.Timing.hudTick then
                     hudAcc = 0
-                    local ped = playerPed()
                     local ok, weapon = GetCurrentPedWeapon(ped, true)
                     local ammo = ok and GetAmmoInPedWeapon(ped, weapon) or 0
                     local clip, clipMax = 0, 0
@@ -1519,12 +1597,28 @@ startMatchThread = function()
                         -- the magazine bar needs the capacity, not just the count
                         clipMax = GetMaxAmmoInClip(ped, weapon, true) or 0
                     end
-                    nui({ action = 'localHud', data = {
-                        health = math.max(0, GetEntityHealth(ped) - 100),
-                        armor  = GetPedArmour(ped),
-                        weapon = currentWeaponName(), weaponHash = ok and weapon or nil,
-                        ammo   = ammo, clip = clip, clipMax = clipMax
-                    } })
+                    local health = math.max(0, GetEntityHealth(ped) - 100)
+                    local armor  = GetPedArmour(ped)
+                    local name   = (ok and WEAPON_NAME_BY_HASH[weapon]) or 'WEAPON_UNARMED'
+
+                    -- A player who is standing still with a full magazine
+                    -- sends the same six numbers five times a second. Each
+                    -- one is a JSON encode, a message into CEF and a full
+                    -- pass over the health, armour and magazine bars — for a
+                    -- card that is already showing exactly this. Sending it
+                    -- only when something moved costs one comparison.
+                    if health ~= lastHud.health or armor ~= lastHud.armor
+                       or clip ~= lastHud.clip or ammo ~= lastHud.ammo
+                       or clipMax ~= lastHud.clipMax or name ~= lastHud.weapon then
+                        lastHud.health, lastHud.armor = health, armor
+                        lastHud.clip, lastHud.ammo, lastHud.clipMax = clip, ammo, clipMax
+                        lastHud.weapon = name
+                        nui({ action = 'localHud', data = {
+                            health = health, armor = armor,
+                            weapon = name, weaponHash = ok and weapon or nil,
+                            ammo   = ammo, clip = clip, clipMax = clipMax
+                        } })
+                    end
                 end
             else
                 -- non combat states: keep the restrictions but stay cheap
