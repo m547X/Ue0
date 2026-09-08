@@ -242,6 +242,22 @@ html[dir="rtl"] .hud-timer{direction:ltr}
 .pc-name{display:flex;align-items:baseline;gap:7px;min-width:0}
 .pc-name b{font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-name i{font-style:normal}
+
+/* What the match has paid you and what it has cost, on the end of the name
+   line so the card keeps its height. Small on purpose: it is a glance, not a
+   scoreboard — the board under TAB is the scoreboard. */
+.pc-kd{margin-inline-start:auto;display:flex;align-items:center;gap:9px;flex:none;
+  align-self:center;font-variant-numeric:tabular-nums;direction:ltr}
+.pc-kd > span{display:flex;align-items:center;gap:4px}
+.pc-kd svg{width:11px;height:11px;opacity:.75}
+.pc-kd b{font-size:12px;font-weight:700;line-height:1}
+.pc-kd .k{color:var(--win)}
+.pc-kd .k svg{fill:none;stroke:currentColor;stroke-width:2}
+.pc-kd .d{color:var(--dim)}
+.pc-kd .d svg{fill:currentColor}
+/* a hairline between the two, so they read as a pair rather than a total */
+.pc-kd .d::before{content:'';width:1px;height:11px;margin-inline-end:5px;
+  background:rgba(255,255,255,.14)}
 .pc-bar{display:flex;align-items:center;gap:10px}
 .pc-bar span{min-width:30px;font-size:14px;font-weight:700;text-align:end;
   font-variant-numeric:tabular-nums;direction:ltr}

@@ -4510,7 +4510,7 @@ function Match.cleanup(m)
         local s = srcOf(userId)
         if s then
             SetPlayerRoutingBucket(s, 0)
-            TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = m.id })
+            TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = m.id, reason = 'END' })
         end
     end
 
@@ -4560,7 +4560,9 @@ function Match.removePlayer(m, userId, reason)
     local s = srcOf(userId)
     if s then
         SetPlayerRoutingBucket(s, 0)
-        TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = m.id })
+        -- the reason travels with it: the client decides where to put the
+        -- player back, and walking out is not the same as the match ending
+        TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = m.id, reason = reason or 'LEAVE' })
     end
 
     -- Ranked penalties only apply to live ranked matches
@@ -5996,7 +5998,9 @@ function BotMatch.stop(userId, reason)
     local s = srcOf(userId)
     if s then
         TriggerClientEvent('m5rp:cl:bots', s, { matchId = sess.id, clear = true })
-        TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = sess.id })
+        -- 'left' is the same button as walking out of a real match
+        TriggerClientEvent('m5rp:cl:cleanup', s,
+            { matchId = sess.id, reason = (reason == 'left') and 'LEAVE' or 'END' })
         SetPlayerRoutingBucket(s, 0)
     end
 

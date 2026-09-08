@@ -128,6 +128,42 @@ Config.OpenMenu = {
 }
 
 -- ============================================================================
+-- 2a. COMING BACK
+-- ============================================================================
+--
+-- Where a player is put once they are finished — after the training range,
+-- after a match, and after withdrawing from one. Nothing here changes what
+-- happens inside a match; it only decides where you land when it is over.
+--
+-- The spot you were standing on is remembered the moment you are taken out of
+-- the world, so it is wherever you actually were: the point you queued from,
+-- the place you were driving through, anywhere.
+
+Config.Return = {
+    -- false leaves the player wherever the match dropped them, which is what
+    -- the resource did before this existed.
+    enabled = true,
+
+    -- true  — everyone comes back to `coords` below, wherever they went in
+    --         from. Use this for a lobby or an arena entrance.
+    -- false — everyone comes back to the exact spot they left from.
+    useCoords = false,
+    coords    = vector4(-1038.5, -2737.6, 20.2, 328.0),
+
+    -- Each way out can be turned off on its own. A false here means that one
+    -- leaves the player where they are, whatever the two settings above say.
+    afterTraining  = true,
+    afterMatch     = true,
+    afterSurrender = true,
+
+    -- A spot is only worth returning to if it was a real one. A position
+    -- recorded while the player was falling through the map, or in the sky,
+    -- is not — so anything above this height is ignored and the coordinates
+    -- above are used instead, if they are set.
+    maxHeight = 900.0
+}
+
+-- ============================================================================
 -- 2b. TRAINING
 -- ============================================================================
 

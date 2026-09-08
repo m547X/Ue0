@@ -418,6 +418,55 @@ local function teleport(spawn, freeze)
     end)
 end
 
+-- ---------------------------------------------------------------------------
+-- Coming back
+--
+-- A match and the training range both take the player out of the world and
+-- put them somewhere else. What used to happen at the end was nothing: they
+-- were left standing in an empty arena, or on whatever the bucket dropped
+-- them into. These two remember where they came from and put them back.
+-- ---------------------------------------------------------------------------
+local returnPoint = nil
+
+--- Records where the player is standing, for as long as it takes to get back.
+--- Called on the way out, and only then — a second call while already away
+--- would record the arena rather than the world.
+local function rememberPoint()
+    if State.inMatch or State.training then return end
+    local cfg = Config.Return or {}
+    if cfg.enabled == false then return end
+
+    local ped = playerPed()
+    local pos = GetEntityCoords(ped)
+    local max = cfg.maxHeight or 900.0
+
+    -- Somewhere in the sky is not a place anybody chose to be, and sending
+    -- them back to it would be worse than leaving them where they are.
+    if pos.z > max then returnPoint = nil return end
+
+    returnPoint = { x = pos.x, y = pos.y, z = pos.z, h = GetEntityHeading(ped) }
+end
+
+--- Puts the player back. `which` names the way out, so each one can be turned
+--- off on its own: 'afterTraining', 'afterMatch' or 'afterSurrender'.
+local function returnHome(which)
+    local cfg = Config.Return or {}
+    if cfg.enabled == false then return end
+    if which and cfg[which] == false then return end
+
+    local target
+    if cfg.useCoords and cfg.coords then
+        target = { x = cfg.coords.x, y = cfg.coords.y, z = cfg.coords.z,
+                   h = cfg.coords.w or 0.0 }
+    else
+        target = returnPoint
+    end
+
+    returnPoint = nil
+    if not target then return end
+    teleport(target, false)
+end
+
 -- Looped effects run until something stops them. Every one started without a
 -- duration is remembered here so it can always be cleared, whatever happens
 -- next — leaving the match, disconnecting, the resource restarting. Without
@@ -863,6 +912,10 @@ local startMatchThread   -- forward declaration
 local stopSpectate       -- forward declaration
 
 RegisterNetEvent('m5rp:cl:setup', function(data)
+    -- before anything sets State.inMatch: this is the last moment the player
+    -- is still standing where they queued from
+    rememberPoint()
+
     State.inMatch    = true
     State.matchId    = data.matchId
     State.matchState = 'STARTING'
@@ -1134,6 +1187,12 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
 
     nui({ action = 'hudVisible', value = false })
     nui({ action = 'matchCleanup' })
+
+    -- Back to where they came from. Withdrawing is its own way out, so it has
+    -- its own switch: a server can send everyone to a lobby at the end of a
+    -- match and still leave a player who walked out where they stood.
+    local reason = (data and data.reason) or 'END'
+    returnHome(reason == 'LEAVE' and 'afterSurrender' or 'afterMatch')
 
     -- refresh the profile so the hub shows the new RP straight away
     TriggerServerEvent('m5rp:sv:boot')
@@ -1858,8 +1917,12 @@ RegisterNetEvent('m5rp:cl:training', function(data)
         DisplayRadar(true)
         nui({ action = 'training', data = { active = false } })
         nui({ action = 'hudVisible', value = false })
+        if wasTraining then returnHome('afterTraining') end
         return
     end
+
+    -- while still standing in the world, before the range takes over
+    rememberPoint()
 
     State.training = true
     closeMenu()

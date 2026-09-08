@@ -340,7 +340,15 @@
     <div class="hud-card hud-player" id="hud-player">
       <div class="pc-av" id="pc-av"><span class="ini">M</span></div>
       <div class="pc-body">
-        <div class="pc-name"><b id="pc-name">—</b><i class="pid" id="pc-id"></i></div>
+        <div class="pc-name">
+          <b id="pc-name">—</b><i class="pid" id="pc-id"></i>
+          <!-- what the match has cost you and what it has paid, kept to the
+               end of the name line so the card does not grow a row -->
+          <span class="pc-kd" id="pc-kd">
+            <span class="k"><svg><use href="#i-target"/></svg><b id="pc-k">0</b></span>
+            <span class="d"><svg><use href="#i-skull"/></svg><b id="pc-d">0</b></span>
+          </span>
+        </div>
         <div class="pc-bar hp" id="pc-hp-row">
           <div class="segs" id="pc-hp-segs"></div><span id="pc-hp">100</span>
         </div>

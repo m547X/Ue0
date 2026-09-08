@@ -2220,6 +2220,19 @@ function renderHud(d) {
   renderFaces('hud-faces-a', board.filter((p) => p.team === 1), meId);
   renderFaces('hud-faces-b', board.filter((p) => p.team === 2), meId);
 
+  /* Your own kills and deaths on the card under your name. They come off the
+     same scoreboard the server already sends, so nothing extra is asked for
+     and the number is the server's, not a count the client kept. */
+  const me = board.find((p) => p.userId === meId);
+  const kd = $('pc-kd');
+  if (kd) {
+    kd.classList.toggle('hidden', !me);
+    if (me) {
+      $('pc-k').textContent = me.kills || 0;
+      $('pc-d').textContent = me.deaths || 0;
+    }
+  }
+
   if (S.sbOpen) renderScoreboard();
 
   S.hudTime = d.time || 0;
