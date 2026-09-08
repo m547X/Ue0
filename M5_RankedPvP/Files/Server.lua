@@ -8448,6 +8448,34 @@ RegisterNetEvent('m5rp:sv:activity', function()
     if mp then mp.lastActivity = ms() end
 end)
 
+--- A player asking for the loadout they should be holding.
+---
+--- The client asks when it finds the ped holding none of it, which happens
+--- when something outside the match strips the ped a moment after a spawn.
+--- Nothing here is taken from the client: it names no weapon and gets back
+--- exactly what the match would have given it on a respawn, and only while
+--- the round is live and it is alive to hold it.
+RegisterNetEvent('m5rp:sv:rearm', function()
+    local src = source
+    local pd  = pdOf(src)
+    if not pd or not pd.matchId then return end
+    if not Security.allow(pd, 'rearm') then return end
+
+    local m = Matches[pd.matchId]
+    if not m or m.state ~= 'LIVE' then return end
+
+    local mp = m.players[pd.userId]
+    if not mp or not mp.connected or not mp.alive then return end
+
+    local loadout = loadoutFor(m, pd.userId)
+    if not loadout then return end
+
+    mp.lastActivity = ms()
+    TriggerClientEvent('m5rp:cl:round', src, {
+        phase = 'rearm', matchId = m.id, loadout = loadout
+    })
+end)
+
 RegisterNetEvent('m5rp:sv:fetch', function(what, data)
     local pd, src = caller(what == 'leaderboard' and 'leaderboard' or 'profile')
     if not pd then return end

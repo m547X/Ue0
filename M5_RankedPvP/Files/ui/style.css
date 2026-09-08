@@ -561,7 +561,10 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
 /* One dial drives the whole pre-round: the arc drains a second at a time, the
    number pops in behind it, and the last second turns the dial gold. The same
    block carries the round result afterwards, with the dial swapped for a word. */
-.phase{position:absolute;top:21%;left:50%;transform:translateX(-50%);z-index:42;
+/* z-index 46 puts it over the scoreboard at 45. The board opens by itself at
+   the end of a round, and it used to bury the word that says how the round
+   went — which is the one thing that has to be read at that moment. */
+.phase{position:absolute;top:21%;left:50%;transform:translateX(-50%);z-index:46;
   display:flex;flex-direction:column;align-items:center;gap:11px;
   text-align:center;pointer-events:none}
 
@@ -612,8 +615,14 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
    The word thrown across the screen as a round is decided, with a rule and a
    diamond either side of it. FIGHT, at the moment a round goes live, drops
    the flourish and glows instead — it is an alarm, not a verdict. */
-.ph-band{display:flex;align-items:center;justify-content:center;gap:22px;
-  width:min(96vw,1100px);animation:phWord .42s var(--ease)}
+.ph-band{position:relative;display:flex;align-items:center;justify-content:center;
+  gap:22px;width:min(96vw,1100px);animation:phWord .42s var(--ease)}
+/* A soft ground behind the word, so it still reads when the scoreboard has
+   opened underneath it. It fades to nothing well before its own edges, so
+   over an empty screen there is no box to see. */
+.ph-band::before{content:'';position:absolute;inset:-70% -6% -90%;z-index:-1;
+  background:radial-gradient(ellipse 46% 60% at 50% 50%,rgba(4,6,10,.82),transparent 72%);
+  pointer-events:none}
 /* the whole band is tinted from one value, so a new outcome is one line */
 .ph-band{--bnd:var(--text);--bnd-rgb:234,241,248}
 .ph-band.win {--bnd:var(--win);  --bnd-rgb:47,221,155}

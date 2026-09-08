@@ -355,10 +355,27 @@ end
 --- is disabled and weapons cannot be dropped — so an empty hand mid fight is
 --- always something else's doing, and the player has no way to recover from it.
 local nextRearm = 0
+
+--- True when the ped is holding none of the loadout it was given.
+local function holdingNothing(ped)
+    local lo = State.loadout
+    if not lo or not lo.weapons or #lo.weapons == 0 then return false end
+    ped = ped or playerPed()
+    for i = 1, #lo.weapons do
+        if HasPedGotWeapon(ped, GetHashKey(lo.weapons[i].name), false) then return false end
+    end
+    return true
+end
+
 local function rearmGuard(ped)
     local cfg = Config.Loadout or {}
     if cfg.rearmWhenEmpty == false then return end
-    if not State.roundLive or not State.alive or State.frozen then return end
+    -- Not `roundLive`, and not `not frozen`. A round based match spawns the
+    -- player frozen and only goes live once the countdown runs out, so those
+    -- two conditions switched the guard off for the whole freeze — which is
+    -- exactly the window where a spawn strips the ped and nobody notices
+    -- until the round has already started.
+    if not State.inMatch or not State.alive then return end
 
     -- the clock before the loadout: this runs every frame and only does its
     -- work once a second, so the cheapest test comes first
@@ -369,10 +386,7 @@ local function rearmGuard(ped)
     if not lo or not lo.weapons or #lo.weapons == 0 then return end
     nextRearm = t + math.floor(((cfg.rearmEvery or 1.0) * 1000))
 
-    ped = ped or playerPed()
-    for i = 1, #lo.weapons do
-        if HasPedGotWeapon(ped, GetHashKey(lo.weapons[i].name), false) then return end
-    end
+    if not holdingNothing(ped) then return end
 
     -- holding nothing from the loadout: put it back
     dbg('re-arming: the player was left with none of their loadout')
@@ -963,6 +977,15 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         nui({ action = 'event', data = {
             type = 'KILLSTREAK', extra = data.gunLevel
         } })
+
+    elseif data.phase == 'rearm' then
+        -- the answer to the client having asked for its loadout back; the
+        -- server decided what is in it, the same as on any spawn
+        if data.loadout then
+            applyLoadout(data.loadout, true)
+            nui({ action = 'toast', kind = 'ok',
+                  title = _L('LOADOUT'), message = _L('Your weapons were given back.') })
+        end
 
     elseif data.phase == 'revive' then
         -- headshot only rooms: body damage never kills
@@ -1625,6 +1648,9 @@ startMatchThread = function()
                 if State.frozen then
                     local ped = playerPed()
                     FreezeEntityPosition(ped, true)
+                    -- the countdown is part of the spawn, and a ped stripped
+                    -- during it used to stay stripped until the round started
+                    rearmGuard(ped)
 
                     -- No shooting before the round goes live. The server
                     -- already refuses damage while the match is not LIVE, so
@@ -2077,8 +2103,30 @@ do
             return State.inMatch and State.matchState ~= 'NONE'
         end
 
+        -- Asking for the loadout back is not free, so a held key cannot ask
+        -- twice a second. The server rate limits it as well.
+        local nextAsk = 0
+
         RegisterCommand('+m5rp_scoreboard', function()
-            if canShow() then nui({ action = 'scoreboard', show = true }) end
+            if not canShow() then return end
+            nui({ action = 'scoreboard', show = true })
+
+            --- The same key also puts the weapon back.
+            ---
+            --- A respawn is sometimes overtaken by another resource applying
+            --- its own inventory, and the player lands empty handed with no
+            --- way out of it. The guard on the match thread catches that on
+            --- its own, but only once a second and only while it is running,
+            --- so this gives the player something to press rather than a wait
+            --- to sit through. It asks the server, which decides what the
+            --- loadout is; the client names no weapon and gets nothing it was
+            --- not already meant to be holding.
+            local t = ms()
+            if t < nextAsk then return end
+            if not State.alive or not State.loadout then return end
+            if not holdingNothing() then return end
+            nextAsk = t + 2000
+            TriggerServerEvent('m5rp:sv:rearm')
         end, false)
 
         RegisterCommand('-m5rp_scoreboard', function()
