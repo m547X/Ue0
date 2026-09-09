@@ -580,7 +580,7 @@ RegisterNUICallback('close', function(_, cb)
 end)
 
 RegisterNUICallback('queue', function(data, cb)
-    TriggerServerEvent('m5rp:sv:queue', data.action, data.mode)
+    TriggerServerEvent('m5rp:sv:queue', data.action, data.mode, data.autoFill == true)
     cb('ok')
 end)
 

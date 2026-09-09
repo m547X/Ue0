@@ -152,6 +152,15 @@ Locale.ar = {
     ['DRAW']                      = 'تعادل',
     ['FIGHT']                     = 'قاتل',
     ['LOADOUT']                   = 'العتاد',
+    ['AUTO FILL']                 = 'تعبئة تلقائية',
+    ['A party of']                = 'مجموعة من',
+    ['cannot search']             = 'ما تقدر تبحث',
+    ['Turn on AUTO FILL to search this with a smaller party.']
+                                  = 'شغّل التعبئة التلقائية عشان تبحث هذا الطور بعدد أقل.',
+    ['Bigger modes are open. Empty slots on your side are filled by matchmaking.']
+                                  = 'الأطوار الأكبر مفتوحة. الأماكن الفاضية في فريقك يعبّيها البحث.',
+    ['Only modes that fit your party can be searched.']
+                                  = 'ما تقدر تبحث إلا الأطوار الي تناسب عدد مجموعتك.',
     ['Your weapons were given back.'] = 'رجعت أسلحتك.',
     ['RANK UP']                   = 'ترقية',
     ['RANK DOWN']                 = 'هبوط',

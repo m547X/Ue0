@@ -415,8 +415,10 @@ function showPage(page) {
   $('btn-settings').classList.toggle('on', page === 'settings');
 
   renderHeadTitle();
-  $('btn-start').classList.toggle('hidden', page !== 'ranked');
+  // the whole search column, so the switch leaves with the button
+  $('ft-find').classList.toggle('hidden', page !== 'ranked');
   $('mode-tabs').classList.toggle('hidden', page !== 'ranked');
+  renderAutoFill();
   $('btn-back').classList.toggle('hidden', !(page === 'custom' && S.room));
 
   if (page === 'leaderboard') fetchBoard();
@@ -507,12 +509,54 @@ function renderBoot(data) {
 function partySize() {
   return (S.party && S.party.members && S.party.members.length) || 1;
 }
+/* ------------------------------------------------------------- auto fill */
+/* The switch under the search button. With it on, a mode that needs more
+   people than the party has stops being locked and matchmaking fills the rest
+   of that side with whoever else is waiting. The server decides whether it is
+   offered at all; the choice is the player's and is remembered here. */
+function autoFillOffered() {
+  const af = ((S.boot && S.boot.partyQueue) || {}).autoFill;
+  return !!(af && af.enabled);
+}
+function autoFillOn() {
+  if (!autoFillOffered()) return false;
+  if (S.autoFill === undefined) {
+    let stored = null;
+    try { stored = localStorage.getItem('m5rp_autofill'); } catch (e) {}
+    const af = ((S.boot && S.boot.partyQueue) || {}).autoFill || {};
+    S.autoFill = stored === null ? af.default === true : stored === '1';
+  }
+  return S.autoFill === true;
+}
+function setAutoFill(on) {
+  S.autoFill = !!on;
+  try { localStorage.setItem('m5rp_autofill', on ? '1' : '0'); } catch (e) {}
+  renderAutoFill();
+  renderModeTabs();
+}
+function renderAutoFill() {
+  const b = $('btn-autofill');
+  if (!b) return;
+  const offered = autoFillOffered();
+  b.classList.toggle('hidden', !offered);
+  if (!offered) return;
+  const on = autoFillOn();
+  b.classList.toggle('on', on);
+  // the mode is fixed once the search is running
+  b.classList.toggle('locked', !!(S.queue && S.queue.searching));
+  b.setAttribute('aria-checked', on ? 'true' : 'false');
+  b.title = on
+    ? tx('Bigger modes are open. Empty slots on your side are filled by matchmaking.')
+    : tx('Only modes that fit your party can be searched.');
+}
+
 function modeAllowed(m) {
   const pq = (S.boot && S.boot.partyQueue) || {};
   const size = partySize();
   if (m.type === 'ffa') return true;
   if (size > m.teamSize) return false;                       // party too large
-  if (pq.lockToPartySize && size !== m.teamSize) return false;
+  // auto fill relaxes exactly one rule: the mode having to match the party
+  if (pq.lockToPartySize && size !== m.teamSize) return autoFillOn();
   return true;
 }
 
@@ -527,9 +571,16 @@ function renderModeTabs() {
     const ok = modeAllowed(m);
     const b = el('button', 'mtab' + (m.id === S.mode ? ' active' : '') + (ok ? '' : ' locked'),
       esc(m.label));
-    b.title = ok ? '' : `Your party of ${partySize()} cannot search ${m.label}`;
+    /* A mode locked only because the party is too small is a different thing
+       from one the party is too large for: the first has a way in. */
+    const fillable = autoFillOffered() && !autoFillOn()
+                  && m.type !== 'ffa' && partySize() < m.teamSize;
+    const why = fillable
+      ? tx('Turn on AUTO FILL to search this with a smaller party.')
+      : `${tx('A party of')} ${partySize()} ${tx('cannot search')} ${m.label}.`;
+    b.title = ok ? '' : why;
     b.onclick = () => {
-      if (!ok) { toast('warning', `A party of ${partySize()} cannot search ${m.label}.`, 'QUEUE'); return; }
+      if (!ok) { toast('warning', why, 'QUEUE'); return; }
       Sfx.play('click');
       S.mode = m.id;
       renderModeTabs();
@@ -758,7 +809,7 @@ function sendInvite() {
 function toggleQueue() {
   if (S.queue.searching) { post('queue', { action: 'leave' }); return; }
   Sfx.play('queue');
-  post('queue', { action: 'join', mode: S.mode });
+  post('queue', { action: 'join', mode: S.mode, autoFill: autoFillOn() });
 }
 
 /** Label of the mode the START button would queue for. */
@@ -783,6 +834,8 @@ function renderQueue(q) {
       <em id="btn-start-mode">${esc(currentModeLabel())}</em>
     </span>`;
 
+  renderAutoFill();
+
   $('searchdock').classList.toggle('hidden', !searching);
   if (!searching) { S.queue.elapsed = 0; return; }
 
@@ -791,7 +844,9 @@ function renderQueue(q) {
   const label = (modeCfg && modeCfg.label) || String(q.mode || S.mode).toUpperCase();
   const pq = (S.boot && S.boot.partyQueue) || {};
   const full = pq.fullTeamOnly && partySize() > 1;
-  $('sd-mode').textContent = full ? `${label} · VS TEAM` : label;
+  // what the search is actually doing, on the dock that stays on screen
+  $('sd-mode').textContent = q.autoFill ? `${label} · ${tx('AUTO FILL')}`
+                           : (full ? `${label} · VS TEAM` : label);
   $('sd-time').textContent = clock(S.queue.elapsed);
 }
 
@@ -3102,6 +3157,27 @@ window.addEventListener('message', (e) => {
 
 /* ============================================================== BINDINGS */
 $('btn-start').onclick = () => { Sfx.play('click'); toggleQueue(); };
+$('btn-autofill').onclick = () => {
+  if (S.queue && S.queue.searching) return;   // the mode is fixed once searching
+  Sfx.play('click');
+  const on = !autoFillOn();
+  setAutoFill(on);
+  /* Turning it off can strand the player on a mode they are no longer allowed
+     to search, so the selection is pulled back to one that fits. */
+  if (!on) {
+    const modes = (S.boot && S.boot.modes) || [];
+    const cur = modes.find((m) => m.id === S.mode);
+    if (cur && !modeAllowed(cur)) {
+      const fit = modes.find((m) => modeAllowed(m));
+      if (fit) {
+        S.mode = fit.id;
+        renderModeTabs();
+        renderSlots();
+        renderIdentityRank();
+      }
+    }
+  }
+};
 $('sd-cancel').onclick = () => post('queue', { action: 'leave' });
 $('btn-accept').onclick = () => {
   if (!S.found) return;

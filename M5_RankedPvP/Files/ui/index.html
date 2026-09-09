@@ -882,13 +882,23 @@
       <!-- modes left, the action in the middle, navigation right -->
       <div class="ft-modes" id="mode-tabs"></div>
 
-      <button class="findbtn" id="btn-start">
-        <svg><use href="#i-play"/></svg>
-        <span class="fb-text">
-          <b data-i18n="FIND MATCH">FIND MATCH</b>
-          <em id="btn-start-mode">1V1</em>
-        </span>
-      </button>
+      <!-- the action, with its own switch tucked under its right corner -->
+      <div class="ft-find" id="ft-find">
+        <button class="findbtn" id="btn-start">
+          <svg><use href="#i-play"/></svg>
+          <span class="fb-text">
+            <b data-i18n="FIND MATCH">FIND MATCH</b>
+            <em id="btn-start-mode">1V1</em>
+          </span>
+        </button>
+
+        <!-- Auto fill: unlocks the modes that need more people than you have
+             and lets matchmaking put strangers in the empty slots. -->
+        <button class="autofill hidden" id="btn-autofill" role="switch" aria-checked="false">
+          <span class="af-dot"></span>
+          <span class="af-label" data-i18n="AUTO FILL">AUTO FILL</span>
+        </button>
+      </div>
 
       <nav class="ft-nav">
         <button class="tab active" data-page="ranked"><svg><use href="#i-ranked"/></svg><span data-i18n="Lobby">Lobby</span></button>

@@ -2363,9 +2363,19 @@ function Matchmaker.modeForSize(size)
     return nil
 end
 
+--- Is auto fill something this server offers at all?
+function Matchmaker.autoFillEnabled()
+    local af = (Config.PartyQueue or {}).autoFill
+    return af ~= nil and af.enabled ~= false
+end
+
 --- Validates the requested mode against the party size.
+-- `autoFill` is the player's own switch: with it on, a mode that needs more
+-- people than the party has stops being locked and matchmaking fills the rest
+-- of their side. It is asked for by the client and granted here, so a client
+-- that asks for it on a server that has it switched off is simply refused.
 -- Returns list, errorMessage.
-function Matchmaker.resolveModes(request, size)
+function Matchmaker.resolveModes(request, size, autoFill)
     local P = Config.PartyQueue
 
     local cfg = modeCfg(request)
@@ -2374,11 +2384,15 @@ function Matchmaker.resolveModes(request, size)
         return nil, 'This mode is not available in ranked.'
     end
 
+    local filling = autoFill == true and Matchmaker.autoFillEnabled()
+
     if cfg.type ~= 'ffa' then
+        -- Never relaxed, whatever the switch says: a mode smaller than the
+        -- party has nowhere to put the rest of them.
         if size > cfg.teamSize then
             return nil, ('Your party is too large for %s.'):format(cfg.label)
         end
-        if P.lockToPartySize and size ~= cfg.teamSize then
+        if P.lockToPartySize and size ~= cfg.teamSize and not filling then
             local suggested = Matchmaker.modeForSize(size)
             return nil, suggested
                 and ('A party of %d must search %s.'):format(size, (modeCfg(suggested) or {}).label or suggested)
@@ -2389,7 +2403,7 @@ function Matchmaker.resolveModes(request, size)
     return { request }
 end
 
-function Matchmaker.join(userId, mode)
+function Matchmaker.join(userId, mode, autoFill)
     local pd = Players[userId]
     if not pd then return false, 'Player data unavailable.' end
 
@@ -2402,7 +2416,8 @@ function Matchmaker.join(userId, mode)
         members = copy(party.members)
     end
 
-    local modes, modeErr = Matchmaker.resolveModes(mode, #members)
+    local filling = autoFill == true and Matchmaker.autoFillEnabled()
+    local modes, modeErr = Matchmaker.resolveModes(mode, #members, filling)
     if not modes then return false, modeErr end
 
     -- Every member must be allowed to queue for the first mode of the set
@@ -2458,6 +2473,10 @@ function Matchmaker.join(userId, mode)
             rankId    = math.floor(totalRank / #members),
             joinedAt  = joinedAt,
             joinedMs  = joinedMs,
+            -- kept on the entry so a filled slot is visible in a log or a
+            -- dump, not because matchmaking reads it: assembling a team from
+            -- several entries is what it already did
+            autoFill  = filling or nil,
             range     = Config.Matchmaking.mmrRangeStart,
             rankRange = Config.Matchmaking.rankRangeStart
         }
@@ -2474,11 +2493,12 @@ function Matchmaker.join(userId, mode)
         if s then
             TriggerClientEvent('m5rp:cl:queue', s, {
                 state = 'SEARCHING', mode = mode, modeLabel = label,
-                modes = modes, startedAt = joinedAt
+                modes = modes, startedAt = joinedAt, autoFill = filling or nil
             })
         end
         hook('onQueueJoin', {
-            userId = members[i], name = mpd.name, mode = mode, partySize = #members
+            userId = members[i], name = mpd.name, mode = mode,
+            partySize = #members, autoFill = filling == true
         })
     end
 
@@ -8223,7 +8243,11 @@ function Server_BootPayload(pd)
         partyQueue = {
             autoMode        = Config.PartyQueue.autoMode,
             lockToPartySize = Config.PartyQueue.lockToPartySize,
-            fullTeamOnly    = ((Config.PartyQueue.teamMatching or {}).mode == 'fullTeam')
+            fullTeamOnly    = ((Config.PartyQueue.teamMatching or {}).mode == 'fullTeam'),
+            autoFill        = {
+                enabled = Matchmaker.autoFillEnabled(),
+                default = ((Config.PartyQueue.autoFill or {}).default == true)
+            }
         },
         maps    = maps,
         loadouts= loadouts,
@@ -8280,12 +8304,14 @@ RegisterNetEvent('m5rp:sv:boot', function()
     TriggerClientEvent('m5rp:cl:boot', src, Server_BootPayload(pd))
 end)
 
-RegisterNetEvent('m5rp:sv:queue', function(action, mode)
+RegisterNetEvent('m5rp:sv:queue', function(action, mode, autoFill)
     local pd, src = caller('queue')
     if not pd then return end
 
     if action == 'join' then
-        local ok, reason = Matchmaker.join(pd.userId, tostring(mode or ''))
+        -- the switch is a request, not a grant: the server decides whether it
+        -- is offered at all, so a client asking for it changes nothing here
+        local ok, reason = Matchmaker.join(pd.userId, tostring(mode or ''), autoFill == true)
         if not ok then notify(src, 'error', reason, 'QUEUE') end
     elseif action == 'leave' then
         Matchmaker.leave(pd.userId)

@@ -545,6 +545,26 @@ Config.PartyQueue = {
     -- Modes whose team size is smaller than the party can never be searched,
     -- regardless of the setting above (a party of 3 cannot play 1V1).
 
+    -- ---- AUTO FILL -----------------------------------------------------
+    -- A switch the player turns on under the search button. With it on, the
+    -- modes that need more people than they have stop being locked: a solo
+    -- can search 3V3, a duo can search 5V5, and matchmaking puts strangers
+    -- into the empty slots on their side. It is the same relaxation as
+    -- lockToPartySize = false, except each player chooses it for themselves
+    -- rather than the server choosing for everybody.
+    --
+    -- It never lets anyone into a mode smaller than their party: a group of
+    -- three still cannot search 1V1, with it on or off.
+    autoFill = {
+        -- false hides the switch and refuses it even if a client asks, so
+        -- lockToPartySize is the only thing that decides.
+        enabled = true,
+
+        -- Whether it starts on for a player who has never touched it. Their
+        -- own choice is remembered after that.
+        default = false
+    },
+
     -- How the opposing side is put together.
     teamMatching = {
         -- 'any'      : the enemy team is assembled from whatever is waiting —

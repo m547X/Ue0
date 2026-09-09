@@ -1208,6 +1208,36 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
 .ft-modes{grid-column:1;display:flex;flex-wrap:wrap;gap:7px;justify-self:start}
 .ft-modes.hidden{display:none}
 
+/* The action and its switch share the middle column, the switch tucked under
+   the button's outer corner so it reads as belonging to the search rather
+   than as another thing in the footer. */
+.ft-find{grid-column:2;position:relative;display:flex;flex-direction:column;
+  align-items:flex-end;gap:6px}
+/* Under the right hand corner in both languages, on purpose. The footer as a
+   whole mirrors — the modes and the navigation swap sides — but this one is
+   pinned to the button it belongs to rather than to the reading direction,
+   so it is always in the same place on the screen. Delete this line to have
+   it mirror with everything else. */
+html[dir="rtl"] .ft-find{align-items:flex-start}
+.ft-find.hidden{display:none}
+.ft-find > .findbtn{grid-column:auto}
+
+/* Auto fill. Small and quiet while it is off; the dot lights and the label
+   takes the accent when it is on, so a glance at the footer says whether
+   strangers are going to be put on your side. */
+.autofill{display:flex;align-items:center;gap:7px;height:22px;padding:0 10px;
+  border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.16em;
+  color:var(--dim-2);background:rgba(255,255,255,.04);
+  border:1px solid var(--edge-soft);transition:.16s var(--ease)}
+.autofill:hover{color:var(--dim);border-color:var(--edge)}
+.af-dot{width:7px;height:7px;border-radius:50%;flex:none;
+  background:rgba(255,255,255,.18);transition:.16s var(--ease)}
+.autofill.on{color:var(--red);border-color:var(--red-soft);
+  background:rgba(var(--red-rgb),.1)}
+.autofill.on .af-dot{background:var(--red);box-shadow:0 0 9px var(--red-glow)}
+/* nothing to change while a search is already running */
+.autofill.locked{opacity:.4;pointer-events:none}
+
 /* the single call to action, sized so it is never mistaken for a tab */
 .findbtn{grid-column:2;display:flex;align-items:center;justify-content:center;gap:12px;
   min-width:250px;height:58px;padding:0 30px;border-radius:11px;overflow:hidden;position:relative;
