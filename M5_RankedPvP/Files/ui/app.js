@@ -2955,6 +2955,7 @@ window.addEventListener('message', (e) => {
 
     case 'boot':
       if (d.theme) applyTheme(d.theme);
+      if (d.brand) renderBrand(d.brand);
       renderBoot(d.data);
       break;
     case 'toast': toast(d.kind, d.message, d.title); break;

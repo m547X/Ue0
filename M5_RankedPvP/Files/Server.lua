@@ -1,36 +1,5 @@
---[[
-    ============================================================================
-     M5 Ranked PvP — Files/Server.lua
-    ----------------------------------------------------------------------------
-     Server authoritative core.
 
-     Layout of this file
-        01  Utilities
-        02  vRP bridge
-        03  Database layer (schema, cache, batched writes)
-        04  Seasons
-        05  Rank / RP / MMR maths
-        06  Player registry
-        07  Security (rate limits, validation)
-        08  Discord logging
-        09  Ranked bans & penalties
-        10  Party
-        11  Queue & matchmaking
-        12  Match engine (state machine, rounds, buckets)
-        13  Combat validation (headshot one-shot, kills, damage)
-        14  Custom games
-        15  Training
-        16  Rewards / XP / missions / achievements
-        17  Anti boosting
-        18  Leaderboards / profiles / history
-        19  Admin
-        20  Net events
-        21  Commands
-        22  Master loop & lifecycle
-    ============================================================================
-]]
-
-local RES = GetCurrentResourceName()
+local RES = "M5_RankedPvP"
 
 -- ============================================================================
 -- 01. UTILITIES

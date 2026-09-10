@@ -547,6 +547,10 @@ local function openMenu(page)
         action = 'open',
         page   = page,
         theme  = Config.UI,
+        -- the server name rides with every open, exactly like the theme does.
+        -- Leaving it out here left the markup's placeholder name on screen for
+        -- anyone who opened the hub the normal way.
+        brand  = Config.Brand,
         sounds = Config.Sounds,
         text   = L,
         locale = localePayload(),
@@ -650,9 +654,9 @@ end)
 RegisterNetEvent('m5rp:cl:boot', function(payload)
     State.booted  = true
     State.profile = payload
-    -- the theme rides along so the HUD and overlays are styled from the config
-    -- even when the player never opens the hub
-    nui({ action = 'boot', data = payload, theme = Config.UI })
+    -- the theme and the server name ride along so the HUD and overlays are
+    -- styled and titled from the config even when the player never opens the hub
+    nui({ action = 'boot', data = payload, theme = Config.UI, brand = Config.Brand })
 end)
 
 RegisterNetEvent('m5rp:cl:data', function(payload)

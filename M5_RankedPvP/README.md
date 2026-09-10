@@ -16,11 +16,11 @@ M5_RankedPvP/
 │
 ├── fxmanifest.lua
 │
-├── Locale.lua             ← YOURS: every line of text the players see
-├── Export.lua             ← YOURS: your hooks, events and exports
-│
-├── Config_Client.lua      ← client settings only (safe to be public)
-├── Config_Server.lua      ← server settings only (never sent to a client)
+├── الاعدادات/              ← every file you edit lives in here
+│   ├── Locale.lua         ← YOURS: every line of text the players see
+│   ├── Export.lua         ← YOURS: your hooks, events and exports
+│   ├── Config_Client.lua  ← client settings only (safe to be public)
+│   └── Config_Server.lua  ← server settings only (never sent to a client)
 │
 ├── Files/
 │   ├── Client.lua

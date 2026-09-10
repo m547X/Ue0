@@ -1,13 +1,4 @@
---[[
-    ============================================================================
-     M5 Ranked PvP — Config_Server.lua
-    ----------------------------------------------------------------------------
-     إعدادات جهة السيرفر فقط.
-     هذا الملف ينحمّل كـ server_script فقط (شوف fxmanifest.lua) وما ينرسل لأي
-     لاعب أبداً. الويب هوك، والصلاحيات، ومعادلات الـ RP، وحدود الأنتي تشيت،
-     والجوائز — كلها هنا.
-    ============================================================================
-]]
+
 
 Config = {}
 
@@ -24,7 +15,7 @@ Config.vRP = {
     registerMenu = {
         enabled     = true,         -- تشغيل الخيار
         menu        = 'main',       -- اسم القائمة الي ينضاف لها
-        name        = 'PvP Ranked', -- اسم الخيار
+        name        = '! الرانك !',                            -- اسم الخيار بالقائمة
         description = 'M5 Ranked PvP — Competitive Hub'   -- وصفه
     }
 
@@ -1754,15 +1745,15 @@ Config.Store = {
     -- `files` بملف fxmanifest.lua واكتبه 'img/name.png').
     -- البطاقة المعلّمة افتراضية يملكها الكل وما تنباع.
     cards = {
-        { id = 'default',     name = 'Default',          rarity = 'common',    price = 0,    image = '', default = true },
-        { id = 'black_thorn', name = 'Black Thorn',      rarity = 'rare',      price = 400,  image = '' },
-        { id = 'bucket',      name = 'Bucket of Trouble',rarity = 'rare',      price = 400,  image = '' },
-        { id = 'bracelet',    name = 'The Bracelet',     rarity = 'rare',      price = 400,  image = '' },
-        { id = 'wayfinder',   name = 'Way Finder',       rarity = 'epic',      price = 750,  image = '' },
-        { id = 'op',          name = 'Op',               rarity = 'epic',      price = 750,  image = '' },
-        { id = 'insidious',   name = 'Insidious',        rarity = 'legendary', price = 1500, image = '' },
-        { id = 'infinity',    name = 'Infinity',         rarity = 'legendary', price = 2000, image = '' }
-    },
+    { id = 'default',     name = 'Default',          rarity = 'common',    price = 0,    image = '', default = true },
+    { id = 'black_thorn', name = 'Black Thorn',      rarity = 'rare',      price = 200,  image = 'https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=600&q=85' },
+    { id = 'bucket',      name = 'Bucket of Trouble',rarity = 'rare',      price = 300,  image = 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=85' },
+    { id = 'bracelet',    name = 'The Bracelet',     rarity = 'rare',      price = 400,  image = 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=600&q=85' },
+    { id = 'wayfinder',   name = 'Way Finder',       rarity = 'epic',      price = 500,  image = 'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=85' },
+    { id = 'op',          name = 'Op',               rarity = 'epic',      price = 750,  image = 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=600&q=85' },
+    { id = 'insidious',   name = 'Insidious',        rarity = 'legendary', price = 1000, image = 'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=85' },
+    { id = 'infinity',    name = 'Infinity',         rarity = 'legendary', price = 1500, image = 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=600&q=85' }
+},
 
     -- ---- الألقاب -------------------------------------------------------
     -- الحقل `color` يلوّن اللقب بكل مكان يطلع فيه الاسم.

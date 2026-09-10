@@ -1,67 +1,29 @@
---[[
-    ============================================================================
-     M5 Ranked PvP — Locale.lua
-    ----------------------------------------------------------------------------
-     Every line of text the script shows a player lives here: notifications,
-     errors, the whole menu, the match HUD and the scoreboard. Nothing
-     user-facing is written anywhere else, so this is the only file to touch to
-     change wording or add a language.
 
-     How it works
-        The English text IS the key. `Locale.ar['Party is full.']` is the Arabic
-        for it. Anything without a translation falls back to the English key
-        unchanged, so a missing line is never a blank screen and adding a
-        language can be done a few lines at a time.
-
-        %s and %d are filled in by the script. Keep them, and keep them in the
-        same order as the English line — Arabic reads right to left but the
-        placeholders are still substituted left to right.
-
-     Adding a language
-        1. Copy the `ar` block, rename it (e.g. `Locale.fr = { ... }`).
-        2. Add its code to Locale.available below.
-        3. Set Locale.default, or leave players to pick it in Settings.
-
-     This file is loaded on the client and the server, and the client hands the
-     active table to the interface, so one edit reaches all three.
-    ============================================================================
-]]
 
 Locale = {}
 
--- Language used before a player chooses one: 'en' or 'ar' (or your own).
-Locale.default = 'ar'
 
--- Fallback for any line the active language is missing. Leave as 'en'.
+Locale.default = 'en'
+
+
 Locale.fallback = 'en'
 
--- Offered in Settings > Language. Remove one to hide it.
+
 Locale.available = {
     { id = 'en', label = 'English' },
     { id = 'ar', label = 'العربية' }
 }
 
--- Right to left languages. The interface mirrors itself for these.
-Locale.rtl = { ar = true }
 
--- Language for notifications only (the toasts in the corner), whatever the
--- player has the interface set to. Useful when the server is Arabic speaking
--- but you still want the menu available in English.
---
---   'ar'  every notification is Arabic, always
---   nil   notifications follow the player's chosen language
+Locale.rtl = { ar = false }
+
+
 Locale.notifications = 'ar'
 
--- ============================================================================
--- ENGLISH — the keys. Change the text here only if you want different English;
--- if you rename a key you must rename it in every other language too.
--- ============================================================================
 
-Locale.en = {}   -- empty on purpose: the key is the English text
 
--- ============================================================================
--- ARABIC
--- ============================================================================
+Locale.en = {}   
+
 
 Locale.ar = {
 
