@@ -337,12 +337,15 @@ Config.HUD = {
     weapon = {
         enabled  = true,     -- إظهار البطاقة
         segments = 12,       -- عدد الشرط بشريط المخزن
-        -- صورة اختيارية لكل سلاح. حط الملفات بـ Files/ui/img/ وأشّر لها بـ
-        -- nui://m5_rankedpvp/Files/ui/img/<الملف>. أي سلاح مو مكتوب هنا
-        -- يترسم له شكل بديل، فتقدر تخلي القائمة فاضية والبطاقة تطلع كاملة.
+        -- صورة اختيارية لكل سلاح. حط الملف بـ Files/ui/img/ واكتب اسمه:
+        --     'pistol_mk2'         الاسم المجرّد، اختصار لملف png
+        --     'pistol_mk2.webp'    اسم الملف، لأي امتداد ثاني
+        --     'img/pistol_mk2.png' المسار كامل
+        -- والرابط الكامل يشتغل كمان. أي سلاح مو مكتوب هنا يترسم له شكل بديل،
+        -- فتقدر تخلي القائمة فاضية والبطاقة تطلع كاملة.
         images = {
-            -- ['WEAPON_PISTOL_MK2']   = 'nui://m5_rankedpvp/Files/ui/img/pistol_mk2.png',
-            -- ['WEAPON_CARBINERIFLE'] = 'nui://m5_rankedpvp/Files/ui/img/carbine.png',
+            -- ['WEAPON_PISTOL_MK2']   = 'pistol_mk2',
+            -- ['WEAPON_CARBINERIFLE'] = 'carbine.webp',
         }
     },
 

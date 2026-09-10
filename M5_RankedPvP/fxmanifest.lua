@@ -31,9 +31,14 @@ files {
     'Files/ui/index.html',
     'Files/ui/style.css',
     'Files/ui/app.js',
-    'Files/ui/img/*.png',
-    'Files/ui/img/*.jpg',
-    'Files/ui/img/*.webp'
+    -- أي صورة تحطها بمجلد img تنشحن للاعب. النجمتين ** تشمل المجلدات
+    -- الفرعية، فتقدر ترتب صورك بمجلدات جوّه img وتشتغل عادي.
+    'Files/ui/img/**/*.png',
+    'Files/ui/img/**/*.jpg',
+    'Files/ui/img/**/*.jpeg',
+    'Files/ui/img/**/*.webp',
+    'Files/ui/img/**/*.gif',
+    'Files/ui/img/**/*.svg'
 }
 
 dependencies {

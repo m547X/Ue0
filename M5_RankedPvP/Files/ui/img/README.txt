@@ -5,8 +5,15 @@ Artwork folder — every file here is optional.
   Weapon renders Config.HUD.weapon.images['WEAPON_PISTOL_MK2']
   Decorations    Config.Store.avatars[].art = 'img/deco.png'
 
-A bare name resolves to img/<name>.png. A value containing a slash or a
-scheme (https://, nui://) is used exactly as written.
+Three ways to name the same file, Files/ui/img/harbor.png:
+
+    'harbor'            a bare name, the short form for a .png
+    'harbor.png'        a file name, and how you point at a .jpg or a .webp
+    'img/harbor.png'    written out
+
+A value containing a slash or a scheme (https://, nui://, data:) is used
+exactly as written, so a full URL works anywhere a file does. Subfolders are
+fine too — 'img/weapons/ak.png'.
 
 `art` is the one field that reads a bare name as a drawing rather than a file:
 'vines' is one of the built-in drawings, 'img/vines.png' is this folder. Give

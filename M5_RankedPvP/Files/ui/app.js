@@ -139,11 +139,23 @@ function mapArt(id, forced) {
   // background-image, not the shorthand: the caller may also set a size/position
   return `background-image:${mapGradient(id, forced)}`;
 }
-/** A bare name in the config means Files/ui/img/<name>.png; a path or URL is used as is. */
+/** Turns whatever the config wrote into something the page can load.
+ *
+ *  Three forms, all meaning the same file at Files/ui/img/harbor.png:
+ *      'harbor'          a bare name, the short form
+ *      'harbor.png'      a file name, for a .jpg or a .webp
+ *      'img/harbor.png'  written out
+ *  Anything with a scheme or a slash is a path the config author wrote on
+ *  purpose and is used exactly as given, which is how a full URL works.
+ *
+ *  The middle form used to land on img/harbor.png.png, because a name with an
+ *  extension but no slash was treated as a bare name and given another one. */
+const IMG_EXT = /\.(png|jpe?g|webp|gif|svg|apng|avif)$/i;
 function imgUrl(src) {
   if (!src) return '';
   const s = String(src);
-  return /[:/]/.test(s) ? s : `img/${s}.png`;
+  if (/[:/]/.test(s)) return s;
+  return IMG_EXT.test(s) ? `img/${s}` : `img/${s}.png`;
 }
 function tierOf(rankId) {
   const r = ((S.boot && S.boot.ranks) || []).find((x) => x.id === rankId);
@@ -2023,8 +2035,11 @@ function admAction(btn) {
 /* The initial is always drawn underneath and the image laid over it, so a
    portrait that fails to load simply reveals the letter again. */
 function avatarInner(p) {
-  const img = p.avatar
-    ? `<img src="${esc(p.avatar)}" alt="" loading="lazy" onerror="this.remove()"/>`
+  // through imgUrl like every other picture, so Config.Avatars.default can name
+  // a file you shipped as well as a URL
+  const src = imgUrl(p.avatar);
+  const img = src
+    ? `<img src="${esc(src)}" alt="" loading="lazy" onerror="this.remove()"/>`
     : '';
   return `<span class="ini">${esc(initial(p.name))}</span>${img}`;
 }
