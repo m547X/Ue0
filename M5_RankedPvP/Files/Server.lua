@@ -6411,6 +6411,21 @@ function BotMatch.finish(sess, reason)
         rp  = nil,
         mvp = nil
     })
+
+    -- The result is on screen; there is nothing left to keep them stood in the
+    -- arena for. Same split as a real match: the world back now, the overlay
+    -- when its time is up. Without this a practice duel held the player for the
+    -- whole of Config.BotMatch.endDelay after it was already decided.
+    if Config.Match.returnImmediately ~= false then
+        sess.released = true
+        local s = srcOf(sess.userId)
+        if s then
+            SetPlayerRoutingBucket(s, 0)
+            TriggerClientEvent('m5rp:cl:cleanup', s, {
+                matchId = sess.id, reason = 'END', keepScreens = true
+            })
+        end
+    end
 end
 
 --- Tears the session down and puts the player back in the world.
@@ -6431,9 +6446,14 @@ function BotMatch.stop(userId, reason)
     local s = srcOf(userId)
     if s then
         TriggerClientEvent('m5rp:cl:bots', s, { matchId = sess.id, clear = true })
-        -- 'left' is the same button as walking out of a real match
-        TriggerClientEvent('m5rp:cl:cleanup', s,
-            { matchId = sess.id, reason = (reason == 'left') and 'LEAVE' or 'END' })
+        if sess.released then
+            -- already home, reading the result: only the overlay is left
+            TriggerClientEvent('m5rp:cl:endScreens', s)
+        else
+            -- 'left' is the same button as walking out of a real match
+            TriggerClientEvent('m5rp:cl:cleanup', s,
+                { matchId = sess.id, reason = (reason == 'left') and 'LEAVE' or 'END' })
+        end
         SetPlayerRoutingBucket(s, 0)
     end
 

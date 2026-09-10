@@ -2488,6 +2488,12 @@ function renderLocalHud(d) {
   segBar($('pc-ar-segs'), Math.ceil((ar / 100) * segs), segs);
   $('pc-ar-row').classList.toggle('hidden', show.armor === false);
 
+  /* The last word on a player who just went down: the bars empty and nothing
+     else is touched, because the weapon they were holding is not part of what
+     changed and rewriting the card from a payload that has no weapon in it
+     would blank it. */
+  if (d.vitalsOnly) return;
+
   /* ---- weapon card ---- */
   const gun = $('hud-gun');
   gun.classList.toggle('hidden', wcfg.enabled === false || show.weapon === false);

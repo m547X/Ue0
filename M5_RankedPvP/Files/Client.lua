@@ -261,6 +261,9 @@ do
     end
 end
 
+--- Empty hands. Hashed once rather than on every check of them.
+local UNARMED_HASH = GetHashKey('WEAPON_UNARMED')
+
 local function weaponNameFromHash(hash)
     return WEAPON_NAME_BY_HASH[hash]
 end
@@ -308,15 +311,6 @@ local function applyLoadout(loadout, settle)
         SetEntityMaxHealth(ped, (loadout.health or 100) + 100)
         SetEntityHealth(ped, (loadout.health or 100) + 100)
         SetPedArmour(ped, loadout.armor or 0)
-
-        -- A player who went down in a coma is still lying there: the framework
-        -- put them on the ground and the health going back up does not stand
-        -- them again by itself. Clearing the tasks does, and on a player who
-        -- simply respawned it is a no-op.
-        if Config.Coma and Config.Coma.enabled ~= false then
-            ClearPedTasksImmediately(ped)
-            SetPedCanRagdoll(ped, true)
-        end
 
         local primary
         if loadout.weapons then
@@ -395,11 +389,28 @@ local function rearmGuard(ped)
     if not lo or not lo.weapons or #lo.weapons == 0 then return end
     nextRearm = t + math.floor(((cfg.rearmEvery or 1.0) * 1000))
 
-    if not holdingNothing(ped) then return end
+    if holdingNothing(ped) then
+        -- none of the loadout is on the ped at all: hand the whole thing back
+        dbg('re-arming: the player was left with none of their loadout')
+        applyLoadout(lo, false)
+        return
+    end
 
-    -- holding nothing from the loadout: put it back
-    dbg('re-arming: the player was left with none of their loadout')
-    applyLoadout(lo, false)
+    -- Owning a weapon and holding one are different things, and only the second
+    -- is what a player means by "I have no gun". A ped can come out of a
+    -- respawn, or off the floor, with the loadout still in its inventory and
+    -- empty hands — and the check above is happy, because the weapon is there.
+    -- Nothing in a match puts a player deliberately unarmed, so this is always
+    -- worth undoing, and putting a weapon back in a hand that already holds one
+    -- is not possible here: it only runs when the hands are empty.
+    local ok, held = GetCurrentPedWeapon(ped, true)
+    if ok and held ~= UNARMED_HASH then return end
+
+    local first = GetHashKey(lo.weapons[1].name)
+    if HasPedGotWeapon(ped, first, false) then
+        dbg('re-arming: the loadout was there but the hands were empty')
+        SetCurrentPedWeapon(ped, first, true)
+    end
 end
 
 local function teleport(spawn, freeze)
@@ -1007,6 +1018,20 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         stopSpectate()
 
         if data.spawn then teleport(data.spawn, data.freeze == true) end
+
+        -- A player the framework put on the ground in a coma is still lying
+        -- there, and health going back up does not stand them up by itself.
+        -- Cleared here, before the loadout, and only when they are actually
+        -- down: doing it as part of arming them can knock the weapon straight
+        -- back out of their hands.
+        do
+            local ped = playerPed()
+            if IsPedRagdoll(ped) or IsPedFalling(ped) or IsPedDeadOrDying(ped, true) then
+                ClearPedTasksImmediately(ped)
+                SetPedCanRagdoll(ped, true)
+            end
+        end
+
         -- settle: the teleport above resurrected the ped, and the engine is
         -- still finishing with it for the next few frames
         if data.loadout then applyLoadout(data.loadout, true) end
@@ -1447,6 +1472,12 @@ local function combatScan(ped)
             killer = killer,
             weapon = currentWeaponName(ped)
         })
+
+        -- The HUD thread only runs while the player is alive, so this frame is
+        -- the last one that can touch the bar. Without this it freezes on
+        -- whatever it happened to show a moment ago — which in a coma is a
+        -- player lying on the floor with health still on the card.
+        nui({ action = 'localHud', data = { vitalsOnly = true, health = 0, armor = 0 } })
     end
 end
 
