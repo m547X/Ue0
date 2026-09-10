@@ -167,6 +167,49 @@ local Tunnel = module('vrp', 'lib/Tunnel')
 vRP       = Proxy.getInterface('vRP')
 vRPclient = Tunnel.getInterface('vRP', RES)
 
+-- ---------------------------------------------------------------------------
+-- Permission answers, remembered for a moment
+-- ---------------------------------------------------------------------------
+-- Every vRP.hasPermission is a Proxy round trip into the framework, and the
+-- panel asks the same handful of questions over and over: one boot payload used
+-- to fire around ninety of them, because the set of allowed admin actions is
+-- resolved by asking about every action in turn, and each of those asks about
+-- the super and admin permissions first.
+--
+-- The answer to "does this user hold this permission" does not change from one
+-- millisecond to the next, so it is remembered per user for a short window. A
+-- group added in game therefore takes effect within PERM_TTL rather than
+-- instantly; that is the whole cost, and staff changes are rare next to the
+-- number of times the question is asked.
+local PERM_TTL   = 20000
+local PermCache  = {}
+
+--- vRP.hasPermission, memoised. Always returns a boolean.
+local function hasPerm(userId, perm)
+    if not userId or not perm then return false end
+
+    local c = PermCache[userId]
+    if not c or (ms() - c.at) > PERM_TTL then
+        c = { at = ms(), map = {} }
+        PermCache[userId] = c
+    end
+
+    local v = c.map[perm]
+    if v == nil then
+        local ok, res = pcall(function() return vRP.hasPermission({ userId, perm }) end)
+        v = (ok and res) == true
+        c.map[perm] = v
+    end
+    return v
+end
+
+--- Drops what is remembered about one user, or about everyone. Called when a
+--- player leaves, and after a staff action that can change their groups, so a
+--- grant made through the panel is not held back by the window above.
+local function forgetPerms(userId)
+    if userId then PermCache[userId] = nil else PermCache = {} end
+end
+
 --- Display name. GetPlayerName is the only source: it is synchronous, always
 --- available, and costs no database round trip.
 local function playerName(user_id, source)
@@ -186,7 +229,7 @@ local function registerVrpMenu()
     vRP.registerMenuBuilder({ cfg.menu or 'main', function(add, data)
         local user_id = vRP.getUserId({ data.player })
         if not user_id then return end
-        if not Config.PublicMenu and not vRP.hasPermission({ user_id, Config.Permissions.openMenu }) then
+        if not Config.PublicMenu and not hasPerm(user_id, Config.Permissions.openMenu) then
             return
         end
 
@@ -2300,6 +2343,23 @@ local function queueList(mode)
     return Queue[mode]
 end
 
+--- Is there anything for the matchmaker to do at all?
+---
+--- The master loop asks this before running a pass and before deciding how fast
+--- to spin, so an empty server stops paying for a search over every mode four
+--- times a second. A pending ready check counts: its entries have already left
+--- the queue, and the pass is what expires it when nobody accepts.
+---
+--- Queue[mode] is created empty on first use and stays, so the lists have to be
+--- looked into rather than the table just being tested for keys.
+function Matchmaker.waiting()
+    if next(ReadyChecks) ~= nil then return true end
+    for _, list in pairs(Queue) do
+        if #list > 0 then return true end
+    end
+    return false
+end
+
 function Matchmaker.inQueue(userId)
     for mode, list in pairs(Queue) do
         for i = 1, #list do
@@ -3330,6 +3390,7 @@ function Match.create(opts)
         firstBloodTaken = false,
         surrender = nil,
         lastHudPush = 0,
+        lastAfkCheck = 0,
         forfeitTimer = {}
     }
 
@@ -4802,6 +4863,14 @@ function Match.checkAFK(m)
     if inSet(Config.AFK.ignoreStates, m.state) then return end
 
     local t = ms()
+
+    -- Config.AFK.checkInterval is what the server owner asked for; this walked
+    -- every player in every live match on every 250ms tick instead, twenty
+    -- times more often than configured. The thresholds are measured in tens of
+    -- seconds, so the extra passes could never see anything the next one would
+    -- not.
+    if (t - (m.lastAfkCheck or 0)) < (Config.AFK.checkInterval or 5000) then return end
+    m.lastAfkCheck = t
     for userId, mp in pairs(m.players) do
         if mp.connected and (mp.alive or m.settings.respawn) then
             local idle = (t - mp.lastActivity) / 1000
@@ -5356,7 +5425,7 @@ function CustomGames.create(userId, data)
         return false, 'The custom game server is full.'
     end
     if Config.CustomGames.requirePermission
-       and not vRP.hasPermission({ userId, Config.Permissions.createCustom }) then
+       and not hasPerm(userId, Config.Permissions.createCustom) then
         return false, 'You do not have permission to create custom games.'
     end
     if CustomGames.of(userId) then return false, 'You are already in a room.' end
@@ -5411,7 +5480,7 @@ function CustomGames.create(userId, data)
 
     local ranked = false
     if data.ranked and Config.CustomGames.rankedAllowed then
-        ranked = vRP.hasPermission({ userId, Config.CustomGames.rankedPermission })
+        ranked = hasPerm(userId, Config.CustomGames.rankedPermission)
     end
 
     local cfg = Config.Modes[mode]
@@ -6432,6 +6501,9 @@ function Store.equip(userId, kind, id)
     local d = Store.load(userId)
     if not d.owned[kind][id] then return false, 'You do not own that.' end
 
+    -- clicking what is already worn changes nothing, so it writes nothing
+    if d[kind] == id then return true, { kind = kind, id = id } end
+
     d[kind] = id
     storeSave(userId)
     return true, { kind = kind, id = id }
@@ -6515,6 +6587,9 @@ function Rewards.grant(pd, reward, seasonId, rewardKey)
         applied = vRP.giveInventoryItem({ pd.userId, reward.value, reward.amount or 1, true })
     elseif reward.type == 'group' then
         applied = vRP.addUserGroup({ pd.userId, reward.value })
+        -- a new group can carry permissions, so what was remembered about this
+        -- player is no longer the truth
+        forgetPerms(pd.userId)
     elseif reward.type == 'title' then
         if not inList(pd.titles, reward.value) then
             pd.titles[#pd.titles + 1] = reward.value
@@ -7118,14 +7193,24 @@ function Board.recent(userId, showMMR)
     return out
 end
 
+--- Where the player sits on their ladder.
+---
+--- Two queries, one of them a COUNT over every ranked row of the season, and it
+--- rode along with every boot payload. Cached like the rest of the board: a
+--- position that is a few seconds old is the same number to a player watching
+--- it, and it is cleared the moment anything actually moves a ladder.
 function Board.myPosition(userId, pool)
     pool = pool or (Players[userId] and Players[userId].pool) or defaultPool()
-    local rp = DB.scalar('SELECT rp FROM m5_player_ranks WHERE user_id = ? AND season_id = ? AND mode = ?',
-        { userId, Season.id(), pool })
-    if not rp then return 0 end
-    local above = DB.scalar('SELECT COUNT(*) FROM m5_player_ranks WHERE season_id = ? AND mode = ? AND placement_done = 1 AND rp > ?',
-        { Season.id(), pool, rp }) or 0
-    return (tonumber(above) or 0) + 1
+    return cached(('pos_%d_%s'):format(userId, tostring(pool)),
+        Config.Database.leaderboardCacheTime or 60000,
+        function()
+            local rp = DB.scalar('SELECT rp FROM m5_player_ranks WHERE user_id = ? AND season_id = ? AND mode = ?',
+                { userId, Season.id(), pool })
+            if not rp then return 0 end
+            local above = DB.scalar('SELECT COUNT(*) FROM m5_player_ranks WHERE season_id = ? AND mode = ? AND placement_done = 1 AND rp > ?',
+                { Season.id(), pool, rp }) or 0
+            return (tonumber(above) or 0) + 1
+        end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -7357,9 +7442,9 @@ end
 local Admin = {}
 
 function Admin.level(userId)
-    if vRP.hasPermission({ userId, Config.Permissions.superAdmin }) then return 'super' end
-    if vRP.hasPermission({ userId, Config.Permissions.admin }) then return 'admin' end
-    if vRP.hasPermission({ userId, Config.Permissions.moderator }) then return 'moderator' end
+    if hasPerm(userId, Config.Permissions.superAdmin) then return 'super' end
+    if hasPerm(userId, Config.Permissions.admin) then return 'admin' end
+    if hasPerm(userId, Config.Permissions.moderator) then return 'moderator' end
     return nil
 end
 
@@ -7367,26 +7452,43 @@ end
 -- superAdmin unlocks everything; the generic admin permission does too unless
 -- Config.Permissions.adminGrantsAll is turned off; otherwise the action's own
 -- permission is required.
+--- True when the caller holds a permission that unlocks every action on its
+--- own, so the per-action question never has to be asked.
+local function grantsEverything(userId)
+    if hasPerm(userId, Config.Permissions.superAdmin) then return true end
+    return Config.Permissions.adminGrantsAll
+       and hasPerm(userId, Config.Permissions.admin)
+end
+
+-- Left exactly as it was, question for question: with the answers remembered
+-- these are table reads now, so there is nothing here worth restructuring and
+-- changing the order would change who passes on an action that is not in the
+-- table.
 function Admin.can(userId, action)
-    if vRP.hasPermission({ userId, Config.Permissions.superAdmin }) then return true end
+    if hasPerm(userId, Config.Permissions.superAdmin) then return true end
 
     local def = Config.AdminActions[action]
     if not def then return false end
 
     if Config.Permissions.adminGrantsAll
-       and vRP.hasPermission({ userId, Config.Permissions.admin }) then
+       and hasPerm(userId, Config.Permissions.admin) then
         return true
     end
 
-    return vRP.hasPermission({ userId, def.permission }) == true
+    return hasPerm(userId, def.permission)
 end
 
 --- The set of actions a given staff member may perform. Sent to the panel so
 --- it only renders controls the caller can actually use.
 function Admin.allowed(userId)
+    -- Resolved once for the whole list. Asking it inside the loop meant the
+    -- super and admin permissions were re-checked for every action in the
+    -- table, which is where most of the cost of building a panel came from.
+    local all = grantsEverything(userId)
+
     local out = {}
     for action, def in pairs(Config.AdminActions) do
-        if Admin.can(userId, action) then
+        if all or hasPerm(userId, def.permission) then
             out[action] = {
                 label      = def.label,
                 group      = def.group,
@@ -7448,10 +7550,10 @@ end
 
 function Admin.canSeeMMR(userId)
     if Config.MMR.visibleTo == 'none' then return false end
-    if vRP.hasPermission({ userId, Config.Permissions.superAdmin }) then return true end
+    if hasPerm(userId, Config.Permissions.superAdmin) then return true end
     if Config.MMR.visibleTo == 'moderator' then return Admin.level(userId) ~= nil end
-    return vRP.hasPermission({ userId, Config.Permissions.admin })
-        or vRP.hasPermission({ userId, Config.Permissions.viewMMR })
+    return hasPerm(userId, Config.Permissions.admin)
+        or hasPerm(userId, Config.Permissions.viewMMR)
 end
 
 function Admin.dashboard(userId)
@@ -7550,16 +7652,41 @@ end
 
 --- Saves immediately and pushes a fresh payload to the player, so an admin
 --- edit shows up on their screen at once instead of after a reconnect.
-function Player.pushUpdate(userId)
+---
+--- `ladder` says whether the change moved the player on a leaderboard. RP, rank
+--- and stat edits do; coins and cosmetics do not. Only a change that did clears
+--- the leaderboard cache — wiping it for a bought card threw away every cached
+--- board and made the next player to open one pay for the rebuild.
+function Player.pushUpdate(userId, ladder)
     local pd = Players[userId]
     if not pd then return false end
 
     Player.save(pd, false)
-    Board.cache = {}
+    if ladder ~= false then Board.cache = {} end
 
     local s = srcOf(userId)
     if not s then return false end
     TriggerClientEvent('m5rp:cl:boot', s, Server_BootPayload(pd))
+    return true
+end
+
+--- The small update behind a cosmetic change: the wallet and what the player is
+--- wearing, and nothing else.
+---
+--- Equipping a card used to send a whole boot payload, which reads the profile,
+--- the leaderboard position, the missions and the ban table, and asks vRP about
+--- a long list of permissions — all to change two fields the client already had
+--- room for. Browsing the store is exactly the moment a player clicks many
+--- times in a row, so that was the worst place for it.
+function Player.pushCosmetics(userId)
+    local s = srcOf(userId)
+    if not s then return false end
+
+    TriggerClientEvent('m5rp:cl:data', s, {
+        what      = 'cosmetics',
+        coins     = Store.load(userId).coins,
+        cosmetics = Store.cosmetics(userId)
+    })
     return true
 end
 
@@ -7904,12 +8031,13 @@ function Admin.handle(adminPd, action, data)
             '%s%d coins — %s', 'STORE',
             delta > 0 and '+' or '', math.abs(delta), reason)
 
-        -- push the new balance so the store updates without a reconnect
+        -- push the new balance so the store updates without a reconnect.
+        -- Coins move nobody on a leaderboard, so this is the small update.
         local s2 = srcOf(id)
         if s2 then
             TriggerClientEvent('m5rp:cl:data', s2, { what = 'store', store = Store.payload(id) })
         end
-        Player.pushUpdate(id)
+        Player.pushCosmetics(id)
         return true, { coins = after, delta = delta }
 
     elseif action == 'addXP' then
@@ -8001,6 +8129,9 @@ function Admin.handle(adminPd, action, data)
         local cfg = Config.Modes[data.mode]
         if not cfg then return false, 'Unknown mode.' end
         cfg.enabled = data.value == true
+        -- the mode lists handed out on boot are built once, so they have to be
+        -- rebuilt after this
+        BootStatic.forget()
         Admin.audit(adminPd, action, nil, { details = { mode = data.mode, enabled = cfg.enabled } })
         return true, { ok = true }
     end
@@ -8169,10 +8300,23 @@ local function modePoolMap()
     return out
 end
 
---- Everything the client and the NUI need on open. Sensitive server config
---- (webhooks, formulas, thresholds) is never part of this payload.
-function Server_BootPayload(pd)
-    local showMMR = Admin.canSeeMMR(pd.userId)
+-- ---------------------------------------------------------------------------
+-- The half of the boot payload that is the same for everyone
+-- ---------------------------------------------------------------------------
+-- Modes, maps, loadouts, weapon presets and match types are read straight out
+-- of the config and are identical for every player and every send. Rebuilding
+-- them per payload meant twenty-five map tables and a sort on every boot, every
+-- admin edit and every store click. They are built once and handed out as they
+-- are; nothing on the client writes to them.
+--
+-- The only runtime change is the admin panel toggling a mode on or off, which
+-- calls BootStatic.forget().
+local BootStatic = { cache = nil }
+
+function BootStatic.forget() BootStatic.cache = nil end
+
+function BootStatic.get()
+    if BootStatic.cache then return BootStatic.cache end
 
     local modes = {}
     for i = 1, #Config.RankedQueueModes do
@@ -8223,6 +8367,25 @@ function Server_BootPayload(pd)
         loadouts[#loadouts + 1] = { id = key, health = l.health, armor = l.armor, weapons = #l.weapons }
     end
 
+    BootStatic.cache = {
+        modes = modes, allModes = allModes, maps = maps,
+        weaponPresets = weaponPresets, matchTypes = matchTypes,
+        loadouts = loadouts,
+        ranks = rankTableForClient(), modePool = modePoolMap()
+    }
+    return BootStatic.cache
+end
+
+--- Everything the client and the NUI need on open. Sensitive server config
+--- (webhooks, formulas, thresholds) is never part of this payload.
+function Server_BootPayload(pd)
+    local showMMR = Admin.canSeeMMR(pd.userId)
+    local st      = BootStatic.get()
+
+    local modes, allModes, maps = st.modes, st.allModes, st.maps
+    local weaponPresets, matchTypes, loadouts =
+          st.weaponPresets, st.matchTypes, st.loadouts
+
     local ban = Bans.check(pd.userId, 'RANKED')
 
     return {
@@ -8262,11 +8425,11 @@ function Server_BootPayload(pd)
         -- on. The hub switches header and progress purely from these — no
         -- round trip when the player flips between mode tabs.
         pools    = poolsForClient(pd),
-        modePool = modePoolMap(),
+        modePool = st.modePool,
         pool     = defaultPool(),
         perModeRanks = (Config.RankPools or {}).perMode ~= false,
 
-        ranks   = rankTableForClient(),
+        ranks   = st.ranks,
         rankPath= Config.RankPath,
         modes   = modes,
         allModes= allModes,
@@ -8295,12 +8458,12 @@ function Server_BootPayload(pd)
         rankBanTypes = Config.RankBan.types,
         banDurations = Config.RankBan.presetDurations,
         permissions = {
-            admin        = vRP.hasPermission({ pd.userId, Config.Permissions.admin }),
-            superAdmin   = vRP.hasPermission({ pd.userId, Config.Permissions.superAdmin }),
+            admin        = hasPerm(pd.userId, Config.Permissions.admin),
+            superAdmin   = hasPerm(pd.userId, Config.Permissions.superAdmin),
             moderator    = Admin.level(pd.userId) ~= nil,
-            spectate     = vRP.hasPermission({ pd.userId, Config.Permissions.spectate }),
+            spectate     = hasPerm(pd.userId, Config.Permissions.spectate),
             createCustom = not Config.CustomGames.requirePermission
-                           or vRP.hasPermission({ pd.userId, Config.Permissions.createCustom }),
+                           or hasPerm(pd.userId, Config.Permissions.createCustom),
             viewMMR      = showMMR
         },
         status = {
@@ -8490,7 +8653,9 @@ RegisterNetEvent('m5rp:sv:store', function(action, kind, id)
     TriggerClientEvent('m5rp:cl:data', src, {
         what = 'store', store = Store.payload(pd.userId) })
     if ok then
-        Player.pushUpdate(pd.userId)
+        -- the wallet and the worn set are the only things a purchase or an
+        -- equip changes, so that is all that is sent
+        Player.pushCosmetics(pd.userId)
         -- a card or a title is on show to the whole party, so push the roster
         -- again rather than making everyone else wait for the next change
         if action == 'equip' then PartyMgr.sync(PartyMgr.get(pd.userId)) end
@@ -8777,7 +8942,7 @@ local function registerCommand(entry, handler)
         end
         local pd = cmdPlayer(src)
         if not pd then return end
-        if entry.permission and not vRP.hasPermission({ pd.userId, entry.permission }) then
+        if entry.permission and not hasPerm(pd.userId, entry.permission) then
             notify(src, 'error', 'You do not have permission to use this command.', 'M5 RANKED')
             return
         end
@@ -9012,6 +9177,7 @@ AddEventHandler('vRP:playerLeave', function(user_id, source)
     if Training.players[user_id] then Training.stop(user_id) end
     if BotMatch.sessions[user_id] then BotMatch.stop(user_id, 'disconnected') end
     Store.forget(user_id)
+    forgetPerms(user_id)
 
     SrcToUser[pd.source or source] = nil
     UserToSrc[user_id] = nil
@@ -9073,9 +9239,26 @@ Citizen.CreateThread(function()
 
     local acc = { mm = 0, flush = 0, hook = 0, season = 0, rooms = 0, afk = 0 }
 
+    -- How long the loop sleeps when there is nothing to drive. The match state
+    -- machines need the full rate, but with no match running, no bot session
+    -- and nobody searching, the only work left is housekeeping measured in tens
+    -- of seconds — and it was still waking four times a second on an empty
+    -- server. The idle wait is capped so no accumulator overshoots the interval
+    -- it is counting toward.
+    local IDLE = math.min(1000, Config.Matchmaking.tickInterval or 2000)
+
     while true do
-        Citizen.Wait(TICK)
-        local dt = TICK
+        -- anything that needs the fast rate?
+        local busy = next(Matches) ~= nil
+                  or next(BotMatch.sessions) ~= nil
+                  or Matchmaker.waiting()
+
+        -- written out rather than `busy and TICK or IDLE`: that idiom answers
+        -- IDLE if TICK is ever nil, which would quietly halve the rate a live
+        -- match runs at instead of failing loudly
+        local dt = IDLE
+        if busy then dt = TICK end
+        Citizen.Wait(dt)
 
         -- ---- match state machines --------------------------------------
         for _, m in pairs(Matches) do
@@ -9096,8 +9279,12 @@ Citizen.CreateThread(function()
         acc.mm = acc.mm + dt
         if acc.mm >= Config.Matchmaking.tickInterval then
             acc.mm = 0
-            local ok, e = pcall(Matchmaker.tick)
-            if not ok then err('matchmaking tick failed: %s', tostring(e)) end
+            -- an empty queue has nothing to pair, and the pass walks every mode
+            -- to find that out
+            if Matchmaker.waiting() then
+                local ok, e = pcall(Matchmaker.tick)
+                if not ok then err('matchmaking tick failed: %s', tostring(e)) end
+            end
         end
 
         -- ---- custom room housekeeping ----------------------------------

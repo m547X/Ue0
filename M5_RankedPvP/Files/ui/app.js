@@ -504,6 +504,27 @@ function renderBoot(data) {
   renderCustom();
 }
 
+/** A cosmetic change, without a boot payload behind it.
+ *
+ *  Buying or equipping something moves the wallet and the worn set and nothing
+ *  else, so the server sends just those two and the identity card and the party
+ *  slots are redrawn from them. Everything else on screen was already right. */
+function applyCosmetics(p) {
+  if (!S.boot || !S.boot.player) return;
+  const pl = S.boot.player;
+  if (typeof p.coins === 'number') pl.coins = p.coins;
+  pl.cosmetics = p.cosmetics || null;
+
+  const cos = pl.cosmetics;
+  const idTitle = $('id-title');
+  if (idTitle) {
+    idTitle.textContent = (cos && cos.title) ? String(cos.title).toUpperCase() : '';
+    idTitle.style.color = (cos && cos.titleColor) || '';
+    idTitle.classList.toggle('hidden', !(cos && cos.title));
+  }
+  renderSlots();
+}
+
 /* ============================================================ RANKED PAGE */
 /** Party size drives which modes may be searched. */
 function partySize() {
@@ -2981,6 +3002,7 @@ window.addEventListener('message', (e) => {
       else if (p.what === 'matchDetail') renderMatchDetail(p.detail);
       else if (p.what === 'rewards') renderRewards(p);
       else if (p.what === 'store') renderStore(p.store);
+      else if (p.what === 'cosmetics') applyCosmetics(p);
       else if (p.what === 'admin') {
         if (p.action === 'dashboard') renderAdmin(p.result);
         else if (p.action === 'playerLookup') {
