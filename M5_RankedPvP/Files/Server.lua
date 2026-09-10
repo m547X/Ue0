@@ -19,30 +19,31 @@ local function ms()   return GetGameTimer() end
 -- Read it with `m5perf` in the server console, or /pvpperf in game as staff.
 -- `m5perf reset` starts the window again, which is how you measure one thing:
 -- reset, do the thing, read it.
-Perf = {
-    startedAt = 0,
-    db    = { calls = 0, wall = 0, kinds = {} },   -- database round trips
-    vrp   = { calls = 0, wall = 0 },               -- framework round trips
-    loop  = { ticks = 0, busy = 0, cpu = 0, worst = 0 },
-    net   = {},                                    -- inbound events, per bucket
-    boots = 0                                      -- full boot payloads built
-}
+Perf = {}
 
 function Perf.reset()
     Perf.startedAt = ms()
-    Perf.db    = { calls = 0, wall = 0, kinds = {} }
+    -- `cpu` on the database is process CPU measured across the await. A query
+    -- yields, and everything else the server does during that yield lands in
+    -- the same reading, so it is subtracted from the loop's own time rather
+    -- than reported as if this resource had spent it.
+    Perf.db    = { calls = 0, wall = 0, cpu = 0, kinds = {} }
     Perf.vrp   = { calls = 0, wall = 0 }
-    Perf.loop  = { ticks = 0, busy = 0, cpu = 0, worst = 0 }
+    Perf.loop  = { ticks = 0, busy = 0, cpu = 0, worst = 0,
+                   -- what kept the loop at the fast rate, counted per tick, so
+                   -- "busy on an empty server" stops being a guess
+                   causeMatch = 0, causeBots = 0, causeQueue = 0 }
     Perf.net   = {}
     Perf.boots = 0
 end
 Perf.reset()
 
 --- Records one database round trip. `kind` is the DB.* function that ran.
-function Perf.dbCall(kind, startedMs)
+function Perf.dbCall(kind, startedMs, startedClock)
     local d = Perf.db
     d.calls = d.calls + 1
     d.wall  = d.wall + (ms() - startedMs)
+    d.cpu   = d.cpu + (os.clock() - startedClock)
     d.kinds[kind] = (d.kinds[kind] or 0) + 1
 end
 
@@ -804,9 +805,9 @@ end
 for _, kind in ipairs({ 'query', 'single', 'scalar', 'insert', 'update', 'write' }) do
     local inner = DB[kind]
     DB[kind] = function(sql, params)
-        local t = ms()
+        local t, c = ms(), os.clock()
         local a, b = inner(sql, params)
-        Perf.dbCall(kind, t)
+        Perf.dbCall(kind, t, c)
         return a, b
     end
 end
@@ -9143,10 +9144,12 @@ local function perfReport(printer)
     local l = p.loop
     printer(('loop              %d ticks (%.0f/min), %d busy, %d idle')
         :format(l.ticks, perMin(l.ticks), l.busy, l.ticks - l.busy))
+    printer(('  busy because    match:%d  bots:%d  queue:%d')
+        :format(l.causeMatch, l.causeBots, l.causeQueue))
     printer(('loop cpu          %.1f ms total, %.3f ms avg, %.1f ms worst tick')
         :format(l.cpu * 1000, l.ticks > 0 and (l.cpu * 1000 / l.ticks) or 0,
                 l.worst * 1000))
-    printer(('loop share        %.2f%% of wall clock')
+    printer(('loop share        %.2f%% of wall clock (database waits excluded)')
         :format((l.cpu / elapsed) * 100))
 
     -- the database
@@ -9400,7 +9403,8 @@ Citizen.CreateThread(function()
     log('M5 Ranked PvP is ready (%d ranks, %d modes, %d maps)',
         #Config.Ranks, count(Config.Modes), #Config.Maps)
 
-    local acc = { mm = 0, flush = 0, hook = 0, season = 0, rooms = 0, afk = 0 }
+    local acc = { mm = 0, flush = 0, hook = 0, season = 0, rooms = 0, afk = 0,
+                  retain = 0 }
 
     -- How long the loop sleeps when there is nothing to drive. The match state
     -- machines need the full rate, but with no match running, no bot session
@@ -9411,10 +9415,13 @@ Citizen.CreateThread(function()
     local IDLE = math.min(1000, Config.Matchmaking.tickInterval or 2000)
 
     while true do
-        -- anything that needs the fast rate?
-        local busy = next(Matches) ~= nil
-                  or next(BotMatch.sessions) ~= nil
-                  or Matchmaker.waiting()
+        -- anything that needs the fast rate? Each cause is recorded, so a
+        -- report showing a busy loop on an empty server says which of the three
+        -- was true instead of leaving it to be guessed at.
+        local hasMatch = next(Matches) ~= nil
+        local hasBots  = next(BotMatch.sessions) ~= nil
+        local hasQueue = Matchmaker.waiting()
+        local busy     = hasMatch or hasBots or hasQueue
 
         -- written out rather than `busy and TICK or IDLE`: that idiom answers
         -- IDLE if TICK is ever nil, which would quietly halve the rate a live
@@ -9427,9 +9434,14 @@ Citizen.CreateThread(function()
         -- os.clock and not the game timer on purpose: a tick that waits on the
         -- database costs the server no CPU, and reading it as if it did would
         -- send anyone looking at this report after the wrong thing.
-        local cpu0 = os.clock()
+        local cpu0, dbCpu0 = os.clock(), Perf.db.cpu
         Perf.loop.ticks = Perf.loop.ticks + 1
-        if busy then Perf.loop.busy = Perf.loop.busy + 1 end
+        if busy then
+            Perf.loop.busy = Perf.loop.busy + 1
+            if hasMatch then Perf.loop.causeMatch = Perf.loop.causeMatch + 1 end
+            if hasBots  then Perf.loop.causeBots  = Perf.loop.causeBots  + 1 end
+            if hasQueue then Perf.loop.causeQueue = Perf.loop.causeQueue + 1 end
+        end
 
         -- ---- match state machines --------------------------------------
         for _, m in pairs(Matches) do
@@ -9475,18 +9487,26 @@ Citizen.CreateThread(function()
                 end
             end
 
-            -- audit log retention
-            local keepDays = Config.AdminLimits.auditRetentionDays or 0
-            if keepDays > 0 then
-                DB.update('DELETE FROM m5_admin_logs WHERE created_at < ?',
-                    { sqlDate(now() - keepDays * 86400) })
-            end
-
             -- expired avoid entries
             for userId, list in pairs(Avoid) do
                 for other, expiry in pairs(list) do
                     if expiry <= now() then list[other] = nil end
                 end
+            end
+        end
+
+        -- ---- audit log retention ---------------------------------------
+        -- Once an hour. It used to ride on the fifteen second housekeeping
+        -- pass, so a server sitting empty all night still asked the database to
+        -- find rows older than ninety days four times a minute, forever. A
+        -- retention sweep is not a thing that can be late.
+        acc.retain = acc.retain + dt
+        if acc.retain >= 3600000 then
+            acc.retain = 0
+            local keepDays = Config.AdminLimits.auditRetentionDays or 0
+            if keepDays > 0 then
+                DB.update('DELETE FROM m5_admin_logs WHERE created_at < ?',
+                    { sqlDate(now() - keepDays * 86400) })
             end
         end
 
@@ -9515,7 +9535,11 @@ Citizen.CreateThread(function()
             end
         end
 
-        local spent = os.clock() - cpu0
+        -- the loop's own CPU: what this tick burned, less whatever was burned
+        -- inside a database call it made, because that time belongs to the
+        -- whole server rather than to this resource
+        local spent = (os.clock() - cpu0) - (Perf.db.cpu - dbCpu0)
+        if spent < 0 then spent = 0 end
         Perf.loop.cpu = Perf.loop.cpu + spent
         if spent > Perf.loop.worst then Perf.loop.worst = spent end
     end
