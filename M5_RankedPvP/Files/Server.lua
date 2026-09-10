@@ -27,7 +27,12 @@ function Perf.reset()
     -- yields, and everything else the server does during that yield lands in
     -- the same reading, so it is subtracted from the loop's own time rather
     -- than reported as if this resource had spent it.
-    Perf.db    = { calls = 0, wall = 0, cpu = 0, kinds = {} }
+    Perf.db    = { calls = 0, wall = 0, cpu = 0, kinds = {},
+                   worst = 0, worstKind = '',
+                   -- what an empty query costs on this server, measured once at
+                   -- boot. If SELECT 1 is slow then nothing about the queries
+                   -- is the problem: the connection or the scheduler is.
+                   baseline = Perf.db and Perf.db.baseline or nil }
     Perf.vrp   = { calls = 0, wall = 0 }
     Perf.loop  = { ticks = 0, busy = 0, cpu = 0, worst = 0,
                    -- what kept the loop at the fast rate, counted per tick, so
@@ -40,11 +45,13 @@ Perf.reset()
 
 --- Records one database round trip. `kind` is the DB.* function that ran.
 function Perf.dbCall(kind, startedMs, startedClock)
-    local d = Perf.db
+    local d    = Perf.db
+    local took = ms() - startedMs
     d.calls = d.calls + 1
-    d.wall  = d.wall + (ms() - startedMs)
+    d.wall  = d.wall + took
     d.cpu   = d.cpu + (os.clock() - startedClock)
     d.kinds[kind] = (d.kinds[kind] or 0) + 1
+    if took > d.worst then d.worst, d.worstKind = took, kind end
 end
 
 --- Records one inbound net event, grouped by its rate limit bucket.
@@ -863,6 +870,32 @@ local function migrateRankPools()
                 :format(t))
             log('^2%s migrated', t)
         end
+    end
+end
+
+--- What a query that does no work costs on this server.
+---
+--- A round trip is a round trip: if `SELECT 1` takes fifty milliseconds then
+--- every query in the resource takes at least fifty milliseconds, and no amount
+--- of tuning the queries will change that — the connection, or the scheduler
+--- resuming the coroutine afterwards, is the cost. Measured once at boot, three
+--- times, keeping the best, so a single unlucky sample cannot slander a healthy
+--- database.
+function DB.measureBaseline()
+    local best
+    for _ = 1, 3 do
+        local t = ms()
+        MySQL.scalar.await('SELECT 1')
+        local took = ms() - t
+        if not best or took < best then best = took end
+    end
+    Perf.db.baseline = best
+    log('database round trip baseline: %d ms (SELECT 1)', best or -1)
+    if best and best >= 20 then
+        err('a query that does nothing takes %d ms on this server. Every query '
+            .. 'this resource makes pays that before it does any work. Check '
+            .. 'where MySQL is hosted and how oxmysql is configured — this is '
+            .. 'not something the resource can tune away.', best)
     end
 end
 
@@ -9146,21 +9179,45 @@ local function perfReport(printer)
         :format(l.ticks, perMin(l.ticks), l.busy, l.ticks - l.busy))
     printer(('  busy because    match:%d  bots:%d  queue:%d')
         :format(l.causeMatch, l.causeBots, l.causeQueue))
-    printer(('loop cpu          %.1f ms total, %.3f ms avg, %.1f ms worst tick')
+    printer(('loop cpu          %.1f ms total, %.3f ms avg, %.0f ms worst tick')
         :format(l.cpu * 1000, l.ticks > 0 and (l.cpu * 1000 / l.ticks) or 0,
                 l.worst * 1000))
     printer(('loop share        %.2f%% of wall clock (database waits excluded)')
         :format((l.cpu / elapsed) * 100))
+    printer('  note            the clock here has 1 ms steps, so the total is '
+            .. 'sound and a single tick is not')
 
     -- the database
-    local d = p.db
+    local d   = p.db
+    local avg = d.calls > 0 and (d.wall / d.calls) or 0
     printer(('database          %d calls (%.0f/min), %d ms waiting, %.1f ms avg')
-        :format(d.calls, perMin(d.calls), d.wall,
-                d.calls > 0 and (d.wall / d.calls) or 0))
+        :format(d.calls, perMin(d.calls), d.wall, avg))
     local kinds = {}
     for k, n in pairs(d.kinds) do kinds[#kinds + 1] = ('%s:%d'):format(k, n) end
     table.sort(kinds)
     printer(('  by kind         %s'):format(#kinds > 0 and table.concat(kinds, '  ') or 'none'))
+    if d.calls > 0 then
+        printer(('  slowest one     %d ms (%s)'):format(d.worst, d.worstKind))
+    end
+
+    -- the number that says whose problem the database time is
+    if d.baseline then
+        local verdict
+        if d.baseline >= 20 then
+            verdict = 'SLOW — every query pays this before doing any work, '
+                   .. 'so this is the connection, not the queries'
+        elseif d.baseline >= 5 then
+            verdict = 'high for a local database'
+        else
+            verdict = 'healthy'
+        end
+        printer(('  round trip      %d ms for SELECT 1 — %s')
+            :format(d.baseline, verdict))
+        if avg > 0 and d.baseline > 0 then
+            printer(('  of which        %.0f%% of the average call is that round trip')
+                :format(math.min(100, (d.baseline / avg) * 100)))
+        end
+    end
 
     -- the framework
     printer(('vrp permissions   %d real asks (%.0f/min), %d ms — the rest came from cache')
@@ -9374,6 +9431,7 @@ Citizen.CreateThread(function()
     Citizen.Wait(1500)
 
     DB.init()
+    pcall(DB.measureBaseline)
     Season.load()
 
     -- From here on a profile can be loaded safely: the tables exist and
