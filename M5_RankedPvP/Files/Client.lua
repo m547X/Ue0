@@ -309,6 +309,15 @@ local function applyLoadout(loadout, settle)
         SetEntityHealth(ped, (loadout.health or 100) + 100)
         SetPedArmour(ped, loadout.armor or 0)
 
+        -- A player who went down in a coma is still lying there: the framework
+        -- put them on the ground and the health going back up does not stand
+        -- them again by itself. Clearing the tasks does, and on a player who
+        -- simply respawned it is a no-op.
+        if Config.Coma and Config.Coma.enabled ~= false then
+            ClearPedTasksImmediately(ped)
+            SetPedCanRagdoll(ped, true)
+        end
+
         local primary
         if loadout.weapons then
             for i = 1, #loadout.weapons do
@@ -1311,6 +1320,61 @@ AddEventHandler('gameEventTriggered', function(name, args)
     end
 end)
 
+-- ---------------------------------------------------------------------------
+-- Coma
+-- ---------------------------------------------------------------------------
+-- vRP does not let a player die: it drops them to a floor — twenty by default —
+-- and leaves them there in a coma. To the engine they are alive and unhurt from
+-- that point on, which used to mean the round waited for a death that was never
+-- coming, and the health bar sat on twenty while its owner was face down.
+--
+-- Everything below works on the 0-100 scale the HUD shows, not on the engine's
+-- 100-200, so `Config.Coma.health` is the number a player actually sees.
+
+--- The floor, or nil when the server has no coma system.
+local function comaFloor()
+    local c = Config.Coma
+    if not c or c.enabled == false then return nil end
+    local v = tonumber(c.health)
+    if not v or v <= 0 then return nil end
+    return v
+end
+
+--- Health on the HUD's scale: 0 is dead, whatever the engine says underneath.
+local function displayHealth(ped)
+    local raw = GetEntityHealth(ped) - 100
+    if raw < 0 then raw = 0 end
+
+    local floor = comaFloor()
+    if not floor or Config.Coma.rescaleHud == false then return raw end
+
+    -- Everything at or under the floor reads as nothing left, and what is above
+    -- it is stretched back over the full bar, so a bar that empties means the
+    -- player is out rather than "twenty left and lying down".
+    local maxHp = tonumber(State.settings and State.settings.health) or 100
+    if maxHp <= floor then return raw end
+    if raw <= floor then return 0 end
+    return math.floor(((raw - floor) / (maxHp - floor)) * maxHp + 0.5)
+end
+
+--- Is this player out of the fight — dead, or held in a coma at the floor?
+---
+--- Measured on the same 0-100 scale as the bar, so nothing is left resting on
+--- how quickly IsEntityDead catches up. On this scale the engine's 100 is
+--- nothing left, and a coma floor sits a little above it.
+local function isDown(ped)
+    if IsEntityDead(ped) then return true end
+
+    local hp = GetEntityHealth(ped) - 100
+    if hp <= 0 then return true end
+
+    local floor = comaFloor()
+    if floor and Config.Coma.countsAsDeath ~= false then
+        return hp <= floor
+    end
+    return false
+end
+
 --- Per frame combat scan. Only ever runs inside a live round while alive.
 local function combatScan(ped)
     ped = ped or playerPed()
@@ -1354,7 +1418,9 @@ local function combatScan(ped)
     State.lastArmor  = armor
 
     -- ---- death ---------------------------------------------------------
-    if (IsEntityDead(ped) or health <= 0) and not State.reportedDeath then
+    -- A coma counts: the player is on the floor and the round has to move on,
+    -- whatever the engine thinks about whether they are alive.
+    if isDown(ped) and not State.reportedDeath then
         State.reportedDeath = true
         State.alive = false
 
@@ -1684,7 +1750,7 @@ startMatchThread = function()
                         -- the magazine bar needs the capacity, not just the count
                         clipMax = GetMaxAmmoInClip(ped, weapon, true) or 0
                     end
-                    local health = math.max(0, GetEntityHealth(ped) - 100)
+                    local health = displayHealth(ped)
                     local armor  = GetPedArmour(ped)
                     local name   = (ok and WEAPON_NAME_BY_HASH[weapon]) or 'WEAPON_UNARMED'
 
