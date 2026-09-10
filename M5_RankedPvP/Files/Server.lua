@@ -29,6 +29,8 @@ function Perf.reset()
     -- than reported as if this resource had spent it.
     Perf.db    = { calls = 0, wall = 0, cpu = 0, kinds = {},
                    worst = 0, worstKind = '',
+                   reads  = { n = 0, wall = 0 },
+                   writes = { n = 0, wall = 0 },
                    -- what an empty query costs on this server, measured once at
                    -- boot. If SELECT 1 is slow then nothing about the queries
                    -- is the problem: the connection or the scheduler is.
@@ -52,6 +54,16 @@ function Perf.dbCall(kind, startedMs, startedClock)
     d.cpu   = d.cpu + (os.clock() - startedClock)
     d.kinds[kind] = (d.kinds[kind] or 0) + 1
     if took > d.worst then d.worst, d.worstKind = took, kind end
+
+    -- Reads and writes are kept apart because the gap between them is a
+    -- diagnosis on its own: a database that reads in single digits and writes
+    -- in hundreds is flushing every commit to a slow disk, and no query is at
+    -- fault. Lumped into one average that signature is invisible.
+    local w = (kind == 'write' or kind == 'insert' or kind == 'update'
+               or kind == 'transaction')
+    local side = w and d.writes or d.reads
+    side.n    = side.n + 1
+    side.wall = side.wall + took
 end
 
 --- Records one inbound net event, grouped by its rate limit bucket.
@@ -806,6 +818,13 @@ function DB.write(sql, params)
     return true, res or 0
 end
 
+--- Does this oxmysql offer an awaitable transaction? Resolved once, so the
+--- report can say which path the flush is taking rather than leaving it to be
+--- inferred from the absence of a line.
+DB.txAvailable = type(MySQL) == 'table'
+             and type(MySQL.transaction) == 'table'
+             and type(MySQL.transaction.await) == 'function'
+
 --- Runs several writes in one round trip.
 ---
 --- This is the difference between a flush costing one trip and costing one per
@@ -828,7 +847,12 @@ function DB.transaction(list)
         return (DB.write(list[1].query, list[1].values))
     end
 
-    if MySQL.transaction then
+    -- `MySQL.transaction` alone is not enough to go on: some builds expose it as
+    -- a plain callback function with no `.await`, and calling that would throw
+    -- inside the pcall below, be read as a failed write, and leave every dirty
+    -- flag set — a flush that silently never saves and retries forever. The
+    -- awaitable form has to actually be there.
+    if DB.txAvailable then
         local t, c = ms(), os.clock()
         local ok, res = pcall(function()
             return MySQL.transaction.await(list)
@@ -9287,6 +9311,20 @@ local function perfReport(printer)
     if d.calls > 0 then
         printer(('  slowest one     %d ms (%s)'):format(d.worst, d.worstKind))
     end
+
+    -- reads against writes: the line that separates a slow query from a slow commit
+    local rAvg = d.reads.n  > 0 and (d.reads.wall  / d.reads.n)  or 0
+    local wAvg = d.writes.n > 0 and (d.writes.wall / d.writes.n) or 0
+    printer(('  reads           %d, %.1f ms avg'):format(d.reads.n, rAvg))
+    printer(('  writes          %d, %.1f ms avg'):format(d.writes.n, wAvg))
+    if d.reads.n > 0 and d.writes.n > 0 and wAvg > 50 and wAvg > rAvg * 5 then
+        printer('  >>              writes are far slower than reads: the database '
+             .. 'is flushing every commit to disk. No query is at fault — this is '
+             .. 'innodb_flush_log_at_trx_commit and the disk under it.')
+    end
+    printer(('  batching        %s'):format(DB.txAvailable
+        and 'transactions available — a flush is one round trip'
+        or  'NO transaction support in this oxmysql — every row is its own trip'))
 
     -- the number that says whose problem the database time is
     if d.baseline then
