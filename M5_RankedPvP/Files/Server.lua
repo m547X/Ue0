@@ -3599,6 +3599,7 @@ function Match.create(opts)
         surrender = nil,
         lastHudPush = 0,
         lastAfkCheck = 0,
+        lastComaCheck = 0,
         forfeitTimer = {}
     }
 
@@ -4454,6 +4455,12 @@ function Match.endMatch(m, winner, reason)
         end
     end
 
+    -- The result is on their screen; there is nothing left to keep them stood
+    -- in the arena for. The overlay stays up while they walk away from it.
+    if Config.Match.returnImmediately ~= false then
+        Match.release(m, 'END', true)
+    end
+
     -- Everything the system owed has been paid out by now, so a hook here can
     -- safely add its own rewards on top.
     do
@@ -4816,10 +4823,20 @@ end
 -- Cleanup / abort / leaving
 -- ---------------------------------------------------------------------------
 
-function Match.cleanup(m)
-    Match.setState(m, 'CLEANUP', Config.Match.cleanupTime)
+--- Hands the players back to the world, without taking the match down.
+---
+--- The result screen has its own time on it (Config.Match.matchEndTime), and
+--- the teleport home used to wait for that whole window to pass — a quarter of
+--- a minute of standing in an empty arena reading a scoreboard. The two are not
+--- the same thing: the world can be handed back the moment the match is
+--- decided, and the interface can take its time.
+---
+--- Idempotent, because the cleanup that follows calls it again.
+function Match.release(m, reason, keepScreens)
+    if m.released then return end
+    m.released = true
 
-    for userId, mp in pairs(m.players) do
+    for userId in pairs(m.players) do
         local pd = Players[userId]
         if pd then
             pd.state   = 'IDLE'
@@ -4829,7 +4846,25 @@ function Match.cleanup(m)
         local s = srcOf(userId)
         if s then
             SetPlayerRoutingBucket(s, 0)
-            TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = m.id, reason = 'END' })
+            TriggerClientEvent('m5rp:cl:cleanup', s, {
+                matchId = m.id, reason = reason or 'END',
+                keepScreens = keepScreens == true
+            })
+        end
+    end
+end
+
+function Match.cleanup(m)
+    Match.setState(m, 'CLEANUP', Config.Match.cleanupTime)
+
+    local wasReleased = m.released
+    Match.release(m, 'END', false)
+
+    -- Already home: only the overlay they were reading is left to take down.
+    if wasReleased then
+        for userId in pairs(m.players) do
+            local s = srcOf(userId)
+            if s then TriggerClientEvent('m5rp:cl:endScreens', s) end
         end
     end
 
@@ -5066,6 +5101,76 @@ end
 -- AFK
 -- ---------------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------------
+-- Coma
+-- ---------------------------------------------------------------------------
+-- The client notices a coma from the health it can see, which is instant and
+-- costs nothing, but it depends on the floor in the config matching the one the
+-- framework actually uses. vRP knows the answer for certain, so the server asks
+-- it as well: the client ends the round the moment a player goes down, and this
+-- catches anything the client's number missed.
+
+--- Whether this vRP can answer the question at all. Resolved on first use so a
+--- framework without it simply turns the watch off instead of erroring once
+--- per player per tick, forever.
+local comaSupported = nil
+
+local function comaWatchOn()
+    local cfg = Config.ComaWatch
+    if not cfg or cfg.enabled == false then return false end
+
+    if comaSupported == nil then
+        comaSupported = type(vRP) == 'table' and type(vRP.isInComa) == 'function'
+        if not comaSupported then
+            log('vRP.isInComa is not available in this framework build — the '
+             .. 'coma watch is off, and the client still ends a round from the '
+             .. 'health floor in Config.Coma')
+        end
+    end
+    return comaSupported
+end
+
+--- Is this player in a coma right now, as far as vRP is concerned?
+local function inComa(userId)
+    local ok, res = pcall(function() return vRP.isInComa({ userId }) end)
+    if not ok then
+        -- one bad call must not take the match tick with it, and must not put
+        -- the server back here every tick either
+        comaSupported = false
+        err('vRP.isInComa failed, the coma watch is now off: %s', tostring(res))
+        return false
+    end
+    return res == true
+end
+
+--- Anyone the framework is holding in a coma is out of the round, whatever the
+--- engine says about them being alive.
+function Match.checkComa(m)
+    if not comaWatchOn() then return end
+    if m.state ~= 'LIVE' then return end
+
+    local t = ms()
+    local every = tonumber(Config.ComaWatch.interval) or 2000
+    if (t - (m.lastComaCheck or 0)) < every then return end
+    m.lastComaCheck = t
+
+    for userId, mp in pairs(m.players) do
+        if mp.connected and mp.alive and inComa(userId) then
+            local pd = Players[userId]
+            if pd then
+                log('user %d is in a coma — counting it as a death in match %s',
+                    userId, tostring(m.id))
+                -- Straight down the ordinary death path, so the kill is
+                -- credited, the feed reads normally and the round ends the way
+                -- it would have. No killer is named: nothing was reported here,
+                -- and Combat.death already resolves one from the damage it
+                -- recorded itself, which is the trustworthy answer anyway.
+                Combat.death(pd, {})
+            end
+        end
+    end
+end
+
 function Match.checkAFK(m)
     if not Config.AFK.enabled then return end
     if inSet(Config.AFK.ignoreStates, m.state) then return end
@@ -5129,6 +5234,7 @@ function Match.tick(m)
 
     if m.state == 'LIVE' then
         Match.checkAFK(m)
+        Match.checkComa(m)
         Match.pushHud(m, false)
 
         -- respawn handling for deathmatch style modes
@@ -9586,6 +9692,21 @@ Citizen.CreateThread(function()
 
     log('M5 Ranked PvP is ready (%d ranks, %d modes, %d maps)',
         #Config.Ranks, count(Config.Modes), #Config.Maps)
+
+    -- A mode offered in the queue with no map behind it finds a match, gets as
+    -- far as the map vote, and aborts — which reads to the players as the
+    -- matchmaker being broken. It is worth a line at boot rather than a
+    -- cancelled match later, and it costs one pass over the config once.
+    for i = 1, #Config.RankedQueueModes do
+        local key = Config.RankedQueueModes[i]
+        local cfg = Config.Modes[key]
+        if cfg and cfg.enabled ~= false and #mapsForMode(key) == 0 then
+            err('mode %s is in Config.RankedQueueModes but no map in Config.Maps '
+             .. 'lists it. A match in this mode will be cancelled the moment it '
+             .. 'is found. Add %s to a map, or take it out of the queue list.',
+                key, key)
+        end
+    end
 
     local acc = { mm = 0, flush = 0, hook = 0, season = 0, rooms = 0, afk = 0,
                   retain = 0 }

@@ -1198,8 +1198,14 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
 
     TriggerEvent(Config.HUD.externalHudEvent, true)
 
-    nui({ action = 'hudVisible', value = false })
-    nui({ action = 'matchCleanup' })
+    -- `keepScreens` is the end of a match being handed back in two parts: the
+    -- world now, the interface when the result has been read. Without it the
+    -- overlay the player is still looking at — the result, the rank change —
+    -- would be swept away in the same breath that sends them home.
+    if not (data and data.keepScreens) then
+        nui({ action = 'hudVisible', value = false })
+        nui({ action = 'matchCleanup' })
+    end
 
     -- Back to where they came from. Withdrawing is its own way out, so it has
     -- its own switch: a server can send everyone to a lobby at the end of a
@@ -1209,6 +1215,14 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
 
     -- refresh the profile so the hub shows the new RP straight away
     TriggerServerEvent('m5rp:sv:boot')
+end)
+
+--- Takes down what was left standing when the world was handed back early.
+--- Sent once the result has had its time on screen; the player is long since
+--- home by then, so there is nothing here but the interface.
+RegisterNetEvent('m5rp:cl:endScreens', function()
+    nui({ action = 'hudVisible', value = false })
+    nui({ action = 'matchCleanup' })
 end)
 
 -- ============================================================================
