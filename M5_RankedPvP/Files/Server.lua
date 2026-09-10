@@ -152,6 +152,27 @@ local function inList(list, value)
     return false
 end
 
+--- `inList` for a list that never changes.
+---
+--- The config lists are read on the hottest paths there are — every reported
+--- hit asks whether the damage source is a valid one, every headshot asks
+--- twice more, and the AFK check asks once per match per tick — and each ask
+--- was a walk down the list. The set is built the first time a list is asked
+--- about and remembered against the list itself, so the answer becomes one
+--- table read. Only use it for a list nothing writes to at runtime; the
+--- config lists it is used on are read-only.
+local ListSets = setmetatable({}, { __mode = 'k' })
+local function inSet(list, value)
+    if not list or value == nil then return false end
+    local set = ListSets[list]
+    if not set then
+        set = {}
+        for i = 1, #list do set[list[i]] = true end
+        ListSets[list] = set
+    end
+    return set[value] == true
+end
+
 local function safeName(s, maxLen)
     if type(s) ~= 'string' then return '' end
     s = s:gsub('[%c\\]', ''):gsub('^%s+', ''):gsub('%s+$', '')
@@ -2327,7 +2348,7 @@ function Matchmaker.canQueue(pd, mode)
 
     local cfg = modeCfg(mode)
     if not cfg then return 'Unknown game mode.' end
-    if not inList(Config.RankedQueueModes, mode) then return 'This mode is not available in ranked.' end
+    if not inSet(Config.RankedQueueModes, mode) then return 'This mode is not available in ranked.' end
 
     local ban = Bans.check(pd.userId, 'RANKED') or Bans.check(pd.userId, 'MODE', mode)
     if ban then
@@ -2380,7 +2401,7 @@ function Matchmaker.resolveModes(request, size, autoFill)
 
     local cfg = modeCfg(request)
     if not cfg then return nil, 'Unknown game mode.' end
-    if not inList(Config.RankedQueueModes, request) then
+    if not inSet(Config.RankedQueueModes, request) then
         return nil, 'This mode is not available in ranked.'
     end
 
@@ -2577,12 +2598,16 @@ local function entriesCompatible(a, b)
     local rankRange = math.max(a.rankRange, b.rankRange)
     if math.abs(a.rankId - b.rankId) > rankRange then return false end
 
-    -- ping preference relaxes after a while
-    local maxPing = Config.Matchmaking.maxPing
+    -- Ping preference relaxes after a while. This is asked about every pair of
+    -- waiting entries on every matchmaking tick, so the clock is read once and
+    -- the config once rather than twice and three times per pair.
+    local MM = Config.Matchmaking
+    local maxPing = MM.maxPing
     if maxPing > 0 then
-        local waited = math.max(ms() - a.joinedMs, ms() - b.joinedMs)
-        if waited > Config.Matchmaking.pingRelaxAfter then
-            maxPing = Config.Matchmaking.pingRangeMax
+        local t = ms()
+        local waited = math.max(t - a.joinedMs, t - b.joinedMs)
+        if waited > MM.pingRelaxAfter then
+            maxPing = MM.pingRangeMax
         end
         if entryPing(a) > maxPing or entryPing(b) > maxPing then return false end
     end
@@ -2597,11 +2622,27 @@ end
 
 --- Attempts to build a full lobby. Entries are tried oldest first, and a seed
 --- that cannot be satisfied is skipped rather than blocking the whole queue.
+-- hoisted out of tryBuildLobby, which is called over and over per mode per
+-- tick: the comparator was a new closure on every one of those calls
+local function byJoinTime(x, y) return x.joinedMs < y.joinedMs end
+
 local function tryBuildLobby(mode, cfg)
     local list = queueList(mode)
     if #list == 0 then return nil end
 
-    table.sort(list, function(x, y) return x.joinedMs < y.joinedMs end)
+    -- How many people are waiting for this mode at all. A team mode cannot
+    -- fill two sides out of fewer than teamSize * 2, so counting first turns
+    -- the usual case — a mode nobody is queued for in numbers — from a scan
+    -- of every entry against every other into one pass and an exit.
+    local waiting = 0
+    for i = 1, #list do waiting = waiting + #list[i].members end
+    if cfg.type == 'ffa' then
+        if waiting < (cfg.minPlayers or 4) then return nil end
+    elseif waiting < (cfg.teamSize * 2) then
+        return nil
+    end
+
+    table.sort(list, byJoinTime)
 
     -- ---- free for all ---------------------------------------------------
     if cfg.type == 'ffa' then
@@ -2874,18 +2915,22 @@ end
 function Matchmaker.tick()
     -- expand search windows and drop stale entries
     local t = ms()
+    -- read once per tick rather than six times per waiting entry
+    local MM       = Config.Matchmaking
+    local expandMs = MM.expandInterval
+    local maxWait  = MM.maxQueueTime * 1000
     for mode, list in pairs(Queue) do
         for i = #list, 1, -1 do
             local e = list[i]
             local waited = t - e.joinedMs
 
-            local steps = math.floor(waited / Config.Matchmaking.expandInterval)
-            e.range     = math.min(Config.Matchmaking.mmrRangeStart + steps * Config.Matchmaking.mmrRangeStep,
-                                   Config.Matchmaking.mmrRangeMax)
-            e.rankRange = math.min(Config.Matchmaking.rankRangeStart + steps * Config.Matchmaking.rankRangeStep,
-                                   Config.Matchmaking.rankRangeMax)
+            local steps = math.floor(waited / expandMs)
+            e.range     = math.min(MM.mmrRangeStart + steps * MM.mmrRangeStep,
+                                   MM.mmrRangeMax)
+            e.rankRange = math.min(MM.rankRangeStart + steps * MM.rankRangeStep,
+                                   MM.rankRangeMax)
 
-            if waited > (Config.Matchmaking.maxQueueTime * 1000) then
+            if waited > maxWait then
                 for _, u in ipairs(e.members) do
                     local mpd = Players[u]
                     if mpd then mpd.state = 'IDLE' end
@@ -3215,13 +3260,24 @@ local function teamNameFor(m, team)
     return (cfg.pattern or "%s'S TEAM"):format(pick.name)
 end
 
+-- hoisted: table.sort takes it by reference, and building a fresh closure for
+-- every scoreboard was an allocation a second for every live match
+local function byTeamThenScore(a, b)
+    if a.team ~= b.team then return a.team < b.team end
+    return a.score > b.score
+end
+
+--- The scoreboard every client is sent. The second return is the same rows
+--- keyed by user id, so a caller that also needs the source or the ping of a
+--- particular player can read what was already resolved here rather than
+--- asking the engine for it again.
 local function playerListPayload(m)
-    local out = {}
+    local out, byUser = {}, {}
     for userId, mp in pairs(m.players) do
         -- resolved once: srcOf touches GetPlayerName, and this used to ask it
         -- three times for the same player on a list rebuilt every second
         local s = srcOf(userId)
-        out[#out + 1] = {
+        local row = {
             userId = userId, serverId = s,
             name = mp.name, team = mp.team,
             alive = mp.alive, connected = mp.connected,
@@ -3231,12 +3287,11 @@ local function playerListPayload(m)
             avatar = avatarFor(userId),
             ping = s and (GetPlayerPing(s) or 0) or 0
         }
+        out[#out + 1] = row
+        byUser[userId] = row
     end
-    table.sort(out, function(a, b)
-        if a.team ~= b.team then return a.team < b.team end
-        return a.score > b.score
-    end)
-    return out
+    table.sort(out, byTeamThenScore)
+    return out, byUser
 end
 
 --- Creates a match object. Shared by ranked matchmaking and custom games.
@@ -3789,6 +3844,10 @@ function Match.pushHud(m, force)
     local timeLeft = 0
     if m.stateEnd then timeLeft = math.max(0, math.floor((m.stateEnd - ms()) / 1000)) end
 
+    -- the scoreboard already resolved a source and a ping for every player;
+    -- the loop below reads them back instead of asking the engine twice
+    local board, byUser = playerListPayload(m)
+
     local payload = {
         matchId  = m.id,
         state    = m.state,
@@ -3803,15 +3862,16 @@ function Match.pushHud(m, force)
         overtime = m.overtimeCount > 0,
         killLimit= m.settings.killLimit,
         ffa      = m.ffa,
-        scoreboard = playerListPayload(m)
+        scoreboard = board
     }
 
     for userId, mp in pairs(m.players) do
-        local s = srcOf(userId)
+        local row = byUser[userId]
+        local s = row and row.serverId
         if s then
             payload.team  = mp.team
             payload.alive = mp.alive
-            payload.ping  = GetPlayerPing(s) or 0
+            payload.ping  = row.ping
             TriggerClientEvent('m5rp:cl:hud', s, payload)
         end
     end
@@ -3821,18 +3881,17 @@ end
 -- Kill / death handling
 -- ---------------------------------------------------------------------------
 
-local function addKillFeed(m, killerName, victimName, weapon, headshot, killerTeam, victimTeam)
+--- `killerId` and `victimId` come from the caller, which resolved this kill
+--- and is holding both entries. It used to walk every player in the match
+--- matching names back to ids on every single kill, to arrive at the two the
+--- caller already had.
+local function addKillFeed(m, killerName, victimName, weapon, headshot,
+                           killerTeam, victimTeam, killerId, victimId)
     Match.broadcast(m, 'm5rp:cl:killfeed', {
         killer = killerName, victim = victimName, weapon = weapon,
         headshot = headshot, killerTeam = killerTeam, victimTeam = victimTeam
     })
 
-    -- the server has already resolved this kill, so the hook sees the truth
-    local killerId, victimId
-    for userId, mp in pairs(m.players) do
-        if mp.name == killerName then killerId = userId end
-        if mp.name == victimName then victimId = userId end
-    end
     hook('onKill', {
         matchId = m.id,
         killerUserId = killerId, killerName = killerName,
@@ -3941,7 +4000,8 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
         end
         victim.damageTaken = {}
 
-        addKillFeed(m, killer.name, victim.name, weapon, headshot, killer.team, victim.team)
+        addKillFeed(m, killer.name, victim.name, weapon, headshot,
+                    killer.team, victim.team, killerId, victimId)
 
         -- gun game: every kill advances the killer to the next weapon
         if m.settings.matchType == 'gungame' then
@@ -3964,7 +4024,8 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
             end
         end
     else
-        addKillFeed(m, nil, victim.name, weapon or 'SUICIDE', false, nil, victim.team)
+        addKillFeed(m, nil, victim.name, weapon or 'SUICIDE', false,
+                    nil, victim.team, nil, victimId)
         victim.score = victim.score - 25
     end
 
@@ -4769,7 +4830,7 @@ end
 
 function Match.checkAFK(m)
     if not Config.AFK.enabled then return end
-    if inList(Config.AFK.ignoreStates, m.state) then return end
+    if inSet(Config.AFK.ignoreStates, m.state) then return end
 
     local t = ms()
     for userId, mp in pairs(m.players) do
@@ -5004,7 +5065,7 @@ function Combat.damage(victimPd, data)
     end
 
     -- Never credit environmental damage
-    if data.source and inList(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
+    if data.source and inSet(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
         return
     end
 
@@ -5025,7 +5086,7 @@ function Combat.damage(victimPd, data)
     if Config.Headshot.enabled and Config.Headshot.oneShotKill
        and m.settings.headshotOneShot
        and not (Config.Headshot.excludeMelee and Security.isMelee(weapon))
-       and not inList(Config.Headshot.excludedWeapons, weapon or '') then
+       and not inSet(Config.Headshot.excludedWeapons, weapon or '') then
 
         local shot = pd.lastShot
         if shot and shot.head and shot.target == victimPd.source
@@ -5065,17 +5126,17 @@ function Combat.headshot(victimPd, data)
 
     -- bone must be a real head bone
     local bone = tonumber(data.bone) or 0
-    if bone ~= 0 and not inList(Config.Headshot.headBones, bone) then
+    if bone ~= 0 and not inSet(Config.Headshot.headBones, bone) then
         dbg('headshot rejected: bone %d is not a head bone', bone)
         return
     end
 
     -- weapon rules
-    if inList(Config.Headshot.excludedWeapons, weapon) then return end
+    if inSet(Config.Headshot.excludedWeapons, weapon) then return end
     if Config.Headshot.excludeMelee and Security.isMelee(weapon) then return end
 
     -- environmental damage can never be a headshot
-    if data.source and inList(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
+    if data.source and inSet(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
         dbg('headshot rejected: invalid damage source %s', tostring(data.source))
         return
     end
@@ -5181,7 +5242,7 @@ function Combat.death(victimPd, data)
     end
 
     -- Environmental deaths have no killer
-    if data.source and inList(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
+    if data.source and inSet(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
         killerUserId = nil
     end
 

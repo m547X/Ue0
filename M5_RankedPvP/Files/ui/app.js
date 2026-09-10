@@ -2200,19 +2200,14 @@ const SKULL = '<span class="av-skull"><svg><use href="#i-skull"/></svg></span>';
 function renderFaces(hostId, players, meId) {
   const host = $(hostId);
   if (!host) return;
-  const html = players.map((p) => {
+  /* The row of portraits is rebuilt on every HUD push, roughly once a
+     second, and for most of a round it comes out identical. */
+  setHtml(host, players.map((p) => {
     const dead  = isDown(p);
     const state = (p.connected === false) ? ' gone' : (dead ? ' down' : '');
     const mine  = p.userId === meId ? ' me' : '';
     return avatarCell(p, 'face' + state + mine, dead ? SKULL : '');
-  }).join('');
-  /* The row of portraits is rebuilt on every HUD push, roughly once a
-     second, and for most of a round it comes out identical. Building the
-     string is cheap; handing it to innerHTML is a parse and a relayout, so
-     that only happens when the row actually changed. */
-  if (host._html === html) return;
-  host._html = html;
-  host.innerHTML = html;
+  }).join(''));
 }
 
 function renderHud(d) {
@@ -2351,8 +2346,19 @@ function renderScoreboard() {
                        : `<div class="sb-empty">${esc(tx('NO PLAYERS'))}</div>`;
   };
 
-  $('sb-rows-a').innerHTML = side(1);
-  $('sb-rows-b').innerHTML = side(2);
+  /* Held open, the board is rebuilt on every HUD push — roughly once a
+     second, for rows that mostly did not change. Building the string is
+     cheap; handing it to innerHTML is a parse and a relayout of the widest
+     panel on screen, so that only happens when it would come out different. */
+  setHtml($('sb-rows-a'), side(1));
+  setHtml($('sb-rows-b'), side(2));
+}
+
+/** innerHTML, but only when the markup actually changed. */
+function setHtml(host, html) {
+  if (!host || host._html === html) return;
+  host._html = html;
+  host.innerHTML = html;
 }
 
 function toggleScoreboard(show) {
@@ -3056,7 +3062,7 @@ window.addEventListener('message', (e) => {
       closeRankChange();
       closeResult();
       // the caches that skip a redraw belong to the match that filled them
-      ['hud-faces-a', 'hud-faces-b'].forEach((id) => {
+      ['hud-faces-a', 'hud-faces-b', 'sb-rows-a', 'sb-rows-b'].forEach((id) => {
         const n = $(id); if (n) n._html = null;
       });
       $('hud-pips')._sig = null;

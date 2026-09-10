@@ -1213,8 +1213,8 @@ local lastShotReport = 0
 --- server which player was under the crosshair and whether the impact landed on
 --- the head. The server keeps it only as corroboration — a hit is still only
 --- counted once the victim confirms taking damage.
-local function traceShot()
-    local ped = playerPed()
+local function traceShot(ped)
+    ped = ped or playerPed()
     local camCoords = GetGameplayCamCoord()
     local rot = GetGameplayCamRot(2)
     local rx, rz = math.rad(rot.x), math.rad(rot.z)
@@ -1241,15 +1241,16 @@ local function traceShot()
     }
 end
 
-local function reportShot(force)
+local function reportShot(force, ped)
     local t = ms()
     if not force and (t - lastShotReport) < SHOT_REPORT_INTERVAL then return end
     lastShotReport = t
     State.lastShotAt = t
 
-    local trace = traceShot()
+    ped = ped or playerPed()
+    local trace = traceShot(ped)
     TriggerServerEvent('m5rp:sv:combat', 'shot', {
-        weapon = currentWeaponName(),
+        weapon = currentWeaponName(ped),
         target = trace and trace.target or nil,
         head   = trace and trace.head or false,
         dist   = trace and trace.dist or 0.0
@@ -1312,7 +1313,7 @@ local function combatScan(ped)
 
     -- ---- shooting ------------------------------------------------------
     if IsPedShooting(ped) then
-        reportShot(false)
+        reportShot(false, ped)
     end
 
     -- ---- damage taken --------------------------------------------------
