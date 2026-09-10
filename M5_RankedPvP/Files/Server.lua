@@ -806,6 +806,47 @@ function DB.write(sql, params)
     return true, res or 0
 end
 
+--- Runs several writes in one round trip.
+---
+--- This is the difference between a flush costing one trip and costing one per
+--- row. On a server where a round trip is measured in tens of milliseconds —
+--- and that is most shared boxes, because the cost is the trip and not the
+--- query — saving thirty players used to mean well over a hundred trips.
+---
+--- `list` is { { query = sql, values = { ... } }, ... }. It is all or nothing:
+--- either every statement lands or none does, which is also why the callers can
+--- clear their dirty flags together on success and keep them all on failure.
+---
+--- Falls back to writing them one at a time if this build of oxmysql has no
+--- transaction support, so an older install still works, only slower.
+function DB.transaction(list)
+    if not list or #list == 0 then return true end
+
+    if #list == 1 then
+        -- a transaction around a single statement is a round trip spent on
+        -- nothing; this is the common case for one player
+        return (DB.write(list[1].query, list[1].values))
+    end
+
+    if MySQL.transaction then
+        local t, c = ms(), os.clock()
+        local ok, res = pcall(function()
+            return MySQL.transaction.await(list)
+        end)
+        Perf.dbCall('transaction', t, c)
+        if ok then return res ~= false end
+        err('transaction failed: %s', tostring(res))
+        return false
+    end
+
+    local allOk = true
+    for i = 1, #list do
+        local ok = DB.write(list[i].query, list[i].values)
+        if not ok then allOk = false end
+    end
+    return allOk
+end
+
 -- Every database call is counted, in one place rather than six. Wrapping them
 -- here keeps the functions above readable and means a new DB.* helper is
 -- counted the moment it is added to the list.
@@ -1659,18 +1700,30 @@ end
 --- is missing — which is exactly how an admin-granted rank could disappear on
 --- the next join. Upserting means the write always lands, whether the row was
 --- created at load time, dropped by a season reset, or never existed at all.
-function Player.save(pd, removeAfter)
-    if not pd then return end
+--- Gathers everything this player has outstanding, as statements rather than
+--- writes, and appends them to `out`.
+---
+--- Each entry carries a `done` closure that clears the dirty flag it belongs
+--- to. Nothing is cleared here: the caller runs the statements and calls `done`
+--- only on the ones that actually landed, so a failed write is retried on the
+--- next flush instead of being dropped.
+---
+--- Returns true when the player still has something unwritten that this pass
+--- could not collect (no active season), which is the one case where the entry
+--- must stay in memory regardless.
+local function collectSaves(pd, out)
     local seasonId = Season.id()
 
     if pd.dirtyPlayer then
-        local okWrite = DB.write([[UPDATE m5_players SET name = ?, level = ?, xp = ?, titles = ?, badges = ?,
+        out[#out + 1] = {
+            query = [[UPDATE m5_players SET name = ?, level = ?, xp = ?, titles = ?, badges = ?,
                     active_title = ?, frame = ?, settings = ?, commendations = ?, reports = ?,
                     playtime = ?, last_seen = ? WHERE user_id = ?]],
-            { pd.name, pd.level, pd.xp, jsonEncode(pd.titles), jsonEncode(pd.badges),
+            values = { pd.name, pd.level, pd.xp, jsonEncode(pd.titles), jsonEncode(pd.badges),
               pd.activeTitle, pd.frame, jsonEncode(pd.settings), pd.commendations,
-              pd.reports, pd.playtime, sqlDate(), pd.userId })
-        if okWrite then pd.dirtyPlayer = false end
+              pd.reports, pd.playtime, sqlDate(), pd.userId },
+            done = function() pd.dirtyPlayer = false end
+        }
     end
 
     -- Season 0 is not a season: it only happens if a profile was touched before
@@ -1679,9 +1732,9 @@ function Player.save(pd, removeAfter)
     if seasonId == 0 then
         if pd.dirtyRank or pd.dirtyMMR or pd.dirtyStats then
             err('no active season — holding unsaved ranked data for user %d', pd.userId)
+            return true
         end
-        if removeAfter then Players[pd.userId] = nil end
-        return
+        return false
     end
 
     -- Every pool the player has touched this session is written, not just the
@@ -1691,7 +1744,7 @@ function Player.save(pd, removeAfter)
     for pool, dirty in pairs(pd.poolDirty) do
         local e = pd.pools[pool]
         if e and dirty.rank then
-            local okWrite = DB.write([[INSERT INTO m5_player_ranks
+            out[#out + 1] = { query = [[INSERT INTO m5_player_ranks
                         (user_id, season_id, mode, rp, rank_id, division, highest_rank_id, highest_rp,
                          placement_done, placement_played, placement_data, rank_protection)
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
@@ -1702,34 +1755,29 @@ function Player.save(pd, removeAfter)
                          placement_played = VALUES(placement_played),
                          placement_data = VALUES(placement_data),
                          rank_protection = VALUES(rank_protection)]],
-                { pd.userId, seasonId, pool, e.rp, e.rankId, e.division, e.highestRankId, e.highestRP,
+                values = { pd.userId, seasonId, pool, e.rp, e.rankId, e.division, e.highestRankId, e.highestRP,
                   e.placementDone and 1 or 0, e.placementPlayed, jsonEncode(e.placementData),
-                  e.rankProtection })
-            -- keep it dirty on a failed write so the next flush retries instead
-            -- of dropping an admin grant or a match result on the floor
-            if okWrite then dirty.rank = false
-            else err('rank save failed for user %d pool %s — retrying on the next flush', pd.userId, pool) end
+                  e.rankProtection },
+                -- keep it dirty on a failed write so the next flush retries
+                -- instead of dropping an admin grant or a match result
+                done = function() dirty.rank = false end }
         end
 
         if e and dirty.mmr then
-            local okWrite = DB.write([[INSERT INTO m5_player_mmr
+            out[#out + 1] = { query = [[INSERT INTO m5_player_mmr
                         (user_id, season_id, mode, mmr, uncertainty, games, peak_mmr)
                         VALUES (?,?,?,?,?,?,?)
                         ON DUPLICATE KEY UPDATE
                          mmr = VALUES(mmr), uncertainty = VALUES(uncertainty),
                          games = VALUES(games), peak_mmr = VALUES(peak_mmr)]],
-                { pd.userId, seasonId, pool, e.mmr, e.uncertainty, e.mmrGames, e.peakMMR })
-            if okWrite then dirty.mmr = false end
+                values = { pd.userId, seasonId, pool, e.mmr, e.uncertainty, e.mmrGames, e.peakMMR },
+                done = function() dirty.mmr = false end }
         end
     end
-    -- the live flags follow whatever is still outstanding on the active pool
-    local liveDirty = pd.poolDirty[pd.pool] or { rank = false, mmr = false }
-    pd.dirtyRank = liveDirty.rank
-    pd.dirtyMMR  = liveDirty.mmr
 
     if pd.dirtyStats then
         local s = pd.stats
-        local okWrite = DB.write([[INSERT INTO m5_player_stats
+        out[#out + 1] = { query = [[INSERT INTO m5_player_stats
                     (user_id, season_id, matches, wins, losses, draws, kills, deaths, assists,
                      headshots, damage, mvp, win_streak, best_win_streak, lose_streak, clutches,
                      aces, first_bloods, rounds_won, rounds_played, leaves, afk_count, playtime,
@@ -1748,22 +1796,48 @@ function Player.save(pd, removeAfter)
                      playtime = VALUES(playtime), fav_weapon = VALUES(fav_weapon),
                      fav_map = VALUES(fav_map), weapon_stats = VALUES(weapon_stats),
                      map_stats = VALUES(map_stats)]],
-            { pd.userId, seasonId, s.matches, s.wins, s.losses, s.draws, s.kills, s.deaths,
+            values = { pd.userId, seasonId, s.matches, s.wins, s.losses, s.draws, s.kills, s.deaths,
               s.assists, s.headshots, s.damage, s.mvp, s.win_streak, s.best_win_streak,
               s.lose_streak, s.clutches, s.aces, s.first_bloods, s.rounds_won, s.rounds_played,
               s.leaves, s.afk_count, s.playtime, s.fav_weapon, s.fav_map,
-              jsonEncode(s.weapon_stats), jsonEncode(s.map_stats) })
-        if okWrite then pd.dirtyStats = false end
+              jsonEncode(s.weapon_stats), jsonEncode(s.map_stats) },
+            done = function() pd.dirtyStats = false end }
     end
+
+    return false
+end
+
+--- The live rank flags follow whatever is still outstanding on the active pool.
+local function refreshLiveDirty(pd)
+    local liveDirty = pd.poolDirty[pd.pool] or { rank = false, mmr = false }
+    pd.dirtyRank = liveDirty.rank
+    pd.dirtyMMR  = liveDirty.mmr
+end
+
+--- Is anything still waiting to be written for this player?
+local function stillPending(pd)
+    if pd.dirtyPlayer or pd.dirtyStats then return true end
+    for _, d in pairs(pd.poolDirty) do
+        if d.rank or d.mmr then return true end
+    end
+    return false
+end
+
+function Player.save(pd, removeAfter)
+    if not pd then return end
+
+    local writes = {}
+    collectSaves(pd, writes)
+
+    if DB.transaction(writes) then
+        for i = 1, #writes do writes[i].done() end
+    end
+    refreshLiveDirty(pd)
 
     -- Dropping the cache entry while something is still unwritten would throw
     -- the change away, so a failed save keeps the player in memory to retry.
     if removeAfter then
-        local poolPending = false
-        for _, d in pairs(pd.poolDirty) do
-            if d.rank or d.mmr then poolPending = true break end
-        end
-        if pd.dirtyPlayer or pd.dirtyStats or poolPending then
+        if stillPending(pd) then
             err('keeping user %d cached: unsaved data still pending', pd.userId)
         else
             Players[pd.userId] = nil
@@ -1771,10 +1845,24 @@ function Player.save(pd, removeAfter)
     end
 end
 
+--- The batch flush: everything every player has outstanding, in one round trip.
+---
+--- This used to be a loop of Player.save, so a full server cost one round trip
+--- per dirty row — a few hundred of them every flush, each paying the trip cost
+--- again. Collected together it is one.
 function Player.saveAll()
+    local writes, owners = {}, {}
     for _, pd in pairs(Players) do
-        Player.save(pd, false)
+        collectSaves(pd, writes)
+        owners[#owners + 1] = pd
     end
+
+    if #writes == 0 then return end
+
+    if DB.transaction(writes) then
+        for i = 1, #writes do writes[i].done() end
+    end
+    for i = 1, #owners do refreshLiveDirty(owners[i]) end
 end
 
 --- Recomputes the favourite weapon / map from the aggregated stat maps.
