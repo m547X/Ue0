@@ -8,6 +8,50 @@ local RES = "M5_RankedPvP"
 local function now()  return os.time() end
 local function ms()   return GetGameTimer() end
 
+-- ============================================================================
+-- 01b. PERF — where the server's time actually goes
+-- ============================================================================
+-- Counters only: a number goes up, and once a second at most a clock is read.
+-- Nothing here allocates, and nothing here is conditional on a debug flag,
+-- because a report you have to turn on first is a report nobody has when they
+-- need it.
+--
+-- Read it with `m5perf` in the server console, or /pvpperf in game as staff.
+-- `m5perf reset` starts the window again, which is how you measure one thing:
+-- reset, do the thing, read it.
+Perf = {
+    startedAt = 0,
+    db    = { calls = 0, wall = 0, kinds = {} },   -- database round trips
+    vrp   = { calls = 0, wall = 0 },               -- framework round trips
+    loop  = { ticks = 0, busy = 0, cpu = 0, worst = 0 },
+    net   = {},                                    -- inbound events, per bucket
+    boots = 0                                      -- full boot payloads built
+}
+
+function Perf.reset()
+    Perf.startedAt = ms()
+    Perf.db    = { calls = 0, wall = 0, kinds = {} }
+    Perf.vrp   = { calls = 0, wall = 0 }
+    Perf.loop  = { ticks = 0, busy = 0, cpu = 0, worst = 0 }
+    Perf.net   = {}
+    Perf.boots = 0
+end
+Perf.reset()
+
+--- Records one database round trip. `kind` is the DB.* function that ran.
+function Perf.dbCall(kind, startedMs)
+    local d = Perf.db
+    d.calls = d.calls + 1
+    d.wall  = d.wall + (ms() - startedMs)
+    d.kinds[kind] = (d.kinds[kind] or 0) + 1
+end
+
+--- Records one inbound net event, grouped by its rate limit bucket.
+function Perf.event(bucket)
+    local k = bucket or 'default'
+    Perf.net[k] = (Perf.net[k] or 0) + 1
+end
+
 local function log(fmt, ...)
     print(('[M5RP] ' .. fmt):format(...))
 end
@@ -196,7 +240,12 @@ local function hasPerm(userId, perm)
 
     local v = c.map[perm]
     if v == nil then
+        -- a real trip into the framework: this is the number the cache exists
+        -- to keep down, so it is the one worth counting
+        local t = ms()
         local ok, res = pcall(function() return vRP.hasPermission({ userId, perm }) end)
+        Perf.vrp.calls = Perf.vrp.calls + 1
+        Perf.vrp.wall  = Perf.vrp.wall + (ms() - t)
         v = (ok and res) == true
         c.map[perm] = v
     end
@@ -747,6 +796,19 @@ function DB.write(sql, params)
         return false, 0
     end
     return true, res or 0
+end
+
+-- Every database call is counted, in one place rather than six. Wrapping them
+-- here keeps the functions above readable and means a new DB.* helper is
+-- counted the moment it is added to the list.
+for _, kind in ipairs({ 'query', 'single', 'scalar', 'insert', 'update', 'write' }) do
+    local inner = DB[kind]
+    DB[kind] = function(sql, params)
+        local t = ms()
+        local a, b = inner(sql, params)
+        Perf.dbCall(kind, t)
+        return a, b
+    end
 end
 
 --- Brings a database created before per-mode ranks up to date.
@@ -8379,6 +8441,7 @@ end
 --- Everything the client and the NUI need on open. Sensitive server config
 --- (webhooks, formulas, thresholds) is never part of this payload.
 function Server_BootPayload(pd)
+    Perf.boots = Perf.boots + 1
     local showMMR = Admin.canSeeMMR(pd.userId)
     local st      = BootStatic.get()
 
@@ -8482,7 +8545,10 @@ function Server_BootPayload(pd)
 end
 
 --- Resolves the calling player, applying the rate limit for the given bucket.
+--- Nearly every inbound event passes through here, so it is also where they are
+--- counted: a bucket running hot in the report is a client talking too much.
 local function caller(bucket)
+    Perf.event(bucket)
     local src = source
     local pd  = pdOf(src)
     if not pd then return nil end
@@ -9054,6 +9120,103 @@ registerCommand(Config.Commands.pvpstatus, function(pd, src)
         :format(live, queued, count(CustomGames.rooms), count(Players), count(UsedBuckets)))
 end)
 
+-- ---------------------------------------------------------------------------
+-- Perf report
+-- ---------------------------------------------------------------------------
+
+--- Prints where the resource's time went since the counters were last reset.
+--- Everything is given as a rate as well as a total, because "4000 queries"
+--- means nothing without knowing whether that was a minute or a day.
+local function perfReport(printer)
+    local p       = Perf
+    local elapsed = math.max(1, ms() - p.startedAt) / 1000     -- seconds
+    local mins    = elapsed / 60
+    local perMin  = function(n) return n / math.max(0.0001, mins) end
+
+    printer('---- M5 Ranked PvP — perf ----')
+    printer(('window            %.1f min'):format(mins))
+    printer(('online            %d players, %d matches, %d searching, %d rooms')
+        :format(count(Players), count(Matches), Matchmaker.searchingCount(),
+                count(CustomGames.rooms)))
+
+    -- the loop
+    local l = p.loop
+    printer(('loop              %d ticks (%.0f/min), %d busy, %d idle')
+        :format(l.ticks, perMin(l.ticks), l.busy, l.ticks - l.busy))
+    printer(('loop cpu          %.1f ms total, %.3f ms avg, %.1f ms worst tick')
+        :format(l.cpu * 1000, l.ticks > 0 and (l.cpu * 1000 / l.ticks) or 0,
+                l.worst * 1000))
+    printer(('loop share        %.2f%% of wall clock')
+        :format((l.cpu / elapsed) * 100))
+
+    -- the database
+    local d = p.db
+    printer(('database          %d calls (%.0f/min), %d ms waiting, %.1f ms avg')
+        :format(d.calls, perMin(d.calls), d.wall,
+                d.calls > 0 and (d.wall / d.calls) or 0))
+    local kinds = {}
+    for k, n in pairs(d.kinds) do kinds[#kinds + 1] = ('%s:%d'):format(k, n) end
+    table.sort(kinds)
+    printer(('  by kind         %s'):format(#kinds > 0 and table.concat(kinds, '  ') or 'none'))
+
+    -- the framework
+    printer(('vrp permissions   %d real asks (%.0f/min), %d ms — the rest came from cache')
+        :format(p.vrp.calls, perMin(p.vrp.calls), p.vrp.wall))
+
+    -- payload building
+    printer(('boot payloads     %d (%.1f/min)'):format(p.boots, perMin(p.boots)))
+
+    -- inbound events
+    local ev, total = {}, 0
+    for bucket, n in pairs(p.net) do
+        ev[#ev + 1] = { bucket = bucket, n = n }
+        total = total + n
+    end
+    table.sort(ev, function(a, b) return a.n > b.n end)
+    printer(('events in         %d (%.0f/min)'):format(total, perMin(total)))
+    for i = 1, math.min(6, #ev) do
+        printer(('  %-14s  %d (%.0f/min)')
+            :format(ev[i].bucket, ev[i].n, perMin(ev[i].n)))
+    end
+
+    -- what is being held in memory
+    local perms = 0
+    for _ in pairs(PermCache) do perms = perms + 1 end
+    local boards = 0
+    for _ in pairs(Board.cache) do boards = boards + 1 end
+    printer(('cached            %d permission sets, %d board entries, %d store profiles')
+        :format(perms, boards, count(Store.cache)))
+    printer('---- end ----')
+end
+
+--- Server console: m5perf [reset]
+RegisterCommand('m5perf', function(src, args)
+    if src ~= 0 then return end
+    if args and args[1] == 'reset' then
+        Perf.reset()
+        print('[M5RP] perf counters reset')
+        return
+    end
+    perfReport(function(line) print('[M5RP] ' .. line) end)
+end, true)
+
+--- Staff, in game: prints to their console and drops a short line on screen.
+registerCommand(Config.Commands.pvpperf, function(pd, src, args)
+    if args and args[1] == 'reset' then
+        Perf.reset()
+        notify(src, 'success', 'Perf counters reset.', 'PERF')
+        return
+    end
+
+    local lines = {}
+    perfReport(function(line) lines[#lines + 1] = line end)
+    for i = 1, #lines do
+        TriggerClientEvent('chat:addMessage', src,
+            { args = { '[M5RP]', lines[i] } })
+    end
+    notify(src, 'info', 'Perf report printed to your chat.', 'PERF')
+end)
+
 --- Server console only: prints what a player's rank looks like in memory next
 --- to what is actually stored, so "the grant did not stick" can be answered
 --- with evidence instead of a guess. Usage: m5rankinfo <userId>
@@ -9260,6 +9423,14 @@ Citizen.CreateThread(function()
         if busy then dt = TICK end
         Citizen.Wait(dt)
 
+        -- CPU spent in this tick, which is what resmon is showing you.
+        -- os.clock and not the game timer on purpose: a tick that waits on the
+        -- database costs the server no CPU, and reading it as if it did would
+        -- send anyone looking at this report after the wrong thing.
+        local cpu0 = os.clock()
+        Perf.loop.ticks = Perf.loop.ticks + 1
+        if busy then Perf.loop.busy = Perf.loop.busy + 1 end
+
         -- ---- match state machines --------------------------------------
         for _, m in pairs(Matches) do
             local ok, e = pcall(Match.tick, m)
@@ -9343,6 +9514,10 @@ Citizen.CreateThread(function()
                 if not ok then err('season rollover failed: %s', tostring(e)) end
             end
         end
+
+        local spent = os.clock() - cpu0
+        Perf.loop.cpu = Perf.loop.cpu + spent
+        if spent > Perf.loop.worst then Perf.loop.worst = spent end
     end
 end)
 

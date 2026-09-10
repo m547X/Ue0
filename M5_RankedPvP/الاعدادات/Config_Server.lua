@@ -2294,7 +2294,11 @@ Config.Commands = {
     setrank      = { enabled = true, name = 'setrank',      permission = nil },
     setrp        = { enabled = true, name = 'setrp',        permission = nil },
     givepvprp    = { enabled = true, name = 'givepvprp',    permission = nil },
-    pvpstatus    = { enabled = true, name = 'pvpstatus',    permission = 'pvp.moderator' }
+    pvpstatus    = { enabled = true, name = 'pvpstatus',    permission = 'pvp.moderator' },
+    -- تقرير الأداء: وين راح وقت السيرفر. اكتب /pvpperf يطبع لك التقرير بالشات،
+    -- و /pvpperf reset يصفّر العدادات عشان تقيس شي محدد. ونفسه بالكونسول
+    -- بالأمر m5perf و m5perf reset.
+    pvpperf      = { enabled = true, name = 'pvpperf',      permission = 'pvp.moderator' }
 }
 
 -- ============================================================================
