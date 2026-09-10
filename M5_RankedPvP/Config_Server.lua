@@ -2,85 +2,85 @@
     ============================================================================
      M5 Ranked PvP — Config_Server.lua
     ----------------------------------------------------------------------------
-     SERVER SIDE SETTINGS ONLY.
-     This file is loaded exclusively as a server_script (see fxmanifest.lua) and
-     is never sent to any client. Webhooks, permissions, RP formulas, anti-cheat
-     thresholds and reward payloads all live here.
+     إعدادات جهة السيرفر فقط.
+     هذا الملف ينحمّل كـ server_script فقط (شوف fxmanifest.lua) وما ينرسل لأي
+     لاعب أبداً. الويب هوك، والصلاحيات، ومعادلات الـ RP، وحدود الأنتي تشيت،
+     والجوائز — كلها هنا.
     ============================================================================
 ]]
 
 Config = {}
 
-Config.Debug          = false
-Config.ServerName     = 'M5 Competitive'
-Config.DefaultLocale  = 'en'
+Config.Debug          = false             -- true يطبع رسائل تتبّع بكونسول السيرفر
+Config.ServerName     = 'M5 Competitive'  -- اسم السيرفر الي يطلع بالواجهة
+Config.DefaultLocale  = 'en'              -- اللغة الافتراضية للنصوص
 
 -- ============================================================================
--- 1. FRAMEWORK (vRP)
+-- ١. الفريم ورك (vRP)
 -- ============================================================================
 
 Config.vRP = {
-    -- Register an entry inside the vRP main menu
+    -- إضافة خيار داخل قائمة vRP الرئيسية
     registerMenu = {
-        enabled     = true,
-        menu        = 'main',       -- vRP menu builder target
-        name        = 'PvP Ranked',
-        description = 'M5 Ranked PvP — Competitive Hub'
+        enabled     = true,         -- تشغيل الخيار
+        menu        = 'main',       -- اسم القائمة الي ينضاف لها
+        name        = 'PvP Ranked', -- اسم الخيار
+        description = 'M5 Ranked PvP — Competitive Hub'   -- وصفه
     }
 
-    -- Display names come from GetPlayerName only. vRP.getUserIdentity is
-    -- callback based and cannot return through the synchronous Proxy, so it is
-    -- deliberately not used anywhere in this resource.
+    -- الأسماء المعروضة تجي من GetPlayerName بس. الدالة vRP.getUserIdentity
+    -- تشتغل بـ callback وما تقدر ترجّع نتيجة عبر الـ Proxy المتزامن، فما هي
+    -- مستخدمة بأي مكان بهذا السكربت وهذا مقصود.
 }
 
 -- ============================================================================
--- 2. DATABASE (oxmysql)
+-- ٢. قاعدة البيانات (oxmysql)
 -- ============================================================================
 
 Config.Database = {
-    tablePrefix          = 'm5_',
-    autoCreateTables     = true,   -- run the schema on resource start if missing
-    -- Batched writes: stats are flushed on this interval instead of per event.
-    flushInterval        = 30000,  -- ms
-    -- Cache lifetime for read-mostly data
-    leaderboardCacheTime = 60000,  -- ms
-    profileCacheTime     = 30000,  -- ms
-    -- Rows fetched per leaderboard / history page
+    tablePrefix          = 'm5_',  -- بادئة أسماء الجداول
+    autoCreateTables     = true,   -- ينشئ الجداول عند تشغيل السكربت إذا كانت ناقصة
+    -- كتابة مجمّعة: الإحصائيات تنكتب كل هذي المدة بدل كل حدث لحاله.
+    flushInterval        = 30000,  -- ملي ثانية
+    -- مدة صلاحية الكاش للبيانات الي تنقرأ كثير وتتغير قليل
+    leaderboardCacheTime = 60000,  -- ملي ثانية
+    profileCacheTime     = 30000,  -- ملي ثانية
+    -- عدد الصفوف بكل صفحة من لوحة الصدارة والسجل
     pageSize             = 25,
     historyPageSize      = 12,
-    -- Maximum rows kept in the kill log per match (protection against spam)
+    -- أكثر عدد صفوف ينحفظ بسجل القتل لكل قيم (حماية من السبام)
     maxKillRowsPerMatch  = 800
 }
 
 -- ============================================================================
--- 3. PERMISSIONS (vRP permission strings)
+-- ٣. الصلاحيات (نصوص صلاحيات vRP)
 -- ============================================================================
 
 Config.Permissions = {
     -- ------------------------------------------------------------------
-    -- SUPER PERMISSION
-    -- A player holding this can perform EVERY admin action below without
-    -- needing any of the individual permissions. Give it to owners only.
+    -- الصلاحية العليا
+    -- الي يملكها يقدر يسوي كل أوامر الإدارة تحت بدون ما يحتاج أي صلاحية
+    -- منفصلة. لا تعطيها إلا لصاحب السيرفر.
     -- ------------------------------------------------------------------
     superAdmin = 'pvp.all',
 
-    -- Holding the generic admin permission also unlocks every action.
-    -- Set to false if you want strict per action control even for admins.
+    -- امتلاك صلاحية الإدارة العامة كمان يفتح كل الأوامر.
+    -- خلّها false إذا تبي تحكّم دقيق لكل أمر حتى على الإداريين.
     adminGrantsAll = true,
 
-    -- ---- gameplay -----------------------------------------------------
-    openMenu      = 'pvp.menu',
-    createCustom  = 'pvp.custom.create',
-    spectate      = 'pvp.spectate',
-    viewMMR       = 'pvp.mmr',
+    -- ---- اللعب --------------------------------------------------------
+    openMenu      = 'pvp.menu',           -- فتح الواجهة
+    createCustom  = 'pvp.custom.create',  -- إنشاء غرفة خاصة
+    spectate      = 'pvp.spectate',       -- المشاهدة
+    viewMMR       = 'pvp.mmr',            -- رؤية الـ MMR المخفي
 
-    -- ---- staff tiers ---------------------------------------------------
-    -- moderator: opens the admin panel in read only unless given more
-    -- admin: full staff, subject to adminGrantsAll
+    -- ---- درجات الطاقم --------------------------------------------------
+    -- المشرف: يفتح لوحة الإدارة بوضع قراءة فقط إلا إذا انعطى أكثر
+    -- الإداري: طاقم كامل، حسب إعداد adminGrantsAll
     moderator     = 'pvp.moderator',
     admin         = 'pvp.admin',
 
-    -- ---- legacy aliases (kept so existing setups keep working) --------
+    -- ---- أسماء قديمة (باقية عشان الإعدادات القديمة تضل تشتغل) ---------
     manageBans    = 'pvp.bans',
     manageSeasons = 'pvp.seasons',
     manageRewards = 'pvp.rewards',
@@ -89,26 +89,25 @@ Config.Permissions = {
 }
 
 -- ============================================================================
--- 3b. ADMIN ACTIONS — one permission per action
+-- ٣ب. أوامر الإدارة — صلاحية لكل أمر
 -- ============================================================================
--- Every entry in the admin panel is declared here. The server refuses any
--- action whose permission the caller does not hold, and the panel only renders
--- the controls the caller is allowed to use.
+-- كل خيار داخل لوحة الإدارة معرّف هنا. السيرفر يرفض أي أمر ما يملك صاحبه
+-- صلاحيته، واللوحة ما ترسم إلا الأزرار الي يقدر يستخدمها.
 --
---   permission : vRP permission string required for the action
---   label      : shown in the panel and in the audit log
---   reason     : true = a reason is mandatory
---   confirm    : true = the panel asks for confirmation first
---   group      : which panel section the control belongs to
+--   permission : نص صلاحية vRP المطلوبة للأمر
+--   label      : الي يطلع باللوحة وبسجل التدقيق
+--   reason     : true = السبب إجباري
+--   confirm    : true = اللوحة تطلب تأكيد أول
+--   group      : أي قسم باللوحة ينحط فيه الزر
 
 Config.AdminActions = {
-    -- ---- monitoring ---------------------------------------------------
+    -- ---- المراقبة ------------------------------------------------------
     dashboard     = { permission = 'pvp.admin.view',         label = 'View Dashboard',      group = 'monitor' },
     playerLookup  = { permission = 'pvp.admin.view',         label = 'Player Lookup',       group = 'monitor' },
     spectate      = { permission = 'pvp.admin.spectate',     label = 'Spectate Match',      group = 'monitor' },
     stopSpectate  = { permission = 'pvp.admin.spectate',     label = 'Stop Spectating',     group = 'monitor' },
 
-    -- ---- match control -------------------------------------------------
+    -- ---- التحكم بالقيم -------------------------------------------------
     endMatch      = { permission = 'pvp.admin.match.end',    label = 'Force End Match',     group = 'match', confirm = true, reason = true },
     restartRound  = { permission = 'pvp.admin.match.round',  label = 'Restart Round',       group = 'match' },
     movePlayer    = { permission = 'pvp.admin.match.move',   label = 'Move Player Team',    group = 'match' },
@@ -118,7 +117,7 @@ Config.AdminActions = {
     startBotMatch = { permission = 'pvp.admin.botmatch',     label = 'Start Bot Match',     group = 'match' },
     stopBotMatch  = { permission = 'pvp.admin.botmatch',     label = 'Stop Bot Match',      group = 'match' },
 
-    -- ---- points ---------------------------------------------------------
+    -- ---- النقاط ---------------------------------------------------------
     addRP         = { permission = 'pvp.admin.rp.add',       label = 'Compensate RP',       group = 'points', reason = true },
     removeRP      = { permission = 'pvp.admin.rp.remove',    label = 'Deduct RP',           group = 'points', reason = true },
     setRP         = { permission = 'pvp.admin.rp.set',       label = 'Set RP',              group = 'points', reason = true },
@@ -128,66 +127,66 @@ Config.AdminActions = {
     takeCoins     = { permission = 'pvp.admin.coins',        label = 'Take Coins',          group = 'points', reason = true },
     resetStats    = { permission = 'pvp.admin.stats.reset',  label = 'Reset Season Stats',  group = 'points', confirm = true, reason = true },
 
-    -- ---- punishments ----------------------------------------------------
+    -- ---- العقوبات -------------------------------------------------------
     ban           = { permission = 'pvp.admin.ban',          label = 'Ranked Ban',          group = 'punish', reason = true },
     unban         = { permission = 'pvp.admin.unban',        label = 'Remove Ranked Ban',   group = 'punish' },
     clearCooldown = { permission = 'pvp.admin.cooldown',     label = 'Clear Queue Cooldown',group = 'punish' },
     reviewFlag    = { permission = 'pvp.admin.antiboost',    label = 'Review Anti-Boost Flag', group = 'punish' },
 
-    -- ---- system ---------------------------------------------------------
+    -- ---- النظام ---------------------------------------------------------
     newSeason     = { permission = 'pvp.admin.season',       label = 'Start New Season',    group = 'system', confirm = true },
     toggleMode    = { permission = 'pvp.admin.mode',         label = 'Enable / Disable Mode', group = 'system' },
     auditLog      = { permission = 'pvp.admin.audit',        label = 'View Audit Log',      group = 'system' }
 }
 
--- Limits applied to point adjustments, so a typo cannot wreck a ladder.
+-- حدود على تعديل النقاط، عشان غلطة كتابة ما تخرّب الترتيب.
 Config.AdminLimits = {
-    maxRPGrant   = 2000,   -- per single addRP
-    maxRPDeduct  = 2000,   -- per single removeRP
-    maxXPGrant   = 100000,
-    maxCoinGrant = 100000,   -- per single Give Coins / Take Coins
-    reasonMinLen = 3,
-    reasonMaxLen = 200,
-    -- Keep audit rows for this many days (0 = forever)
+    maxRPGrant   = 2000,   -- أكثر RP بعملية إضافة وحدة
+    maxRPDeduct  = 2000,   -- أكثر RP بعملية خصم وحدة
+    maxXPGrant   = 100000, -- أكثر XP بعملية وحدة
+    maxCoinGrant = 100000, -- أكثر كوينز بعملية إعطاء أو سحب وحدة
+    reasonMinLen = 3,      -- أقصر سبب مقبول
+    reasonMaxLen = 200,    -- أطول سبب مقبول
+    -- كم يوم ينحفظ سجل التدقيق (0 = للأبد)
     auditRetentionDays = 90
 }
 
--- Anyone may open the menu when this is true (openMenu permission ignored)
+-- إذا true أي لاعب يقدر يفتح القائمة (صلاحية openMenu تنتجاهل)
 Config.PublicMenu = true
 
 -- ============================================================================
--- 4. DISCORD WEBHOOKS
+-- ٤. ويب هوك الديسكورد
 -- ============================================================================
--- Leave a value empty ('') to disable that specific log channel.
+-- خلّ القيمة فاضية ('') إذا ما تبي هذا اللوق.
 
 Config.Webhooks = {
-    enabled = true,
+    enabled = true,   -- تشغيل اللوقات
 
-    botName   = 'M5 Ranked PvP',
-    avatar    = '',
-    -- Logs are queued and sent in batches to avoid rate limits.
-    batchInterval = 4000,
-    maxQueue      = 400,
+    botName   = 'M5 Ranked PvP',   -- الاسم الي يطلع فيه البوت
+    avatar    = '',                -- رابط صورة البوت
+    -- اللوقات تنجمّع وتنرسل دفعات عشان ما يوقفنا الديسكورد.
+    batchInterval = 4000,          -- ملي ثانية بين كل دفعة
+    maxQueue      = 400,           -- أكثر عدد لوقات ينتظر بالطابور
 
     urls = {
-        matchStart   = '',
-        matchEnd     = '',
-        rpGain       = '',
-        rpLoss       = '',
-        rankUp       = '',
-        rankDown     = '',
-        leave        = '',
-        afk          = '',
-        rankBan      = '',
-        unban        = '',
-        rpModify     = '',
-        customGame   = '',
-        antiBoost    = '',
-        adminActions = '',
-        errors       = ''
+        matchStart   = '',   -- بداية قيم
+        matchEnd     = '',   -- نهاية قيم
+        rpGain       = '',   -- ربح RP
+        rpLoss       = '',   -- خسارة RP
+        rankUp       = '',   -- ترقية رانك
+        rankDown     = '',   -- نزول رانك
+        leave        = '',   -- خروج من قيم
+        afk          = '',   -- طرد خمول
+        rankBan      = '',   -- حظر من الرانكد
+        unban        = '',   -- فك الحظر
+        rpModify     = '',   -- تعديل RP إداري
+        customGame   = '',   -- الغرف الخاصة
+        antiBoost    = '',   -- بلاغات التبويست
+        adminActions = '',   -- أوامر الإدارة
+        errors       = ''    -- الأخطاء
     },
 
-    colors = {
+    colors = {   -- لون كل نوع لوق بالديسكورد (رقم عشري)
         matchStart   = 3447003,
         matchEnd     = 3066993,
         rpGain       = 3066993,
@@ -207,28 +206,28 @@ Config.Webhooks = {
 }
 
 -- ============================================================================
--- 5. RANKS
+-- ٥. الرانكات
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 5a. RANK POOLS — one rank per mode
+-- ٥أ. مجمّعات الرانك — رانك مستقل لكل طور
 -- ----------------------------------------------------------------------------
--- A rank pool is one independent ladder: its own RP, rank, placement matches
--- and hidden MMR. With `perMode` on, every mode is its own pool, so a player
--- can be Gold in 1v1 and Silver in 2v2 at the same time.
+-- المجمّع هو سلّم مستقل بذاته: له RP ورانك ومباريات تحديد و MMR مخفي خاصة فيه.
+-- إذا `perMode` مشغّل، كل طور يصير سلّم لحاله، فيقدر اللاعب يكون قولد بـ 1v1
+-- وسيلفر بـ 2v2 بنفس الوقت.
 --
--- `shared` groups modes that should count as one ladder. Anything not listed
--- keeps its own. To put every team mode on a single ladder, for example:
+-- `shared` يجمّع الأطوار الي تبيها تنحسب سلّم واحد. أي طور مو مكتوب يضل لحاله.
+-- مثال إذا تبي كل أطوار الفرق على سلّم واحد:
 --
 --     shared = { ['2v2'] = 'team', ['3v3'] = 'team', ['5v5'] = 'team' }
 --
--- CHANGING THESE REGROUPS EXISTING RANKS. A pool is stored under its name, so
--- renaming a pool leaves the old rows behind under the old name; players will
--- start that pool from Unranked. Decide the grouping before you go live.
+-- تغيير هذي الإعدادات يعيد تجميع الرانكات الموجودة. المجمّع ينحفظ باسمه، فإذا
+-- غيّرت الاسم تبقى الصفوف القديمة تحت الاسم القديم واللاعبين يبدون من Unranked
+-- بذاك المجمّع. قرّر التجميع قبل ما تفتح السيرفر.
 --
 Config.RankPools = {
-    -- false = one ladder for everything, the way it worked before per-mode
-    -- ranks. Every mode then uses `default` below.
+    -- false = سلّم واحد لكل شي، زي ما كان قبل الرانك المنفصل لكل طور. وقتها كل
+    -- الأطوار تستخدم `default` تحت.
     perMode = true,
 
     shared = {
@@ -236,18 +235,18 @@ Config.RankPools = {
         -- ['snd'] = 'objective',
     },
 
-    -- Shown in the hub before the player has picked a mode, and used as the
-    -- single ladder when perMode is false.
+    -- يطلع بالواجهة قبل ما يختار اللاعب طور، ويستخدم كسلّم وحيد إذا perMode
+    -- مطفي.
     default = '1v1',
 
-    -- Where a rank saved before per-mode ranks existed ends up. The upgrade
-    -- migration stamps every old row with this pool, so nobody loses a rank.
-    -- It must be one of your pools, normally the same as `default`.
+    -- وين تروح الرانكات المحفوظة قبل ما يوجد الرانك لكل طور. الترقية تختم كل
+    -- صف قديم بهذا المجمّع، فما أحد يفقد رانكه. لازم يكون واحد من مجمّعاتك،
+    -- وغالباً نفس `default`.
     legacy = '1v1'
 }
 
--- `rpRequired` is the cumulative RP needed to enter that division.
--- Order matters: the list must be sorted ascending by rpRequired.
+-- `rpRequired` هو مجموع الـ RP المطلوب عشان تدخل هذي الدرجة.
+-- الترتيب مهم: القائمة لازم تكون مرتبة تصاعدياً حسب rpRequired.
 
 Config.Ranks = {
     { id = 0,  tier = 'UNRANKED',  division = 0, name = 'Unranked',      rpRequired = 0,    color = '#5A616D' },
@@ -284,132 +283,132 @@ Config.Ranks = {
     { id = 23, tier = 'RADIANT',   division = 0, name = 'Radiant',       rpRequired = 2600, color = '#FFE9A8' }
 }
 
--- Rank tier order used by the progress path in the UI
+-- ترتيب درجات الرانك الي يستخدمه مسار التقدّم بالواجهة
 Config.RankPath = {
     'IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM',
     'DIAMOND', 'ASCENDANT', 'IMMORTAL', 'RADIANT'
 }
 
 Config.RankSettings = {
-    -- RP floor: a player can never fall below the base RP of their tier
+    -- أرضية الـ RP: اللاعب ما ينزل تحت الـ RP الأساسي لدرجته
     demotionProtection   = true,
-    -- Number of matches after promotion where a demotion is blocked
+    -- كم قيم بعد الترقية ما ينزل فيها الرانك
     rankProtectionGames  = 2,
-    -- After N consecutive losses the RP loss is reduced by this factor
+    -- بعد N خسارات متتالية تنقص خسارة الـ RP بهذا المعامل
     loseStreakProtection = { enabled = true, afterLosses = 3, lossMultiplier = 0.6 },
-    -- Radiant is capped to the top N players of the season (0 = uncapped)
+    -- رانك Radiant محدود بأفضل N لاعب بالموسم (0 = بلا حد)
     radiantSlots         = 25,
-    -- Absolute RP boundaries
+    -- حدود الـ RP المطلقة
     minRP = 0,
     maxRP = 9999
 }
 
 -- ============================================================================
--- 6. RANKED POINTS (RP)
+-- ٦. نقاط الرانك (RP)
 -- ============================================================================
 
 Config.RankedPoints = {
-    winBase  = 20,
-    lossBase = 18,
+    winBase  = 20,   -- الأساس الي تاخذه بالفوز
+    lossBase = 18,   -- الأساس الي تخسره بالخسارة
 
-    minimumGain = 8,
-    maximumGain = 40,
+    minimumGain = 8,    -- أقل ربح ممكن بالفوز
+    maximumGain = 40,   -- أكثر ربح ممكن بالفوز
 
-    minimumLoss = 5,
-    maximumLoss = 45,
+    minimumLoss = 5,    -- أقل خسارة ممكنة
+    maximumLoss = 45,   -- أكثر خسارة ممكنة
 
-    mvpBonus            = 5,
-    headshotBonusLimit  = 4,
+    mvpBonus            = 5,   -- زيادة لأفضل لاعب بالقيم
+    headshotBonusLimit  = 4,   -- أكثر زيادة تجي من الهيدشوتات
 
-    winStreakBonus = 3,
+    winStreakBonus = 3,   -- زيادة على سلسلة الانتصارات
 
-    leavePenalty = 35,
-    afkPenalty   = 25,
+    leavePenalty = 35,   -- خصم الخروج من القيم
+    afkPenalty   = 25,   -- خصم الخمول
 
     -- ------------------------------------------------------------------
-    -- Weighted performance model.
-    -- Final RP = base  ± roundDiff  ± skillDelta  + performance  + bonuses
+    -- نموذج الأداء الموزون.
+    -- الـ RP النهائي = الأساس ± فرق الراوندات ± فرق المستوى + الأداء + الزيادات
     -- ------------------------------------------------------------------
     weights = {
-        -- Round difference (dominance). Each round of margin adds/removes RP.
-        roundDiffPerRound   = 1.2,
-        roundDiffMax        = 8,
+        -- فرق الراوندات (السيطرة). كل راوند فرق يزيد أو ينقص RP.
+        roundDiffPerRound   = 1.2,   -- كم RP لكل راوند فرق
+        roundDiffMax        = 8,     -- أكثر شي يعطيه فرق الراوندات
 
-        -- Opponent strength: (avgEnemyMMR - avgAllyMMR) / mmrScale * factor
+        -- قوة الخصم: (متوسط MMR الخصم - متوسط MMR فريقك) / mmrScale * المعامل
         mmrScale            = 100,
-        mmrFactorWin        = 4.0,   -- beating stronger teams gives more
-        mmrFactorLoss       = 3.0,   -- losing to stronger teams costs less
+        mmrFactorWin        = 4.0,   -- الفوز على فرق أقوى يعطي أكثر
+        mmrFactorLoss       = 3.0,   -- الخسارة أمام فرق أقوى تكلّف أقل
 
-        -- Rank gap (average enemy rank id - own rank id)
+        -- فرق الرانك (متوسط رانك الخصم - رانكك)
         rankGapFactor       = 0.8,
         rankGapMax          = 6,
 
-        -- Individual performance vs the lobby average (0.0 .. 2.0 normalised)
-        kdWeight            = 3.0,
-        killsWeight         = 2.5,
-        damageWeight        = 2.0,
-        headshotWeight      = 1.5,
-        clutchWeight        = 1.5,
-        objectiveWeight     = 1.5,
+        -- أداءك الشخصي مقارنة بمتوسط اللوبي (منسّق من 0.0 إلى 2.0)
+        kdWeight            = 3.0,   -- وزن نسبة القتل للموت
+        killsWeight         = 2.5,   -- وزن عدد القتلات
+        damageWeight        = 2.0,   -- وزن الضرر
+        headshotWeight      = 1.5,   -- وزن الهيدشوتات
+        clutchWeight        = 1.5,   -- وزن الحسم وأنت آخر واحد
+        objectiveWeight     = 1.5,   -- وزن الأهداف (زرع/تفكيك)
 
-        -- Team contribution share (your score / team score)
+        -- نصيبك من نقاط فريقك (نقاطك / نقاط الفريق)
         teamShareWeight     = 2.0,
 
-        -- Balanced match modifier: unbalanced games are worth less
+        -- معامل توازن القيم: القيم غير المتوازنة تسوى أقل
         unbalancedPenalty   = 0.75,
-        balancedThresholdMMR= 250,
+        balancedThresholdMMR= 250,   -- فرق MMR الي فوقه تنحسب غير متوازنة
 
-        -- Performance can never move the result the wrong way
-        maxPerformanceBonus = 12,
-        maxPerformanceMalus = 10
+        -- الأداء ما يقدر يقلب النتيجة بالعكس أبداً
+        maxPerformanceBonus = 12,    -- أكثر زيادة من الأداء
+        maxPerformanceMalus = 10     -- أكثر خصم من الأداء
     },
 
-    -- Placement matches award no RP but seed MMR
+    -- مباريات التحديد ما تعطي RP لكن تبني الـ MMR
     placementRPPerWin  = 0,
-    -- Extra RP for short win streaks (index = streak length, capped)
+    -- RP إضافي على سلاسل الفوز القصيرة (المفتاح = طول السلسلة)
     streakTable = { [3] = 3, [5] = 6, [8] = 9, [12] = 12 },
 
-    -- Custom games never award RP unless Config.CustomGames.rankedAllowed
+    -- الغرف الخاصة ما تعطي RP إلا إذا فعّلت Config.CustomGames.rankedAllowed
     customGameRP = false
 }
 
 -- ============================================================================
--- 7. MMR (hidden)
+-- ٧. الـ MMR (مخفي)
 -- ============================================================================
 
 Config.MMR = {
-    startValue      = 1000,
-    min             = 100,
-    max             = 5000,
+    startValue      = 1000,   -- الي يبدأ فيه اللاعب الجديد
+    min             = 100,    -- أقل قيمة
+    max             = 5000,   -- أكثر قيمة
 
-    -- Elo style K factor, scaled by confidence
+    -- معامل K على طريقة إيلو، ينضبط حسب الثقة بالتقييم
     kBase           = 32,
-    kPlacement      = 64,     -- during placement matches
-    kHighRank       = 20,     -- above highRankThreshold
-    highRankThreshold = 2000,
+    kPlacement      = 64,     -- وقت مباريات التحديد
+    kHighRank       = 20,     -- فوق حد الرانك العالي
+    highRankThreshold = 2000, -- حد الرانك العالي
 
-    -- Uncertainty decays as the player plays more matches
-    uncertaintyStart  = 350,
-    uncertaintyMin    = 60,
-    uncertaintyDecay  = 12,   -- per completed match
+    -- عدم اليقين ينقص كل ما لعب اللاعب أكثر
+    uncertaintyStart  = 350,  -- البداية
+    uncertaintyMin    = 60,   -- الحد الأدنى
+    uncertaintyDecay  = 12,   -- كم ينقص بعد كل قيم مكتملة
 
-    -- Performance influence on MMR (0 = pure win/loss elo)
+    -- تأثير الأداء على الـ MMR (0 = إيلو فوز/خسارة صافي)
     performanceFactor = 0.35,
 
-    -- MMR shown to staff only
-    visibleTo = 'admin' -- 'admin' | 'moderator' | 'none'
+    -- الـ MMR يبين للطاقم فقط
+    visibleTo = 'admin' -- 'admin' أو 'moderator' أو 'none'
 }
 
 -- ============================================================================
--- 8. PLACEMENT
+-- ٨. مباريات التحديد
 -- ============================================================================
 
 Config.Placement = {
-    enabled = true,
-    matches = 5,
+    enabled = true,   -- تشغيل مباريات التحديد
+    matches = 5,      -- عددها قبل ما ينعطى رانك
 
-    -- Rank id assigned per performance score bucket after placements
-    -- score = weighted (winrate, kd, hs%, damage, mvp, opponent strength)
+    -- رقم الرانك الي ينعطى حسب درجة الأداء بعد التحديد
+    -- الدرجة = مزيج موزون (نسبة الفوز، القتل/الموت، الهيدشوت، الضرر، MVP، قوة الخصم)
     resultTable = {
         { minScore = 0.00, rankId = 1  }, -- Iron I
         { minScore = 0.20, rankId = 3  }, -- Iron III
@@ -423,19 +422,19 @@ Config.Placement = {
         { minScore = 0.92, rankId = 18 }  -- Diamond III
     },
 
-    -- Weighting used to compute the placement score
+    -- أوزان حساب درجة التحديد
     weights = {
-        winRate     = 0.40,
-        kd          = 0.20,
-        headshotPct = 0.12,
-        damage      = 0.13,
-        mvp         = 0.07,
-        opponentMMR = 0.08
+        winRate     = 0.40,   -- نسبة الفوز
+        kd          = 0.20,   -- نسبة القتل للموت
+        headshotPct = 0.12,   -- نسبة الهيدشوت
+        damage      = 0.13,   -- الضرر
+        mvp         = 0.07,   -- مرات أفضل لاعب
+        opponentMMR = 0.08    -- قوة الخصوم
     }
 }
 
 -- ============================================================================
--- 9. GAME MODES
+-- ٩. أطوار اللعب
 -- ============================================================================
 
 Config.Modes = {
@@ -443,22 +442,22 @@ Config.Modes = {
     ['1v1'] = {
         label       = '1V1',
         description = 'Pure aim duel. First to 7 rounds.',
-        teamSize    = 1,
-        teams       = 2,
-        ranked      = true,
-        type        = 'rounds',           -- rounds | deathmatch | ffa | snd
-        rounds      = 13,                 -- best of
-        roundsToWin = 7,
-        roundTime   = 90,
-        matchTime   = 1800,
-        killLimit   = 0,
-        respawn     = false,
-        lives       = 1,
-        friendlyFire= false,
-        overtime    = true,
-        suddenDeath = true,
-        loadout     = 'duel',
-        enabled     = true
+        teamSize    = 1,                  -- عدد اللاعبين بالفريق الواحد
+        teams       = 2,                  -- عدد الفرق
+        ranked      = true,               -- يحسب رانك ولا لا
+        type        = 'rounds',           -- rounds أو deathmatch أو ffa أو snd
+        rounds      = 13,                 -- أكثر عدد راوندات
+        roundsToWin = 7,                  -- كم راوند تحتاج عشان تفوز
+        roundTime   = 90,                 -- وقت الراوند بالثواني
+        matchTime   = 1800,               -- أقصى وقت للقيم كلها بالثواني
+        killLimit   = 0,                  -- حد القتلات (0 = بلا حد)
+        respawn     = false,              -- رسبن داخل الراوند
+        lives       = 1,                  -- عدد الأرواح بالراوند
+        friendlyFire= false,              -- ضرر الزملاء
+        overtime    = true,               -- وقت إضافي عند التعادل
+        suddenDeath = true,               -- راوند حاسم بالنهاية
+        loadout     = 'duel',             -- اسم السلاح من Config.Loadouts
+        enabled     = true                -- تشغيل الطور
     },
 
     ['2v2'] = {
@@ -521,81 +520,79 @@ Config.Modes = {
     }
 }
 
--- Modes offered inside the ranked queue (order preserved in the UI)
+-- الأطوار الي تنعرض داخل طابور الرانكد (نفس الترتيب يطلع بالواجهة)
 Config.RankedQueueModes = { '1v1', '2v2', '3v3', '5v5', 'tdm', 'snd' }
 
 -- ============================================================================
--- 9b. PARTY QUEUE BEHAVIOUR
+-- ٩ب. سلوك طابور القروب
 -- ============================================================================
--- Controls how the ranked queue reacts to the size of your party.
+-- يتحكم بكيف يتصرف طابور الرانكد حسب عدد قروبك.
 
 Config.PartyQueue = {
 
-    -- The selected mode follows the party size automatically: invite a friend
-    -- while on 1V1 and the queue switches to 2V2, a third makes it 3V3, and so
-    -- on. Set to false to keep whatever the player picked.
+    -- الطور المختار يتبع عدد القروب تلقائياً: ادعُ صديق وأنت على 1V1 والطابور
+    -- يتحوّل 2V2، وثالث يخليه 3V3، وهكذا. خلّه false إذا تبي يضل على الي
+    -- اختاره اللاعب.
     autoMode = true,
 
-    -- Lock the queue to the mode that matches the party size exactly.
-    --   true  : a party of 2 may only search 2V2
-    --   false : a party of 2 may search 2V2 and anything larger (3V3, 5V5 …),
-    --           and the missing slots are filled by matchmaking
+    -- يقفل الطابور على الطور الي يطابق عدد القروب بالضبط.
+    --   true  : قروب من ٢ ما يقدر يبحث إلا 2V2
+    --   false : قروب من ٢ يقدر يبحث 2V2 وأي طور أكبر (3V3، 5V5 ...)،
+    --           والأماكن الناقصة يعبيها الماتش ميكينق
     lockToPartySize = true,
 
-    -- Modes whose team size is smaller than the party can never be searched,
-    -- regardless of the setting above (a party of 3 cannot play 1V1).
+    -- الأطوار الي حجم فريقها أصغر من قروبك ما ينبحث لها أبداً، مهما كان
+    -- الإعداد فوق (قروب من ٣ ما يقدر يلعب 1V1).
 
-    -- ---- AUTO FILL -----------------------------------------------------
-    -- A switch the player turns on under the search button. With it on, the
-    -- modes that need more people than they have stop being locked: a solo
-    -- can search 3V3, a duo can search 5V5, and matchmaking puts strangers
-    -- into the empty slots on their side. It is the same relaxation as
-    -- lockToPartySize = false, except each player chooses it for themselves
-    -- rather than the server choosing for everybody.
+    -- ---- الأوتو فيل ----------------------------------------------------
+    -- خيار يشغّله اللاعب تحت زر البحث. إذا شغّله، الأطوار الي تحتاج عدد أكثر
+    -- من عددهم تنفك من القفل: الواحد لحاله يقدر يبحث 3V3، والاثنين يقدرون
+    -- يبحثون 5V5، والماتش ميكينق يحط لاعبين غرباء بالأماكن الفاضية بجهتهم.
+    -- نفس تأثير lockToPartySize = false بالضبط، بس كل لاعب يختاره لنفسه بدل
+    -- ما السيرفر يقرره على الكل.
     --
-    -- It never lets anyone into a mode smaller than their party: a group of
-    -- three still cannot search 1V1, with it on or off.
+    -- وما يدخّل أحد بطور أصغر من قروبه أبداً: قروب من ثلاثة يضل ما يقدر يبحث
+    -- 1V1، سواء الخيار مشغّل أو مطفي.
     autoFill = {
-        -- false hides the switch and refuses it even if a client asks, so
-        -- lockToPartySize is the only thing that decides.
+        -- false يخفي الخيار ويرفضه حتى لو طلبه الكلنت، فيصير lockToPartySize
+        -- هو الوحيد الي يقرر.
         enabled = true,
 
-        -- Whether it starts on for a player who has never touched it. Their
-        -- own choice is remembered after that.
+        -- هل يبدأ مشغّل للاعب ما لمسه أبداً. بعدها اختياره هو ينحفظ له.
         default = false
     },
 
-    -- How the opposing side is put together.
+    -- كيف ينبني الفريق المقابل.
     teamMatching = {
-        -- 'any'      : the enemy team is assembled from whatever is waiting —
-        --              another party, two solos, a duo plus a solo, and so on.
-        -- 'fullTeam' : a complete party only ever faces another complete party.
-        --              A duo searching 2V2 waits for a second duo searching
-        --              2V2 instead of being handed two solo players, and solos
-        --              keep matching among themselves as usual.
+        -- 'any'      : فريق الخصم ينبني من أي أحد منتظر — قروب ثاني، ولا
+        --              اثنين لحالهم، ولا قروب من اثنين وواحد، وهكذا.
+        -- 'fullTeam' : القروب الكامل ما يواجه إلا قروب كامل مثله. قروب من
+        --              اثنين يبحث 2V2 ينتظر قروب ثاني من اثنين يبحث 2V2 بدل
+        --              ما ينعطى لاعبين لحالهم، والي لحالهم يضلون يتطابقون
+        --              بينهم عادي.
         mode = 'fullTeam',
 
-        -- If no matching full team turns up within this many seconds, the
-        -- party is matched the normal way instead of waiting forever.
-        -- 0 = never fall back, keep waiting for a real team.
+        -- إذا ما جا فريق كامل مناسب خلال هذي الثواني، ينتطابق القروب بالطريقة
+        -- العادية بدل ما ينتظر للأبد.
+        -- 0 = ما فيه تراجع أبداً، ينتظر فريق حقيقي.
         fallbackAfter = 60
     }
 }
 
 -- ============================================================================
--- 10. LOADOUTS / WEAPON META
+-- ١٠. الأسلحة الي ينزل فيها اللاعب
 -- ============================================================================
 
 Config.Loadouts = {
-    duel = {
-        health = 100,
-        armor  = 100,
+    duel = {          -- سلاح المبارزة (1v1)
+        health = 100, -- الدم عند النزول
+        armor  = 100, -- الدرع عند النزول
         weapons = {
             { name = 'WEAPON_PISTOL',        ammo = 250 },
             { name = 'WEAPON_CARBINERIFLE',  ammo = 300 }
         }
     },
-    standard = {
+    standard = {      -- السلاح العادي لأغلب الأطوار
         health = 100,
         armor  = 100,
         weapons = {
@@ -604,7 +601,7 @@ Config.Loadouts = {
             { name = 'WEAPON_PUMPSHOTGUN',   ammo = 40  }
         }
     },
-    sniper = {
+    sniper = {        -- طور القنص
         health = 100,
         armor  = 50,
         weapons = {
@@ -612,11 +609,11 @@ Config.Loadouts = {
             { name = 'WEAPON_PISTOL',        ammo = 100 }
         }
     },
-    pistol = {
+    pistol = {        -- طور المسدس فقط
         health = 100, armor = 50,
         weapons = { { name = 'WEAPON_PISTOL', ammo = 200 } }
     },
-    training = {
+    training = {      -- ساحة التدريب
         health = 200, armor = 100,
         weapons = {
             { name = 'WEAPON_CARBINERIFLE', ammo = 2000 },
@@ -626,8 +623,8 @@ Config.Loadouts = {
     }
 }
 
--- Weapons offered as pickable chips in the custom match UI.
--- `weapon` must also be present in Config.Weapons.allowed below.
+-- الأسلحة الي تنعرض كخيارات بواجهة الغرف الخاصة.
+-- لازم يكون `weapon` موجود كمان بقائمة Config.Weapons.allowed تحت.
 Config.WeaponPresets = {
     { id = 'pistol_mk2',    label = 'Pistol MK2',    weapon = 'WEAPON_PISTOL_MK2',   ammo = 250 },
     { id = 'combat_mg',     label = 'Combat MG',     weapon = 'WEAPON_COMBATMG',     ammo = 400 },
@@ -639,7 +636,7 @@ Config.WeaponPresets = {
 }
 
 Config.Weapons = {
-    -- Global whitelist. Any weapon not listed here cannot deal validated damage.
+    -- القائمة البيضاء العامة. أي سلاح مو مكتوب هنا ضرره ما ينحسب.
     allowed = {
         'WEAPON_PISTOL', 'WEAPON_PISTOL_MK2', 'WEAPON_COMBATPISTOL',
         'WEAPON_APPISTOL', 'WEAPON_HEAVYPISTOL', 'WEAPON_VINTAGEPISTOL',
@@ -654,7 +651,7 @@ Config.Weapons = {
         'WEAPON_UNARMED'
     },
 
-    -- Never allowed, even if a custom game tries to enable them
+    -- ممنوعة نهائياً، حتى لو حاولت غرفة خاصة تشغّلها
     blacklisted = {
         'WEAPON_RPG', 'WEAPON_GRENADELAUNCHER', 'WEAPON_MINIGUN',
         'WEAPON_FIREWORK', 'WEAPON_RAILGUN', 'WEAPON_HOMINGLAUNCHER',
@@ -664,71 +661,70 @@ Config.Weapons = {
         'WEAPON_EMPLAUNCHER', 'WEAPON_FLARE', 'WEAPON_PETROLCAN'
     },
 
-    -- Damage modifier applied per player inside a match (1.0 = vanilla)
+    -- معامل الضرر لكل لاعب داخل القيم (1.0 = زي اللعبة الأصلية)
     playerDamageModifier = 1.0,
 
-    -- Explosive / vehicle / fall damage can never be credited as a kill source
+    -- ضرر الانفجار والسيارة والسقوط ما ينحسب مصدر قتل أبداً
     invalidDamageSources = {
         'EXPLOSION', 'FALL', 'VEHICLE', 'DROWNING', 'FIRE', 'ELECTRIC'
     },
 
-    -- Maximum plausible engagement distance for a bullet kill (metres).
-    -- Anything beyond this is flagged, not blocked, to avoid false positives.
+    -- أبعد مسافة معقولة لقتلة بالرصاص (متر).
+    -- أبعد من كذا ينترفع بلاغ بس ما ينمنع، عشان ما تصير بلاغات كاذبة.
     maxPlausibleDistance = 600.0,
 
-    -- Minimum milliseconds between two validated kills from the same attacker.
+    -- أقل مدة (ملي ثانية) بين قتلتين معتمدتين من نفس المهاجم.
     minKillInterval = 120
 }
 
 -- ============================================================================
--- 11. HEADSHOT — ONE SHOT KILL, NO DISTANCE FALLOFF
+-- ١١. الهيدشوت — قتل بطلقة وحدة، بلا فرق مسافة
 -- ============================================================================
 
 Config.Headshot = {
-    enabled = true,
+    enabled = true,          -- تشغيل نظام الهيدشوت
 
-    oneShotKill = true,
+    oneShotKill = true,      -- طلقة الرأس تقتل على طول
 
-    ignoreDistance = true,
+    ignoreDistance = true,   -- من أي مسافة، بدون نقص ضرر
 
-    enabledInRanked  = true,
+    enabledInRanked  = true, -- بالرانكد
 
-    enabledInCustom  = true,
+    enabledInCustom  = true, -- بالغرف الخاصة
 
-    enabledInTraining= true,
+    enabledInTraining= true, -- بالتدريب
 
-    excludedWeapons  = {},
+    excludedWeapons  = {},   -- أسلحة مستثناة من القاعدة
 
-    -- Bone ids accepted as a head hit (SKEL_Head, HEAD_top, headshot bone).
+    -- أرقام عظام الرأس المقبولة (SKEL_Head و HEAD_top وعظمة الهيدشوت).
     headBones = { 31086, 39317, 12844, 20178, 21550 },
 
-    -- Server side validation window: the attacker must have fired within this
-    -- many milliseconds of the reported head impact.
+    -- نافذة تحقق السيرفر: لازم المهاجم يكون أطلق خلال هذي المدة (ملي ثانية)
+    -- من لحظة إصابة الرأس المبلّغ عنها.
     shotWindow = 900,
 
-    -- Duplicate protection window for the same attacker/victim pair.
+    -- نافذة منع التكرار لنفس المهاجم والضحية.
     duplicateWindow = 400,
 
-    -- Rate limit: maximum head-kill reports accepted per attacker per second.
+    -- حد المعدل: أكثر عدد بلاغات هيدشوت مقبولة من مهاجم واحد بالثانية.
     maxReportsPerSecond = 6,
 
-    -- Reject if the victim reports a headshot while already dead / respawning
+    -- يرفض البلاغ إذا الضحية أصلاً ميت أو يرسبن
     requireVictimAlive = true,
 
-    -- Melee weapons never trigger the one shot rule
+    -- أسلحة الطعن والضرب ما تفعّل قاعدة الطلقة الوحدة
     excludeMelee = true
 }
 
 -- ============================================================================
--- 12. MAPS
+-- ١٢. المابات
 -- ============================================================================
--- Every map is isolated using its own routing bucket at runtime.
+-- كل ماب معزول بباكت خاص فيه وقت التشغيل.
 --
--- `image` is the preview shown on the map-vote cards. A bare name means
--- Files/ui/img/<name>.png (so `image = 'harbor'` looks for img/harbor.png);
--- anything containing a slash or a scheme is used exactly as written. A file
--- that is missing simply falls back to the tinted plate, so the vote screen
--- never breaks over artwork.
+-- `image` هي صورة المعاينة الي تطلع ببطاقات تصويت الماب. الاسم المجرّد يعني
+-- Files/ui/img/<الاسم>.png (يعني `image = 'harbor'` يدوّر img/harbor.png)؛ وأي
+-- شي فيه سلاش أو بروتوكول ينستخدم زي ما هو بالضبط. الملف الناقص يرجع للوحة
+-- الملوّنة البديلة، فشاشة التصويت ما تنكسر بسبب صورة.
 
 Config.Maps = {
 
@@ -739,7 +735,7 @@ Config.Maps = {
         center = vector3(1208.5, -3115.6, 5.5),
         radius = 140.0,
         modes  = { '1v1', '2v2', '3v3', '4v4', '5v5', 'tdm', 'snd', 'ffa' },
-        weapons = nil, -- nil = use mode loadout
+        weapons = nil, -- خلّها nil عشان يستخدم سلاح الطور
         teamA = {
             vector4(1170.2, -3196.4, 5.9, 88.0),
             vector4(1175.6, -3188.1, 5.9, 92.0),
@@ -854,27 +850,24 @@ Config.Maps = {
     },
 
     -- ------------------------------------------------------------------
-    -- Imported arenas.
+    -- ساحات مستوردة.
     --
-    -- `radius` is the combat boundary and was not part of the source, so it
-    -- is a guess: 2.5x the horizontal distance from the centre to the furthest
-    -- spawn, with a floor of 150m. Deliberately generous — a zone that is too
-    -- big is invisible to players, while one that is too small tells someone
-    -- standing in the middle of the arena to return to it.
+    -- `radius` هو حد منطقة القتال وما كان موجود بالمصدر، فهو تقدير: ٢٫٥ ضعف
+    -- المسافة الأفقية من المركز لأبعد نقطة نزول، وأقل شي ١٥٠ متر. واسع بقصد —
+    -- الزون الكبير ما يحس فيه أحد، أما الصغير فيقول لواحد واقف بنص الساحة
+    -- ارجع للساحة.
     --
-    -- To set an exact number instead of living with the guess: join the map,
-    -- walk to the edge of the playable area and run /pvpzone. It prints how
-    -- far out you are, so the real radius is that reading plus a few metres.
-    -- Height is measured separately (Config.Boundary.verticalLimit), so a
-    -- radius only ever has to cover the ground.
+    -- إذا تبي رقم دقيق بدل التقدير: ادخل الماب، وامش لطرف المنطقة الي تنلعب،
+    -- وشغّل /pvpzone. يطبع لك كم أنت بعيد، فنصف القطر الحقيقي هو ذاك الرقم
+    -- زائد كم متر. الارتفاع ينقاس منفصل (Config.Boundary.verticalLimit)، فنصف
+    -- القطر ما عليه إلا يغطي الأرض.
     --
-    -- Every map below carries a single spawn per team except Arena 1, which
-    -- came with alternates. `teamA`/`teamB` are lists and the server cycles
-    -- through them, so add more points to spread a 5v5 out instead of
-    -- stacking five players on one spot.
+    -- كل ماب تحت عنده نقطة نزول وحدة لكل فريق إلا Arena 1 الي جا معه بدائل.
+    -- الحقول `teamA` و `teamB` قوائم والسيرفر يدور عليها بالترتيب، فزد نقاط
+    -- عشان تفرّق لاعبين 5v5 بدل ما يتكدسون بمكان واحد.
     --
-    -- None of them list tdm, snd or ffa, so those modes keep using the five
-    -- maps above. Add the mode to a map here to put it in that rotation.
+    -- ولا واحد منهم مكتوب فيه tdm ولا snd ولا ffa، فهذي الأطوار تضل على
+    -- المابات الخمسة فوق. زد الطور لأي ماب هنا عشان تدخله بالدوران.
     -- ------------------------------------------------------------------
 
     {
@@ -1222,13 +1215,13 @@ Config.Maps = {
     },
 }
 
--- Training area (single bucket, no ranked impact)
+-- ساحة التدريب (باكت واحد، ما لها أي تأثير على الرانك)
 Config.Training = {
-    enabled = true,
-    bucket  = 90000,
-    spawn   = vector4(1208.5, -3115.6, 5.5, 180.0),
-    loadout = 'training',
-    modes   = {
+    enabled = true,     -- تشغيل التدريب
+    bucket  = 90000,    -- الباكت الي ينعزل فيه
+    spawn   = vector4(1208.5, -3115.6, 5.5, 180.0),   -- نقطة النزول
+    loadout = 'training',   -- السلاح من Config.Loadouts
+    modes   = {   -- الأطوار: عدد الأهداف، والمسافة بينها، والوقت بالثواني
         aim      = { label = 'AIM TRAINING',      targets = 12, spacing = 8.0,  time = 120 },
         headshot = { label = 'HEADSHOT TRAINING', targets = 8,  spacing = 12.0, time = 120 },
         range    = { label = 'FREE RANGE',        targets = 0,  spacing = 0.0,  time = 0   }
@@ -1236,62 +1229,60 @@ Config.Training = {
 }
 
 -- ============================================================================
--- 12a. BOT MATCH  (staff only)
+-- ١٢أ. قيم البوتات  (للطاقم فقط)
 -- ============================================================================
 --
--- A practice duel against AI opponents, started from the admin panel. It runs
--- the real match presentation — private bucket, map spawns, rounds, HUD, kill
--- feed, end screen — so a mode or a map can be checked with one person.
+-- مبارزة تدريبية ضد بوتات، تبدأ من لوحة الإدارة. تشتغل بنفس عرض القيم
+-- الحقيقية — باكت خاص، ونقاط نزول الماب، وراوندات، وهود، وكيل فيد، وشاشة
+-- نهاية — عشان تقدر تجرّب طور أو ماب بشخص واحد.
 --
--- It is deliberately UNRANKED and cannot be made ranked. The bots are local
--- peds on the starting player's client, which is the only place a ped can be
--- created and given combat AI, so their deaths are reported by that client
--- rather than proven by the server. Nothing may ride on a client's word, so a
--- bot match awards no RP, no MMR, no stats, no match history — and it is
--- limited to staff who hold the permission below.
+-- وهي غير مصنّفة بقصد وما تنخلى مصنّفة. البوتات بيدز محليين على جهاز اللاعب
+-- الي بدأها، لأن هذا المكان الوحيد الي يقدر ينشئ بيد ويعطيه ذكاء قتال، يعني
+-- موتهم يبلّغ عنه ذاك الكلنت مو السيرفر يثبته. وما نبني شي على كلام الكلنت،
+-- فقيم البوتات ما تعطي RP ولا MMR ولا إحصائيات ولا سجل قيم — ومحصورة على
+-- الطاقم الي يملك الصلاحية تحت.
 --
 Config.BotMatch = {
-    enabled = true,
+    enabled = true,   -- تشغيل قيم البوتات
 
-    -- The permission lives on the admin action itself, so there is one source
-    -- of truth: Config.AdminActions.startBotMatch.permission ('pvp.admin.botmatch').
-    -- Anyone holding Config.Permissions.superAdmin also passes while
-    -- Config.Permissions.adminGrantsAll is true.
+    -- الصلاحية موجودة على أمر الإدارة نفسه، عشان يكون فيه مصدر واحد للحقيقة:
+    -- Config.AdminActions.startBotMatch.permission ('pvp.admin.botmatch').
+    -- والي يملك Config.Permissions.superAdmin كمان يعدّي طول ما
+    -- Config.Permissions.adminGrantsAll مشغّل.
 
-    -- First bucket of the range used for these sessions. Each running bot
-    -- match takes the next free one (64 are reserved from here) so two staff
-    -- practising at once never share a world.
+    -- أول باكت من المدى المستخدم لهذي الجلسات. كل قيم بوتات شغّالة تاخذ الي
+    -- بعده (٦٤ باكت محجوزة من هنا) عشان إداريين يتدربون بنفس الوقت ما
+    -- يتشاركون نفس العالم.
     bucket = 90100,
 
-    -- Map: an id from Config.Maps, or nil to let the starter pick (the panel
-    -- offers the list and falls back to the first map that supports the mode).
+    -- الماب: آيدي من Config.Maps، أو nil عشان الي بدأ يختار (اللوحة تعرض
+    -- القائمة وترجع لأول ماب يدعم الطور).
     defaultMap = nil,
 
-    -- Round structure, mirroring a normal 1v1. Rounds needed to win are
-    -- derived from the round count (best of N), so there is no separate knob
-    -- that could disagree with the number picked in the panel.
-    rounds        = 5,       -- default; the panel offers 1, 3, 5, 7 and 9
-    roundTime     = 120,     -- seconds, 0 = unlimited
-    countdown     = 5,       -- freeze before a round goes live
-    roundEndDelay = 5,       -- pause on the round result before the next one
-    endDelay      = 12,      -- how long the match end screen stays before cleanup
+    -- تركيبة الراوندات، مثل 1v1 العادي. عدد الراوندات المطلوبة للفوز تنحسب من
+    -- عدد الراوندات نفسه، فما فيه إعداد ثاني يقدر يخالف الرقم المختار باللوحة.
+    rounds        = 5,       -- الافتراضي؛ اللوحة تعرض ١ و ٣ و ٥ و ٧ و ٩
+    roundTime     = 120,     -- بالثواني، و 0 يعني بلا حد
+    countdown     = 5,       -- تجميد قبل ما يبدأ الراوند
+    roundEndDelay = 5,       -- وقفة على نتيجة الراوند قبل الي بعده
+    endDelay      = 12,      -- كم تضل شاشة النهاية قبل التنظيف
 
-    -- The human side
-    loadout        = 'duel',
-    headshotOneShot = true,  -- same one shot headshot rule as a real match
+    -- جهة اللاعب الحقيقي
+    loadout        = 'duel', -- سلاحه
+    headshotOneShot = true,  -- نفس قاعدة الهيدشوت بطلقة وحدة مثل القيم الحقيقية
 
-    -- Hard ceiling. The bots are local peds, so a large number costs the
-    -- starting player frames and nobody else.
+    -- سقف صارم. البوتات بيدز محليين، فالعدد الكبير يكلّف فريمات اللاعب الي
+    -- بدأ وبس، ما يأثر على أحد ثاني.
     maxBots = 5,
 
     bots = {
-        count = 1,           -- default, overridable per start up to maxBots
-        model = 's_m_y_marine_01',
-        namePrefix = 'BOT',
+        count = 1,           -- الافتراضي، ويقدر يغيّره كل مرة لين maxBots
+        model = 's_m_y_marine_01',   -- شكل البوت
+        namePrefix = 'BOT',          -- بادئة اسمه
 
-        -- Presets offered in the panel. accuracy is 0-100, reaction is the
-        -- shooting rate multiplier, and combatMovement is 0 stationary,
-        -- 1 defensive, 2 advance, 3 suicidal.
+        -- الجاهزيات الي تعرضها اللوحة. accuracy من ٠ إلى ١٠٠، و reaction
+        -- معامل سرعة الإطلاق، و combatMovement صفر ثابت، ١ دفاعي، ٢ يتقدم،
+        -- ٣ انتحاري.
         difficulties = {
             easy = {
                 label = 'EASY',
@@ -1314,269 +1305,267 @@ Config.BotMatch = {
                 weapon = 'WEAPON_CARBINERIFLE', combatMovement = 3, alertness = 3
             }
         },
-        defaultDifficulty = 'normal'
+        defaultDifficulty = 'normal'   -- الجاهزية الافتراضية
     },
 
-    -- Post the result to the adminActions webhook like any other staff action
+    -- يرسل النتيجة لويب هوك adminActions مثل أي أمر إداري ثاني
     logToWebhook = true
 }
 
 -- ============================================================================
--- 13. MAP VOTING
+-- ١٣. تصويت الماب
 -- ============================================================================
 
 Config.MapVote = {
-    enabled     = true,
-    options     = 3,
-    duration    = 20,   -- seconds
-    tieBreaker  = 'random',
-    -- Maps played in the last N matches by these players are de-prioritised
+    enabled     = true,       -- تشغيل التصويت
+    options     = 3,          -- كم ماب ينعرض للتصويت
+    duration    = 20,         -- بالثواني
+    tieBreaker  = 'random',   -- كيف ينحسم التعادل
+    -- المابات الي لعبها هؤلاء اللاعبين بآخر N قيم تنزل أولويتها
     avoidRepeat = 2
 }
 
 -- ============================================================================
--- 14. MATCHMAKING
+-- ١٤. الماتش ميكينق
 -- ============================================================================
 
 Config.Matchmaking = {
     enabled = true,
 
-    tickInterval = 2000, -- ms between matchmaking passes
+    tickInterval = 2000, -- ملي ثانية بين كل دورة بحث
 
-    -- Search window expansion
-    mmrRangeStart   = 120,
-    mmrRangeStep    = 60,     -- added every expandInterval
-    mmrRangeMax     = 1200,
-    expandInterval  = 8000,   -- ms
+    -- توسيع نافذة البحث كل ما طال الانتظار
+    mmrRangeStart   = 120,    -- فرق MMR المسموح بالبداية
+    mmrRangeStep    = 60,     -- ينزاد كل expandInterval
+    mmrRangeMax     = 1200,   -- أقصى فرق MMR
+    expandInterval  = 8000,   -- ملي ثانية بين كل توسيع
 
-    rankRangeStart  = 2,      -- rank ids
-    rankRangeStep   = 1,
-    rankRangeMax    = 12,
+    rankRangeStart  = 2,      -- فرق أرقام الرانك بالبداية
+    rankRangeStep   = 1,      -- كم ينزاد كل توسيع
+    rankRangeMax    = 12,     -- أقصى فرق رانك
 
-    -- Ping preference (0 disables)
-    maxPing         = 200,
-    pingRangeMax    = 350,
-    pingRelaxAfter  = 30000,
+    -- تفضيل البنق (0 يطفيه)
+    maxPing         = 200,    -- البنق المفضّل
+    pingRangeMax    = 350,    -- أقصى بنق مقبول بعد التوسيع
+    pingRelaxAfter  = 30000,  -- بعد كم ملي ثانية يتساهل بالبنق
 
-    -- Ready check
+    -- تأكيد الجاهزية
     readyCheck = {
-        enabled  = true,
-        duration = 15,      -- seconds to accept
-        -- Player is put on cooldown when failing to accept
+        enabled  = true,    -- تشغيل شاشة القبول
+        duration = 15,      -- ثواني للقبول
+        -- اللاعب ينحط بانتظار إذا ما قبل
         declineCooldown = 120,
-        -- Requeue the accepting players automatically with queue priority
+        -- الي قبلوا يرجعون للطابور تلقائياً بأولوية
         requeueOnFail   = true
     },
 
-    -- Party constraints
-    maxPartyRankGap = 5,       -- rank id difference inside a party
-    partyRankGapEnabled = true,
+    -- قيود القروب
+    maxPartyRankGap = 5,       -- فرق رقم الرانك المسموح داخل القروب
+    partyRankGapEnabled = true, -- تشغيل القيد
 
-    -- Queue restrictions
-    minPlayersToStart = nil,   -- nil = derived from the mode
-    maxQueueTime      = 600,   -- seconds before the player is dropped from queue
+    -- قيود الطابور
+    minPlayersToStart = nil,   -- خلّها nil عشان تنحسب من الطور
+    maxQueueTime      = 600,   -- ثواني قبل ما ينشال اللاعب من الطابور
 
-    -- Avoid list: players recently avoided are not matched together
-    avoidListSize     = 5,
-    avoidDuration     = 3600,  -- seconds
+    -- قائمة التجنّب: اللاعبين الي تجنّبتهم قريب ما ينحطون معك
+    avoidListSize     = 5,     -- كم واحد تقدر تتجنّب
+    avoidDuration     = 3600,  -- بالثواني
 
-    -- Backfill players who left before the match went live
+    -- تعويض اللاعبين الي طلعوا قبل ما تبدأ القيم
     allowBackfill     = true,
-    backfillWindow    = 45     -- seconds after match start
+    backfillWindow    = 45     -- ثواني بعد بداية القيم
 }
 
 -- ============================================================================
--- 15. MATCH FLOW
+-- ١٥. مسار القيم
 -- ============================================================================
 
 -- ============================================================================
--- 15b. PLAYER AVATARS  (match HUD and scoreboard)
+-- ١٥ب. صور اللاعبين  (هود القيم والسكور بورد)
 -- ============================================================================
 --
--- Each player in the HUD and the TAB scoreboard shows a picture. Where it
--- comes from is up to you.
+-- كل لاعب بالهود وبسكور بورد التاب يطلع له صورة. من وين تجي الصورة راجع لك.
 --
 Config.Avatars = {
-    enabled = true,
+    enabled = true,   -- تشغيل الصور
 
-    -- Shown whenever a real picture cannot be resolved. Use a local file under
-    -- Files/ui/img/ (add it to the `files` list in fxmanifest.lua) or any URL.
+    -- تطلع كل ما ما قدرنا نجيب صورة حقيقية. استخدم ملف محلي تحت Files/ui/img/
+    -- (وسجّله بقائمة `files` بملف fxmanifest.lua) أو أي رابط.
     default = 'https://cdn.discordapp.com/embed/avatars/0.png',
 
-    -- How to resolve a picture. First match wins, and any step may be off.
+    -- كيف نجيب الصورة. أول طريقة تنجح هي المستخدمة، وكل خطوة تقدر تطفيها.
     --
-    --   'discord'  ask Discord for the real avatar of the player's linked
-    --              account. Needs a bot token; see below.
-    --   'template' build a URL from the player's discord id yourself, with no
-    --              API call at all. %s is replaced by the bare discord id.
-    --   'none'     always use `default`.
+    --   'discord'  نسأل ديسكورد عن صورة حساب اللاعب المربوط.
+    --              يحتاج توكن بوت؛ شوف تحت.
+    --   'template' تبني الرابط بنفسك من آيدي ديسكورد اللاعب، بدون أي طلب
+    --              للـ API. الـ %s ينبدل بآيدي الديسكورد المجرّد.
+    --   'none'     يستخدم `default` دايم.
     --
     source = 'discord',
 
-    -- Only used when source = 'template'
+    -- ما تنستخدم إلا إذا كان المصدر 'template'
     template = 'https://my-cdn.example.com/avatars/%s.png',
 
     discord = {
-        -- A bot token from https://discord.com/developers/applications.
-        -- The bot needs no permissions and no server membership — reading a
-        -- user's public avatar only requires the token itself.
+        -- توكن بوت من https://discord.com/developers/applications.
+        -- البوت ما يحتاج أي صلاحية ولا يحتاج يكون بسيرفرك — قراءة صورة
+        -- المستخدم العامة تحتاج التوكن نفسه بس.
         --
-        -- LEAVE THIS EMPTY and the system falls back to `default` silently.
-        -- Never put the token anywhere that reaches the client; this file is
-        -- server only, which is why it lives here.
+        -- خلّه فاضي والنظام يرجع لـ `default` بهدوء بدون أخطاء.
+        -- ولا تحط التوكن بأي مكان يوصل للكلنت؛ هذا الملف سيرفر فقط، وعشان كذا
+        -- هو موجود هنا.
         botToken = '',
 
-        -- Discord rate limits hard, so results are cached. Seconds.
-        cacheTime = 21600,          -- 6 hours
+        -- ديسكورد يحد الطلبات بقوة، فالنتائج تنحفظ بكاش. بالثواني.
+        cacheTime = 21600,          -- ٦ ساعات
 
-        -- Size of the requested image (power of two, 16 - 4096)
+        -- حجم الصورة المطلوبة (من مضاعفات ٢، بين ١٦ و ٤٠٩٦)
         size = 128
     }
 }
 
 -- ============================================================================
--- 15c. TEAM NAMES  (match HUD and scoreboard)
+-- ١٥ج. أسماء الفرق  (هود القيم والسكور بورد)
 -- ============================================================================
 --
 Config.TeamNames = {
-    -- 'fixed'  the two names below, always
-    -- 'leader' name each side after one of its players, e.g. "M547'S TEAM".
-    --          In a 1v1 that reads as the two player names facing each other,
-    --          which is usually what you want.
+    -- 'fixed'  الاسمين تحت، دايم
+    -- 'leader' يسمي كل جهة باسم واحد من لاعبيها، مثال "M547'S TEAM".
+    --          وبـ 1v1 هذا يعني اسم اللاعبين مقابل بعض، وغالباً هذا الي تبيه.
     mode = 'leader',
 
-    fixed = { [1] = 'TEAM A', [2] = 'TEAM B' },
+    fixed = { [1] = 'TEAM A', [2] = 'TEAM B' },   -- الأسماء الثابتة
 
-    -- Used by 'leader'. %s is the player's name.
+    -- تنستخدم مع 'leader'. الـ %s هو اسم اللاعب.
     pattern = "%s'S TEAM",
 
-    -- With 'leader', a team of one shows just the name instead of the pattern.
+    -- مع 'leader'، الفريق الي فيه لاعب واحد يطلع باسمه بس بدون الصيغة.
     soloIsPlain = true,
 
-    -- Which player names the team: 'party' uses the party leader when the
-    -- side queued together, otherwise the highest ranked player.
+    -- مين يسمّي الفريق: 'party' ياخذ قائد القروب إذا الجهة دخلت مع بعض، وإلا
+    -- ياخذ أعلى لاعب رانك.
     pick = 'party'
 }
 
 Config.Match = {
-    -- Global tick used by the match state machine
+    -- النبضة العامة الي تشتغل عليها آلة حالة القيم
     tickInterval      = 250,
 
-    warmupTime        = 10,    -- seconds after teleport before round 1
-    roundStartFreeze  = 3,     -- countdown 3-2-1-GO
-    roundEndTime      = 6,     -- seconds shown after each round
-    matchEndTime      = 15,    -- scoreboard / MVP screen duration
-    cleanupTime       = 5,
+    warmupTime        = 10,    -- ثواني بعد النقل قبل أول راوند
+    roundStartFreeze  = 3,     -- العد التنازلي ٣-٢-١-انطلق
+    roundEndTime      = 6,     -- ثواني تنعرض بعد كل راوند
+    matchEndTime      = 15,    -- مدة شاشة النتيجة وأفضل لاعب
+    cleanupTime       = 5,     -- ثواني التنظيف بعدها
 
-    spawnProtection   = 3,     -- seconds of invulnerability after spawn
+    spawnProtection   = 3,     -- ثواني حماية بعد النزول
     antiSpawnKill     = true,
     antiSpawnKillRadius = 12.0,
 
-    -- Out of bounds
+    -- الخروج من الزون
     boundary = {
-        warningTime   = 5,     -- seconds before punishment
-        action        = 'kill' -- 'kill' | 'teleport'
+        warningTime   = 5,     -- ثواني قبل العقوبة
+        action        = 'kill' -- العقوبة: 'kill' قتل أو 'teleport' نقل
     },
 
-    -- Surrender vote
+    -- تصويت الانسحاب
     surrender = {
-        enabled       = true,
-        minRound      = 5,
-        requiredRatio = 0.75,   -- share of the team that must agree
-        voteDuration  = 30,
-        cooldown      = 120
+        enabled       = true,   -- تشغيل التصويت
+        minRound      = 5,      -- من أي راوند يصير مسموح
+        requiredRatio = 0.75,   -- نسبة الفريق الي لازم توافق
+        voteDuration  = 30,     -- مدة التصويت بالثواني
+        cooldown      = 120     -- ثواني قبل تصويت جديد
     },
 
-    -- Overtime
+    -- الوقت الإضافي
     overtime = {
-        enabled       = true,
-        roundsPerHalf = 2,
-        winBy         = 2,
-        maxOvertimes  = 5,
-        suddenDeath   = true    -- last overtime is a single decisive round
+        enabled       = true,   -- تشغيل الوقت الإضافي
+        roundsPerHalf = 2,      -- راوندات كل شوط إضافي
+        winBy         = 2,      -- لازم تفوز بفرق كم راوند
+        maxOvertimes  = 5,      -- أكثر عدد أشواط إضافية
+        suddenDeath   = true    -- آخر شوط إضافي يكون راوند واحد حاسم
     },
 
-    -- Match abort conditions
-    minPlayersToContinue = 1,   -- per team, below this the match is forfeited
-    abandonForfeitDelay  = 60,  -- seconds a team can play short handed
+    -- شروط إلغاء القيم
+    minPlayersToContinue = 1,   -- لكل فريق، تحت هذا الرقم تنحسب خسارة
+    abandonForfeitDelay  = 60,  -- ثواني يقدر الفريق يلعب فيها ناقص
 
-    -- Match record retention
-    maxMatchDuration     = 5400 -- hard stop (seconds)
+    -- سقف مدة القيم
+    maxMatchDuration     = 5400 -- إيقاف إجباري (بالثواني)
 }
 
 -- ============================================================================
--- 16. ROUTING BUCKETS
+-- ١٦. باكتات العزل
 -- ============================================================================
 
 Config.Buckets = {
-    start          = 10000,   -- first bucket id handed to a match
-    max            = 89999,
-    lockdownMode   = 'strict', -- entity lockdown for match buckets
-    populationEnabled = false, -- no ambient population inside matches
-    -- Buckets reserved for custom games
+    start          = 10000,   -- أول رقم باكت ينعطى لقيم
+    max            = 89999,   -- آخر رقم
+    lockdownMode   = 'strict', -- قفل الكيانات داخل باكتات القيم
+    populationEnabled = false, -- بدون مواطنين وسيارات داخل القيم
+    -- الباكتات المحجوزة للغرف الخاصة
     customStart    = 60000,
     customMax      = 79999,
-    -- Bucket used by the lobby / map vote stage
+    -- الباكت المستخدم بمرحلة اللوبي وتصويت الماب
     lobby          = 95000
 }
 
 -- ============================================================================
--- 17. RECONNECT
+-- ١٧. الرجوع بعد الانقطاع
 -- ============================================================================
 
 Config.Reconnect = {
-    enabled          = true,
-    window           = 180,   -- seconds to come back
-    restoreState     = true,  -- health, armor, weapons, score
-    -- Reconnecting inside the window cancels the leave penalty
+    enabled          = true,  -- تشغيل الرجوع
+    window           = 180,   -- ثواني عنده يرجع فيها
+    restoreState     = true,  -- ترجيع الدم والدرع والسلاح والنتيجة
+    -- الرجوع داخل المهلة يلغي عقوبة الخروج
     cancelPenalty    = true,
-    -- The match is paused while waiting (rounds do not advance)
+    -- توقيف القيم وهي تنتظره (الراوندات ما تمشي)
     pauseMatch       = false,
-    maxReconnects    = 2
+    maxReconnects    = 2      -- كم مرة يقدر يرجع بنفس القيم
 }
 
 -- ============================================================================
--- 18. AFK
+-- ١٨. الخمول
 -- ============================================================================
 
 Config.AFK = {
-    enabled          = true,
-    checkInterval    = 5000,   -- ms
-    warningAfter     = 45,     -- seconds without activity
-    kickAfter        = 75,     -- seconds without activity
-    -- Activity signals
+    enabled          = true,   -- تشغيل نظام الخمول
+    checkInterval    = 5000,   -- ملي ثانية بين كل فحص
+    warningAfter     = 45,     -- ثواني بدون حركة قبل التحذير
+    kickAfter        = 75,     -- ثواني بدون حركة قبل الطرد
+    -- إشارات النشاط
     signals = {
-        movement    = true,
-        camera      = true,
-        shooting    = true,
-        interaction = true
+        movement    = true,    -- المشي
+        camera      = true,    -- تحريك الكاميرا
+        shooting    = true,    -- الإطلاق
+        interaction = true     -- التفاعل
     },
-    cameraDeltaDegrees = 4.0,
-    movementDistance   = 1.5,
+    cameraDeltaDegrees = 4.0,  -- كم درجة تحرّك كاميرا تنحسب نشاط
+    movementDistance   = 1.5,  -- كم متر حركة تنحسب نشاط
 
-    -- Never counted as AFK during these states
+    -- ما ينحسب خمول أبداً بهذي الحالات
     ignoreStates = { 'WAITING', 'READY', 'MAP_VOTE', 'STARTING', 'ROUND_END', 'MATCH_END', 'CLEANUP' },
-    ignoreSpectators = true,
+    ignoreSpectators = true,   -- المشاهدين ما ينحسبون
 
     penalty = {
-        removeFromMatch = true,
-        rpPenalty       = 25,
-        cooldown        = 600,   -- seconds before queueing again
-        countsAsLeave   = true
+        removeFromMatch = true,  -- يطلع من القيم
+        rpPenalty       = 25,    -- كم RP ينخصم
+        cooldown        = 600,   -- ثواني قبل ما يقدر يبحث من جديد
+        countsAsLeave   = true   -- تنحسب مثل الخروج من القيم
     }
 }
 
 -- ============================================================================
--- 19. LEAVE PENALTY
+-- ١٩. عقوبة الخروج من القيم
 -- ============================================================================
 
 Config.LeavePenalty = {
-    enabled = true,
+    enabled = true,   -- تشغيل العقوبات
 
-    -- Rolling window used to count offences
+    -- المدة الي تنعد فيها المخالفات
     windowDays = 7,
 
-    tiers = {
+    tiers = {   -- درجات العقوبة: رقم المخالفة، الخصم، الانتظار، الحظر بالثواني
         { offence = 1, rp = 10, cooldown = 0,     ban = 0,      label = 'Warning' },
         { offence = 2, rp = 20, cooldown = 300,   ban = 0,      label = 'Short Cooldown' },
         { offence = 3, rp = 35, cooldown = 1800,  ban = 0,      label = 'Long Cooldown' },
@@ -1584,21 +1573,21 @@ Config.LeavePenalty = {
         { offence = 5, rp = 60, cooldown = 0,     ban = 604800, label = 'Ranked Ban 7d' }
     },
 
-    -- Leaving before the match goes live costs less
+    -- الخروج قبل ما تبدأ القيم فعلياً يكلّف أقل
     preLiveMultiplier = 0.4,
 
-    -- Grace: a disconnect that reconnects in time is not counted
+    -- تسامح: الانقطاع الي يرجع بالوقت ما ينحسب مخالفة
     graceOnReconnect  = true
 }
 
 -- ============================================================================
--- 20. RANK BANS
+-- ٢٠. الحظر من الرانكد
 -- ============================================================================
 
 Config.RankBan = {
-    types = { 'RANKED', 'MODE', 'CUSTOM', 'CHAT', 'PARTY', 'PERMANENT' },
+    types = { 'RANKED', 'MODE', 'CUSTOM', 'CHAT', 'PARTY', 'PERMANENT' },   -- أنواع الحظر
 
-    presetDurations = {
+    presetDurations = {   -- المدد الجاهزة باللوحة
         { label = '1 Hour',  seconds = 3600 },
         { label = '6 Hours', seconds = 21600 },
         { label = '24 Hours',seconds = 86400 },
@@ -1608,151 +1597,151 @@ Config.RankBan = {
         { label = 'Permanent', seconds = 0 }
     },
 
-    requireReason  = true,
-    requireEvidence= false,
-    notifyPlayer   = true
+    requireReason  = true,   -- السبب إجباري
+    requireEvidence= false,  -- الدليل إجباري
+    notifyPlayer   = true    -- يبلّغ اللاعب بالحظر
 }
 
 -- ============================================================================
--- 21. ANTI BOOSTING
+-- ٢١. مكافحة رفع الرانك بالغش (تبويست)
 -- ============================================================================
--- Nothing here bans automatically. Detections raise a flag with evidence for
--- staff review.
+-- ما فيه شي هنا يحظر تلقائياً. الكشف يرفع بلاغ مع الأدلة عشان الطاقم يراجعه.
 
 Config.AntiBoost = {
-    enabled = true,
+    enabled = true,   -- تشغيل المكافحة
 
-    -- Analyse a player's last N matches
+    -- يحلل آخر N قيم للاعب
     sampleSize = 25,
 
-    detectors = {
-        repeatedOpponent = {
+    detectors = {   -- الكواشف: severity هي درجة الخطورة
+        repeatedOpponent = {          -- نفس الخصم يتكرر
             enabled   = true,
-            threshold = 6,      -- same opponent in N of the sample
+            threshold = 6,      -- نفس الخصم بـ N قيم من العيّنة
             severity  = 2
         },
-        repeatedVictim = {
+        repeatedVictim = {            -- نفس الضحية تتكرر
             enabled   = true,
-            threshold = 25,     -- killed the same player N times in the sample
+            threshold = 25,     -- قتل نفس اللاعب N مرة داخل العيّنة
             severity  = 2
         },
-        shortMatches = {
+        shortMatches = {              -- قيمات قصيرة بشكل مريب
             enabled     = true,
-            minDuration = 90,   -- seconds
-            threshold   = 5,    -- N suspiciously short matches
+            minDuration = 90,   -- بالثواني
+            threshold   = 5,    -- N قيمة قصيرة مشبوهة
             severity    = 2
         },
-        intentionalLoss = {
+        intentionalLoss = {           -- خسارة متعمدة
             enabled       = true,
-            maxKD         = 0.15,
-            minDeaths     = 10,
+            maxKD         = 0.15,  -- نسبة قتل/موت منخفضة بشكل مريب
+            minDeaths     = 10,    -- أقل عدد موتات عشان تنحسب
             threshold     = 3,
             severity      = 3
         },
-        winTrading = {
+        winTrading = {                -- تبادل الفوز
             enabled   = true,
-            threshold = 4,      -- alternating wins with the same opponent
+            threshold = 4,      -- فوز متبادل مع نفس الخصم
             severity  = 3
         },
-        altAccount = {
+        altAccount = {                -- حساب ثاني لنفس الشخص
             enabled          = true,
-            matchOnLicense   = false, -- same license family
-            matchOnIP        = true,
-            newAccountDays   = 3,
+            matchOnLicense   = false, -- نفس عائلة الرخصة
+            matchOnIP        = true,  -- نفس الآيبي
+            newAccountDays   = 3,     -- الحساب أجد من كم يوم
             severity         = 3
         },
-        abnormalRP = {
+        abnormalRP = {                -- RP يزيد بسرعة غير طبيعية
             enabled   = true,
-            rpPerHour = 260,
+            rpPerHour = 260,    -- أكثر RP بالساعة يعتبر طبيعي
             severity  = 2
         },
-        impossibleHeadshot = {
+        impossibleHeadshot = {        -- نسبة هيدشوت مستحيلة
             enabled       = true,
-            headshotRatio = 0.85,  -- % of kills that are headshots
-            minKills      = 25,
+            headshotRatio = 0.85,  -- نسبة القتلات الي بالرأس
+            minKills      = 25,    -- أقل عدد قتلات عشان تنحسب
             severity      = 3
         },
-        linkedMatches = {
+        linkedMatches = {             -- نفس اللوبي يتكرر
             enabled   = true,
-            threshold = 5,   -- same lobby composition repeated
+            threshold = 5,   -- نفس تركيبة اللوبي تكررت N مرة
             severity  = 2
         }
     },
 
-    -- Flags at or above this total severity are highlighted for admins
+    -- البلاغات الي مجموع خطورتها من هذا الرقم فوق تنعلّم للإداريين
     reviewThreshold = 5,
 
-    -- How often the analyser runs (per player, after a match ends)
+    -- متى يشتغل المحلل (لكل لاعب، بعد نهاية القيم)
     analyseOnMatchEnd = true,
-    -- Keep raw evidence rows for N days
+    -- كم يوم تنحفظ صفوف الأدلة الخام
     evidenceRetentionDays = 30
 }
 
 -- ============================================================================
--- 22. SEASONS
+-- ٢٢. المواسم
 -- ============================================================================
 
 Config.Seasons = {
-    enabled = true,
+    enabled = true,   -- تشغيل نظام المواسم
 
-    -- Created automatically if no active season exists
+    -- ينشئ موسم تلقائياً إذا ما فيه موسم شغّال
     autoCreate = true,
-    defaultDurationDays = 60,
-    namePattern = 'Season %d',
+    defaultDurationDays = 60,     -- مدة الموسم بالأيام
+    namePattern = 'Season %d',    -- صيغة اسم الموسم
 
-    -- End of season handling
+    -- الي يصير بنهاية الموسم
     reset = {
-        mode          = 'soft',  -- 'soft' | 'hard' | 'none'
-        -- Soft reset formula: newRP = floor(rp * factor) + offset (clamped)
-        softFactor    = 0.55,
-        softOffset    = 120,
-        keepMMR       = true,
-        mmrSoftFactor = 0.85,
-        resetPlacement= true
+        mode          = 'soft',  -- 'soft' جزئي أو 'hard' كامل أو 'none' بدون
+        -- معادلة التصفير الجزئي: الـ RP الجديد = floor(القديم × factor) + offset
+        softFactor    = 0.55,    -- المعامل
+        softOffset    = 120,     -- الزيادة الثابتة
+        keepMMR       = true,    -- يبقي الـ MMR
+        mmrSoftFactor = 0.85,    -- معامل تخفيض الـ MMR
+        resetPlacement= true     -- يرجّع مباريات التحديد
     },
 
-    -- Archive the leaderboard and hand out rewards on season end
+    -- يأرشف لوحة الصدارة ويوزع الجوائز بنهاية الموسم
     archiveLeaderboard = true,
     distributeRewards  = true,
 
-    -- Checked on this interval (ms) to detect the season rollover
+    -- كل كم ملي ثانية ينفحص انتهاء الموسم
     checkInterval = 60000,
 
-    -- A season never ends while matches are live; it waits for them.
+    -- الموسم ما ينتهي وفيه قيمات شغّالة؛ ينتظرها تخلص.
     waitForLiveMatches = true
 }
 
 -- ============================================================================
--- 23. REWARDS
+-- ٢٣. الجوائز
 -- ============================================================================
--- type: 'money' | 'item' | 'weapon' | 'vehicle' | 'group' | 'title' | 'badge'
---       | 'frame' | 'effect'
+-- النوع: 'money' فلوس أو 'item' غرض أو 'weapon' سلاح أو 'vehicle' سيارة أو
+--        'group' قروب أو 'title' لقب أو 'badge' شارة أو 'frame' إطار أو
+--        'effect' مؤثر
 
 -- ============================================================================
--- 16b. STORE — cards and titles bought with coins
+-- ١٦ب. المتجر — البطايق والألقاب الي تنشترى بالكوينز
 -- ============================================================================
 --
--- Two cosmetics, no gameplay effect of any kind:
---   cards   the banner behind the player's lobby slot
---   titles  a word shown beside their name
+-- شكليات بس، وما لها أي تأثير على اللعب أبداً:
+--   البطايق (cards)   الخلفية خلف مربع اللاعب باللوبي
+--   الألقاب (titles)  كلمة تطلع جنب اسمه
 --
--- Coins are handed out by staff (admin panel > POINTS > Give Coins) and by
--- the per-match rewards below if you switch `earnPerMatch` on. Prices and
--- ownership are resolved on the server; the client only ever asks to buy.
+-- الكوينز يعطيها الطاقم (لوحة الإدارة > POINTS > Give Coins)، وكمان تجي من
+-- جوائز القيم تحت إذا شغّلت `earnPerMatch`. الأسعار والملكية كلها تنحسم
+-- بالسيرفر؛ الكلنت ما يسوي إلا يطلب الشراء.
 --
 Config.Store = {
-    enabled = true,
+    enabled = true,   -- تشغيل المتجر
 
     currency = {
-        label   = 'COINS',
-        starting = 0,          -- balance a brand new profile begins with
-        max      = 10000000
+        label   = 'COINS',     -- اسم العملة بالواجهة
+        starting = 0,          -- رصيد الحساب الجديد
+        max      = 10000000    -- أقصى رصيد
     },
 
-    -- Set to a number to also pay coins out per match. 0 = staff only.
+    -- حط رقم إذا تبي الكوينز تنعطى كمان على كل قيم. الصفر يعني الطاقم بس.
     earnPerMatch = { win = 0, loss = 0, mvp = 0 },
 
-    -- Badge colours for the little rarity tag on each item
+    -- ألوان شارة الندرة الصغيرة على كل غرض
     rarities = {
         common    = { label = 'COMMON',    color = '#8B93A3' },
         rare      = { label = 'RARE',      color = '#3FA9FF' },
@@ -1760,10 +1749,10 @@ Config.Store = {
         legendary = { label = 'LEGENDARY', color = '#F5C542' }
     },
 
-    -- ---- CARDS ---------------------------------------------------------
-    -- `image` is any URL, or a file you ship under Files/ui/img/ (add it to
-    -- the `files` block in fxmanifest.lua and use 'img/name.png').
-    -- The one marked default is owned by everyone and cannot be sold.
+    -- ---- البطايق -------------------------------------------------------
+    -- الحقل `image` يقبل أي رابط، أو ملف تحطه تحت Files/ui/img/ (سجّله بقائمة
+    -- `files` بملف fxmanifest.lua واكتبه 'img/name.png').
+    -- البطاقة المعلّمة افتراضية يملكها الكل وما تنباع.
     cards = {
         { id = 'default',     name = 'Default',          rarity = 'common',    price = 0,    image = '', default = true },
         { id = 'black_thorn', name = 'Black Thorn',      rarity = 'rare',      price = 400,  image = '' },
@@ -1775,8 +1764,8 @@ Config.Store = {
         { id = 'infinity',    name = 'Infinity',         rarity = 'legendary', price = 2000, image = '' }
     },
 
-    -- ---- TITLES --------------------------------------------------------
-    -- `color` tints the title wherever the name is shown.
+    -- ---- الألقاب -------------------------------------------------------
+    -- الحقل `color` يلوّن اللقب بكل مكان يطلع فيه الاسم.
     titles = {
         { id = 'none',         name = '—',            rarity = 'common',    price = 0,    default = true },
         { id = 'rookie',       name = 'ROOKIE',       rarity = 'common',    price = 0,    color = '#B9C1CC' },
@@ -1785,28 +1774,27 @@ Config.Store = {
         { id = 'legend',       name = 'LEGEND',       rarity = 'legendary', price = 2000, color = '#F5C542' }
     },
 
-    -- ---- EFFECTS -------------------------------------------------------
-    -- Animation that plays over the card in the party. Every one is drawn by
-    -- the interface itself — no images, no files to ship.
+    -- ---- المؤثرات ------------------------------------------------------
+    -- حركة تشتغل فوق البطاقة داخل القروب. كلها ترسمها الواجهة نفسها — بدون
+    -- صور وبدون ملفات تحتاج ترفعها.
     --
-    --   anim   which animation plays. One of:
-    --            glow    a halo around the card, breathing
-    --            scan    a bright band sweeping down
-    --            embers  particles drifting up
-    --            holo    a sheen crossing on the diagonal
-    --            storm   an irregular flash over the whole card
-    --            aurora  a slow wash of colour shifting across
-    --            sparkle points of light twinkling in place
-    --            rain    streaks falling down
-    --            pulse   rings expanding out from the edge
-    --            flames  fire licking up from the bottom
-    --            orbit   a light travelling around the border
-    --   color  the tint. color2 is used by the ones that blend two.
-    --   speed  1.0 is the designed pace; 0.5 is half speed, 2.0 twice.
+    --   anim   أي حركة تشتغل. وحدة من:
+    --            glow    هالة حول البطاقة، تتنفس
+    --            scan    شريط ضوء ينزل من فوق لتحت
+    --            embers  جمرات طالعة لفوق
+    --            holo    لمعة تعبر بالقطر
+    --            storm   وميض غير منتظم على البطاقة كلها
+    --            aurora  موجة ألوان بطيئة تعبر
+    --            sparkle نقاط ضوء تلمع بمكانها
+    --            rain    خطوط تنزل مثل المطر
+    --            pulse   حلقات تتوسع من الحواف
+    --            flames  نار تطلع من تحت
+    --            orbit   ضوء يلف حول الإطار
+    --   color  اللون. والـ color2 تستخدمه الحركات الي تمزج لونين.
+    --   speed  السرعة، و 1.0 هي السرعة المصممة، و 0.5 نصفها، و 2.0 ضعفها.
     --
-    -- `id` is only a name for the row, so the same animation can be sold as
-    -- many times as you like in different colours and at different speeds.
-    -- Copy a line, change the id, the colour and the price.
+    -- الـ `id` مجرد اسم للسطر، فتقدر تبيع نفس الحركة كم مرة ما تبي بألوان
+    -- وسرعات مختلفة. انسخ السطر، وغيّر الآيدي واللون والسعر.
     effects = {
         { id = 'none',    name = '—',         rarity = 'common',    price = 0,    default = true },
         { id = 'glow',    name = 'Aura',      rarity = 'common',    price = 250,  anim = 'glow',    color = '#3FA9FF' },
@@ -1822,86 +1810,81 @@ Config.Store = {
         { id = 'storm',   name = 'Storm',     rarity = 'legendary', price = 2200, anim = 'storm',   color = '#F5C542' }
     },
 
-    -- ---- FRAMES AND AVATAR DECORATIONS ---------------------------------
-    -- Two separate slots, bought and worn on their own:
+    -- ---- الإطارات وزخارف الأفتار ---------------------------------------
+    -- خانتين منفصلات، كل وحدة تنشترى وتنلبس لحالها:
     --
-    --   frames   the border around the whole player card
-    --   avatars  the decoration around the portrait, the way Discord puts
-    --            one around an avatar
+    --   frames   الإطار حول بطاقة اللاعب كاملة
+    --   avatars  الزخرفة حول الصورة الشخصية، زي ما يحط الديسكورد زخرفة حول
+    --            الأفتار
     --
-    -- They share every field below, because they are the same recipe drawn in
-    -- two places. Both are built from these numbers rather than from a fixed
-    -- list, so you can make your own without touching any code.
+    -- الاثنتين تشتركون بكل الحقول تحت، لأنها نفس الوصفة بس مرسومة بمكانين.
+    -- والاثنتين تنبنون من هذي الأرقام مو من قائمة ثابتة، فتقدر تسوي أشكالك
+    -- بدون ما تلمس أي كود.
     --
-    --   style   how the line is drawn:
-    --             solid     one line
-    --             double    a line, a gap, then a second line
-    --             dashed    a dashed line
-    --             dots      a row of dots around the edge
-    --             gradient  the line runs color -> color2 -> color
-    --             corners   only the four corners are drawn
-    --             studs     a block at each corner
-    --             ticks     a thin line, with a longer mark at each corner
-    --             ribbon    a bar across the top
-    --             spin      a ring of colour turning around it
-    --             halo      a soft ring bleeding outward, no hard edge
-    --             bare      no line at all — for one that is only its
-    --                       drawing, see `art` below
+    --   style   كيف ينرسم الخط:
+    --             solid     خط واحد
+    --             double    خط، ثم فراغ، ثم خط ثاني
+    --             dashed    خط متقطع
+    --             dots      صف نقاط حول الحافة
+    --             gradient  الخط يتدرج من color إلى color2 ثم يرجع
+    --             corners   الزوايا الأربع بس
+    --             studs     مكعب صغير بكل زاوية
+    --             ticks     خط رفيع مع علامة أطول بكل زاوية
+    --             ribbon    شريط عرضي فوق
+    --             spin      حلقة لون تلف حوله
+    --             halo      هالة ناعمة تنتشر برا، بدون حافة حادة
+    --             bare      بدون أي خط — إذا تبيه رسمة بس، شوف `art` تحت
     --
-    --           A portrait is round, so a shape that lives at the corners of
-    --           a box is drawn as its arc in `avatars`: corners and ticks
-    --           become marks around the rim, studs become rivets on it, and
-    --           the ribbon curves over the top of the head.
+    --           الصورة الشخصية دايرة، فأي شكل مكانه زوايا المربع ينرسم كقوس
+    --           بـ `avatars`: الـ corners والـ ticks تصير علامات حول الحافة،
+    --           والـ studs تصير مسامير عليها، والـ ribbon ينحني فوق الرأس.
     --
-    --   art     a drawing worn on top of the line — this is the part that
-    --           makes one look like a Discord decoration rather than a
-    --           border. It takes its colours from the row, so one drawing
-    --           serves any number of rows.
+    --   art     رسمة تنلبس فوق الخط — وهذي هي الي تخلي الشكل يشبه زخارف
+    --           الديسكورد بدل ما يكون مجرد إطار. تاخذ ألوانها من نفس السطر،
+    --           فرسمة وحدة تخدم أي عدد صفوف.
     --
-    --             in `avatars`, the whole drawing wraps the portrait:
-    --               orbs      lights floating around it
-    --               vines     a thorned vine climbing round it
-    --               crystals  shards standing out of the rim
-    --               flames    fire licking up around it
-    --               wings     a pair of wings
-    --               laurel    a laurel wreath, open at the top
-    --               tech      a targeting rig: brackets, ticks and a chip
+    --             بـ `avatars`، الرسمة كلها تلف حول الصورة:
+    --               orbs      أضواء طايرة حولها
+    --               vines     غصن شوكي يتسلق حولها
+    --               crystals  شظايا طالعة من الحافة
+    --               flames    نار تلعب حولها
+    --               wings     جناحين
+    --               laurel    إكليل غار، مفتوح من فوق
+    --               tech      عدّة تصويب: أقواس وعلامات وشريحة
     --
-    --             in `frames`, a spray in each of the four corners:
-    --               vines     a rose vine climbing in
-    --               crystals  a cluster of shards
-    --               flames    fire creeping along the edges
-    --               tech      a hard bracket with ticks and a chip
-    --               stars     scattered sparkles
+    --             وبـ `frames`، رشة بكل زاوية من الزوايا الأربع:
+    --               vines     غصن ورد يتسلق للداخل
+    --               crystals  عنقود شظايا
+    --               flames    نار تزحف على الحواف
+    --               tech      قوس صلب مع علامات وشريحة
+    --               stars     لمعات متناثرة
     --
-    --           A name with no drawing on that side is simply skipped, so a
-    --           frame asking for 'wings' keeps its border and gains nothing.
+    --           الاسم الي ما له رسمة بتلك الجهة ينتجاهل بهدوء، فالإطار الي
+    --           يطلب 'wings' يضل بإطاره وما يزيد عليه شي.
     --
-    --           An avatar decoration can point at your own picture instead:
-    --           put the file in Files/ui/img and write the name, e.g.
-    --           art = 'img/deco.png'. Anything with a dot or a slash in it is
-    --           read as a file. A picture is only ever drawn around the
-    --           portrait — one image cannot be flipped into four corners and
-    --           still look right — and it keeps its own colours, so an APNG
-    --           lifted from a decoration pack lands the way it was drawn.
+    --           وزخرفة الأفتار تقدر تأشّر على صورتك أنت بدل الرسمات: حط الملف
+    --           بـ Files/ui/img واكتب اسمه، مثال art = 'img/deco.png'. أي شي
+    --           فيه نقطة أو سلاش ينقرأ كملف. والصورة ما ترسم إلا حول الصورة
+    --           الشخصية — الصورة الوحدة ما تنقلب أربع زوايا وتضل شكلها حلو —
+    --           وتحتفظ بألوانها هي، فصورة APNG مسحوبة من باكج زخارف تنزل زي ما
+    --           هي مرسومة.
     --
-    --   width   thickness in pixels (1 to 6 reads well)
-    --   color   the main tone
-    --   color2  the far end of a gradient, a spin or a halo. Leave it out and
-    --           the second tone is the first one.
-    --   glow    how far it bleeds outward, in pixels. 0 or absent for flat.
-    --   animated  a gradient that travels around. Only means anything for
-    --           style = 'gradient'; spin and halo always move.
-    --   speed   seconds for one full trip. Default 6.
+    --   width   السماكة بالبكسل (من ١ إلى ٦ تطلع حلوة)
+    --   color   اللون الأساسي
+    --   color2  الطرف الثاني للتدرج أو الدوران أو الهالة. إذا ما كتبته يصير
+    --           اللون الثاني هو نفس الأول.
+    --   glow    كم ينتشر التوهج برا، بالبكسل. صفر أو بدون كتابة يعني مسطّح.
+    --   animated  تدرج يتحرك ويلف. ما له معنى إلا مع style = 'gradient'؛
+    --           الـ spin والـ halo يتحركون دايم.
+    --   speed   ثواني اللفة الكاملة. الافتراضي ٦.
     --
-    -- `id` is just a name for the row, and the two lists are separate, so the
-    -- same id can appear in both — that is how a set is sold as a matching
-    -- pair. Copy a line, change the id and the colours, and that is a new one
-    -- in the store.
+    -- الـ `id` مجرد اسم للسطر، والقائمتين منفصلات، فنفس الآيدي يقدر يطلع
+    -- بالاثنتين — وهذي هي طريقة بيع الطقم المتناسق. انسخ السطر، وغيّر الآيدي
+    -- والألوان، وصار عندك غرض جديد بالمتجر.
     frames = {
         { id = 'none',    name = '—',        rarity = 'common',    price = 0,    default = true },
 
-        -- ---- lines ----
+        -- ---- الخطوط ----
         { id = 'steel',   name = 'Steel',    rarity = 'common',    price = 200,
           style = 'double',   width = 2, color = '#8B93A3' },
         { id = 'dash',    name = 'Marker',   rarity = 'common',    price = 250,
@@ -1933,7 +1916,7 @@ Config.Store = {
         { id = 'prism',   name = 'Prism',    rarity = 'legendary', price = 3000,
           style = 'gradient', width = 3, color = '#3FA9FF', color2 = '#FF7A3C', animated = true, glow = 26, speed = 3 },
 
-        -- ---- drawings in the corners of the card ----
+        -- ---- رسمات بزوايا البطاقة ----
         { id = 'uplink',  name = 'Uplink',   rarity = 'rare',      price = 1100,
           style = 'ticks',   art = 'tech',     width = 2,
           color = '#2FDD9B', color2 = '#EAF1F8', glow = 10 },
@@ -1957,12 +1940,12 @@ Config.Store = {
           color = '#FF7A3C', color2 = '#FFD24A', animated = true, glow = 22 }
     },
 
-    -- The decoration around the portrait. Same fields as a frame; the ids
-    -- shared with the list above are the matching halves of a set.
+    -- الزخرفة حول الصورة الشخصية. نفس حقول الإطار؛ والآيديهات المشتركة مع
+    -- القائمة فوق هي النصف المطابق من نفس الطقم.
     avatars = {
         { id = 'none',    name = '—',        rarity = 'common',    price = 0,    default = true },
 
-        -- ---- rings ----
+        -- ---- الحلقات ----
         { id = 'ring',    name = 'Ring',     rarity = 'common',    price = 300,
           style = 'double',  width = 2, color = '#6FB8FF' },
         { id = 'bolts',   name = 'Bolts',    rarity = 'rare',      price = 550,
@@ -1974,7 +1957,7 @@ Config.Store = {
         { id = 'cinder',  name = 'Cinder',   rarity = 'epic',      price = 1700,
           style = 'spin',    width = 4, color = '#FF7A3C', color2 = '#FFD24A', speed = 3 },
 
-        -- ---- drawings worn round the portrait ----
+        -- ---- رسمات تنلبس حول الصورة ----
         { id = 'wisps',   name = 'Wisps',    rarity = 'rare',      price = 900,
           style = 'bare',    art = 'orbs',
           color = '#2FE6C8', color2 = '#7CFFE6', glow = 18, speed = 8 },
@@ -1997,7 +1980,7 @@ Config.Store = {
           style = 'double',  art = 'laurel',   width = 2,
           color = '#F5C542', color2 = '#FFE9A8', glow = 20 },
 
-        -- ---- the halves that match a frame of the same name ----
+        -- ---- الأنصاف الي تطابق إطار بنفس الاسم ----
         { id = 'void',    name = 'Void',     rarity = 'epic',      price = 1600,
           style = 'spin',    width = 3, color = '#C158FF', color2 = '#3FA9FF', speed = 5, glow = 18 },
         { id = 'solar',   name = 'Solar',    rarity = 'epic',      price = 1700,
@@ -2013,21 +1996,21 @@ Config.Store = {
 }
 
 Config.Rewards = {
-    enabled = true,
+    enabled = true,   -- تشغيل الجوائز
 
-    -- Awarded at the end of every ranked match
+    -- تنعطى بنهاية كل قيم مصنّفة
     perMatch = {
-        winMoney  = 2500,
-        lossMoney = 800,
-        mvpMoney  = 1500,
-        xpWin     = 120,
-        xpLoss    = 45,
-        xpPerKill = 6,
-        xpPerHeadshot = 4,
-        xpMVP     = 60
+        winMoney  = 2500,   -- فلوس الفوز
+        lossMoney = 800,    -- فلوس الخسارة
+        mvpMoney  = 1500,   -- فلوس أفضل لاعب
+        xpWin     = 120,    -- خبرة الفوز
+        xpLoss    = 45,     -- خبرة الخسارة
+        xpPerKill = 6,      -- خبرة كل قتلة
+        xpPerHeadshot = 4,  -- خبرة كل هيدشوت
+        xpMVP     = 60      -- خبرة أفضل لاعب
     },
 
-    -- Season end rewards keyed by the highest tier reached
+    -- جوائز نهاية الموسم حسب أعلى درجة وصلها اللاعب
     season = {
         IRON      = { { type = 'money', value = 25000 },  { type = 'title', value = 'Iron Contender' } },
         BRONZE    = { { type = 'money', value = 50000 },  { type = 'title', value = 'Bronze Contender' } },
@@ -2040,13 +2023,13 @@ Config.Rewards = {
         RADIANT   = { { type = 'money', value = 2500000 },{ type = 'title', value = 'Radiant' }, { type = 'effect', value = 'radiant_aura' }, { type = 'vehicle', value = 'zentorno' } }
     },
 
-    -- Levelling
+    -- المستويات
     levels = {
-        enabled     = true,
-        baseXP      = 1000,
-        growth      = 1.12,   -- xp needed = baseXP * growth^(level-1)
-        maxLevel    = 100,
-        levelRewards = {
+        enabled     = true,   -- تشغيل نظام المستويات
+        baseXP      = 1000,   -- خبرة أول مستوى
+        growth      = 1.12,   -- الخبرة المطلوبة = baseXP × growth^(المستوى-1)
+        maxLevel    = 100,    -- أعلى مستوى
+        levelRewards = {      -- جوائز عند مستويات محددة
             [10]  = { { type = 'title', value = 'Rookie' } },
             [25]  = { { type = 'money', value = 100000 } },
             [50]  = { { type = 'badge', value = 'veteran' }, { type = 'money', value = 250000 } },
@@ -2055,21 +2038,21 @@ Config.Rewards = {
         }
     },
 
-    -- Duplicate protection: a reward key can only be granted once per season
+    -- منع التكرار: الجائزة الوحدة ما تنعطى إلا مرة بالموسم
     uniquePerSeason = true
 }
 
 -- ============================================================================
--- 24. MISSIONS / ACHIEVEMENTS
+-- ٢٤. المهام والإنجازات
 -- ============================================================================
 
 Config.Missions = {
-    enabled = true,
+    enabled = true,   -- تشغيل المهام
 
-    daily = {
-        count = 3,
-        resetHour = 0, -- UTC
-        pool = {
+    daily = {         -- المهام اليومية
+        count = 3,     -- كم مهمة تنعطى باليوم
+        resetHour = 0, -- ساعة التصفير بتوقيت UTC
+        pool = {       -- بركة المهام الي ينختار منها
             { key = 'daily_kills',     label = 'Get 25 kills',            target = 25, stat = 'kills',     xp = 150, money = 25000 },
             { key = 'daily_hs',        label = 'Get 10 headshots',        target = 10, stat = 'headshots', xp = 180, money = 30000 },
             { key = 'daily_wins',      label = 'Win 2 ranked matches',    target = 2,  stat = 'wins',      xp = 200, money = 40000 },
@@ -2079,10 +2062,10 @@ Config.Missions = {
         }
     },
 
-    weekly = {
-        count = 3,
-        resetDay = 1, -- Monday
-        pool = {
+    weekly = {        -- المهام الأسبوعية
+        count = 3,     -- كم مهمة بالأسبوع
+        resetDay = 1,  -- يوم التصفير (١ = الاثنين)
+        pool = {       -- بركة المهام الأسبوعية
             { key = 'weekly_kills',   label = 'Get 150 kills',           target = 150, stat = 'kills',     xp = 800,  money = 150000 },
             { key = 'weekly_wins',    label = 'Win 10 ranked matches',   target = 10,  stat = 'wins',      xp = 1200, money = 250000 },
             { key = 'weekly_hs',      label = 'Get 60 headshots',        target = 60,  stat = 'headshots', xp = 1000, money = 200000 },
@@ -2092,6 +2075,7 @@ Config.Missions = {
     }
 }
 
+-- الإنجازات: المفتاح، والاسم، والوصف، والإحصائية المتابعة، والهدف، والخبرة
 Config.Achievements = {
     { key = 'first_blood_10', label = 'Opening Act',    desc = 'Get 10 first bloods',      stat = 'first_bloods', target = 10,   xp = 300 },
     { key = 'ace_1',          label = 'Ace',            desc = 'Win a round alone vs all', stat = 'aces',         target = 1,    xp = 500 },
@@ -2105,48 +2089,48 @@ Config.Achievements = {
 }
 
 -- ============================================================================
--- 25. PARTY
+-- ٢٥. القروب
 -- ============================================================================
 
 Config.Party = {
-    enabled       = true,
-    maxSize       = 5,
-    inviteTimeout = 30,      -- seconds
-    requireReady  = true,
-    -- Disband the party when the leader leaves instead of transferring
+    enabled       = true,    -- تشغيل نظام القروب
+    maxSize       = 5,       -- أكثر عدد أعضاء
+    inviteTimeout = 30,      -- ثواني قبل ما تنتهي الدعوة
+    requireReady  = true,    -- الكل لازم يضغط جاهز
+    -- يفكك القروب لما يطلع القائد بدل ما ينقل القيادة لواحد ثاني
     disbandOnLeaderLeave = false,
-    -- Party members must be within this rank id gap
+    -- أعضاء القروب لازم يكونون داخل هذا الفرق برقم الرانك
     rankGap       = 5,
-    rankGapEnabled= true,
-    -- Distance requirement to invite (0 = anywhere on the server)
+    rankGapEnabled= true,    -- تشغيل القيد
+    -- مسافة الدعوة المطلوبة (0 = من أي مكان بالسيرفر)
     inviteDistance= 0.0
 }
 
 -- ============================================================================
--- 26. CUSTOM GAMES
+-- ٢٦. الغرف الخاصة
 -- ============================================================================
 
 Config.CustomGames = {
-    enabled          = true,
-    maxRooms         = 25,
-    maxPlayersPerRoom= 20,
-    requirePermission= false,   -- when true, Config.Permissions.createCustom is checked
-    roomNameMaxLength= 28,
-    passwordMaxLength= 20,
-    idleTimeout      = 900,     -- seconds before an empty room is destroyed
+    enabled          = true,    -- تشغيل الغرف الخاصة
+    maxRooms         = 25,      -- أكثر عدد غرف بنفس الوقت
+    maxPlayersPerRoom= 20,      -- أكثر عدد لاعبين بالغرفة
+    requirePermission= false,   -- إذا true تنفحص صلاحية Config.Permissions.createCustom
+    roomNameMaxLength= 28,      -- أطول اسم غرفة
+    passwordMaxLength= 20,      -- أطول كلمة سر
+    idleTimeout      = 900,     -- ثواني قبل ما تنحذف الغرفة الفاضية
 
-    -- Custom games never affect ranked progress unless staff enable it
+    -- الغرف الخاصة ما تأثر على الرانك إلا إذا شغّلها الطاقم
     rankedAllowed    = false,
-    rankedPermission = 'pvp.admin',
+    rankedPermission = 'pvp.admin',   -- الصلاحية المطلوبة لتشغيلها مصنّفة
 
-    -- Default room settings (host can change every one of these)
-    -- Short human friendly code used by JOIN CODE in the UI
+    -- إعدادات الغرفة الافتراضية (المضيف يقدر يغيّر كل وحدة منها)
+    -- كود قصير وسهل للانضمام، يستخدمه زر JOIN CODE بالواجهة
     roomCode = {
-        length   = 4,
-        alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' -- no I/O/0/1
+        length   = 4,   -- طول الكود
+        alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' -- بدون I و O و 0 و 1
     },
 
-    -- Match types offered in the custom match UI
+    -- أنواع القيم المعروضة بواجهة الغرف الخاصة
     matchTypes = {
         { id = 'normal',  label = 'Normal',   description = 'Everyone spawns with the selected weapons.' },
         { id = 'random',  label = 'Random',   description = 'A random weapon from the selection each round.' },
@@ -2154,39 +2138,39 @@ Config.CustomGames = {
     },
 
     defaults = {
-        mode          = '5v5',
-        map           = 'harbor',
-        matchType     = 'normal',
-        weapons       = { 'pistol_mk2' },
-        armorEnabled  = false,
-        headshotOnly  = false,
-        rounds        = 13,
-        roundTime     = 120,
-        matchTime     = 3600,
-        killLimit     = 0,
-        friendlyFire  = false,
-        headshotOneShot = true,
-        health        = 100,
-        armor         = 100,
-        movement      = 1.0,
-        jump          = true,
-        respawn       = false,
-        respawnTime   = 4,
-        lives         = 1,
-        spectators    = true,
-        teamBalance   = true,
-        autoStart     = true,
-        autoStartAt   = 1.0,     -- fraction of the slots filled
-        minimap       = false,
-        vehicles      = false,
-        killcam       = false,
-        overtime      = true,
-        suddenDeath   = true,
-        loadout       = 'standard',
-        locked        = false
+        mode          = '5v5',       -- الطور
+        map           = 'harbor',    -- الماب
+        matchType     = 'normal',    -- نوع القيم
+        weapons       = { 'pistol_mk2' },   -- الأسلحة المختارة
+        armorEnabled  = false,       -- الدرع
+        headshotOnly  = false,       -- الرأس فقط
+        rounds        = 13,          -- عدد الراوندات
+        roundTime     = 120,         -- وقت الراوند بالثواني
+        matchTime     = 3600,        -- وقت القيم بالثواني
+        killLimit     = 0,           -- حد القتلات
+        friendlyFire  = false,       -- ضرر الزملاء
+        headshotOneShot = true,      -- الهيدشوت يقتل بطلقة
+        health        = 100,         -- الدم
+        armor         = 100,         -- الدرع
+        movement      = 1.0,         -- سرعة الحركة
+        jump          = true,        -- القفز
+        respawn       = false,       -- الرسبن
+        respawnTime   = 4,           -- ثواني الرسبن
+        lives         = 1,           -- عدد الأرواح
+        spectators    = true,        -- السماح بالمشاهدين
+        teamBalance   = true,        -- موازنة الفرق
+        autoStart     = true,        -- بداية تلقائية
+        autoStartAt   = 1.0,         -- نسبة امتلاء الأماكن الي تبدأ عندها
+        minimap       = false,       -- الخريطة الصغيرة
+        vehicles      = false,       -- السيارات
+        killcam       = false,       -- كام القتل
+        overtime      = true,        -- الوقت الإضافي
+        suddenDeath   = true,        -- الراوند الحاسم
+        loadout       = 'standard',  -- السلاح الافتراضي
+        locked        = false        -- الغرفة مقفولة بكلمة سر
     },
 
-    -- Boundaries the host cannot exceed
+    -- حدود ما يقدر المضيف يتعداها
     limits = {
         rounds    = { min = 1,   max = 31 },
         roundTime = { min = 30,  max = 600 },
@@ -2201,45 +2185,45 @@ Config.CustomGames = {
 }
 
 -- ============================================================================
--- 27. SPECTATOR
+-- ٢٧. المشاهدة
 -- ============================================================================
 
 Config.SpectatorRules = {
     enabled          = true,
-    -- Dead players can only follow their own team
+    -- اللاعب الميت ما يشاهد إلا فريقه
     teamOnly         = true,
-    -- Staff with the spectate permission can watch everyone
+    -- الطاقم الي عنده صلاحية المشاهدة يشوف الكل
     staffFreeSpectate= true,
-    -- Delay before a dead player enters spectator (killcam window)
+    -- تأخير قبل ما يدخل الميت وضع المشاهدة (نافذة كام القتل)
     deathDelay       = 2,
-    -- Allow free camera for staff
+    -- السماح بالكاميرا الحرة للطاقم
     staffFreecam     = true
 }
 
 -- ============================================================================
--- 28. KILL FEED / EXTRA EVENTS
+-- ٢٨. الكيل فيد والأحداث الإضافية
 -- ============================================================================
 
 Config.CombatEvents = {
-    firstBlood   = { enabled = true, xp = 15 },
-    doubleKill   = { enabled = true, window = 5000, xp = 20 },
-    tripleKill   = { enabled = true, window = 5000, xp = 35 },
-    quadraKill   = { enabled = true, window = 5000, xp = 55 },
-    ace          = { enabled = true, xp = 100 },
-    clutch       = { enabled = true, xp = 60 },
-    revenge      = { enabled = true, xp = 10 },
-    nemesis      = { enabled = true, threshold = 3 },
-    killStreak   = { enabled = true, steps = { 3, 5, 7, 10, 15 } },
-    commendation = { enabled = true, perMatch = 1 }
+    firstBlood   = { enabled = true, xp = 15 },   -- أول دم بالراوند
+    doubleKill   = { enabled = true, window = 5000, xp = 20 },   -- قتلتين متتاليتين
+    tripleKill   = { enabled = true, window = 5000, xp = 35 },   -- ثلاث قتلات
+    quadraKill   = { enabled = true, window = 5000, xp = 55 },   -- أربع قتلات
+    ace          = { enabled = true, xp = 100 },  -- قتل الفريق كله لحاله
+    clutch       = { enabled = true, xp = 60 },   -- حسم الراوند وهو آخر واحد
+    revenge      = { enabled = true, xp = 10 },   -- ثأر من الي قتله
+    nemesis      = { enabled = true, threshold = 3 },   -- خصم يقتله متكرر
+    killStreak   = { enabled = true, steps = { 3, 5, 7, 10, 15 } },   -- سلاسل القتل
+    commendation = { enabled = true, perMatch = 1 }    -- إشادة بلاعب بكل قيم
 }
 
 -- ============================================================================
--- 29. MVP
+-- ٢٩. أفضل لاعب (MVP)
 -- ============================================================================
 
 Config.MVP = {
-    enabled = true,
-    weights = {
+    enabled = true,   -- تشغيل اختيار أفضل لاعب
+    weights = {       -- وزن كل إحصائية بحساب النقاط
         kills      = 3.0,
         deaths     = -1.5,
         damage     = 0.012,
@@ -2250,16 +2234,16 @@ Config.MVP = {
         assists    = 0.8,
         firstBloods= 1.2
     },
-    -- Only the winning team can take MVP when true
+    -- إذا true ما ياخذ أفضل لاعب إلا من الفريق الفايز
     winnerOnly = false
 }
 
 -- ============================================================================
--- 30. SECURITY / RATE LIMITS
+-- ٣٠. الأمان وحدود الطلبات
 -- ============================================================================
 
 Config.Security = {
-    -- Per player, per event, requests allowed inside the window
+    -- لكل لاعب ولكل حدث: كم طلب مسموح داخل المدة (max عدد، window ملي ثانية)
     rateLimits = {
         default      = { max = 20, window = 10000 },
         menu         = { max = 10, window = 10000 },
@@ -2276,24 +2260,24 @@ Config.Security = {
         chat         = { max = 10, window = 10000 }
     },
 
-    -- Automatic action when a player floods events
-    floodAction   = 'ignore',   -- 'ignore' | 'kick' | 'flag'
-    floodKickAfter= 6,          -- consecutive violations before the action
+    -- الإجراء التلقائي لما يغرق اللاعب السيرفر بالأحداث
+    floodAction   = 'ignore',   -- 'ignore' تجاهل أو 'kick' طرد أو 'flag' بلاغ
+    floodKickAfter= 6,          -- كم مخالفة متتالية قبل الإجراء
 
-    -- Reject damage reports above this value (per single hit)
+    -- يرفض بلاغات الضرر الي فوق هذي القيمة (للضربة الوحدة)
     maxSingleDamage = 400,
-    -- Reject a kill claim if the victim was not damaged recently
+    -- يرفض ادعاء القتل إذا الضحية ما انضرب قريب
     killDamageWindow= 4000,
 
-    -- Validate that the reported weapon is actually equipped by the attacker
+    -- يتأكد إن السلاح المبلّغ عنه فعلاً بيد المهاجم
     validateEquippedWeapon = true,
 
-    -- Log every rejected event
+    -- يسجّل كل حدث مرفوض
     logRejections = true
 }
 
 -- ============================================================================
--- 31. COMMANDS
+-- ٣١. الكوماندات
 -- ============================================================================
 
 Config.Commands = {
@@ -2302,7 +2286,7 @@ Config.Commands = {
     leaderboard  = { enabled = true, name = 'leaderboard',  permission = nil },
     customgame   = { enabled = true, name = 'customgame',   permission = nil },
     reconnectpvp = { enabled = true, name = 'reconnectpvp', permission = nil },
-    -- These are gated by Config.AdminActions, not by the permission field.
+    -- هذي محكومة بـ Config.AdminActions، مو بحقل permission هنا.
     pvpadmin     = { enabled = true, name = 'pvpadmint',    permission = nil },
     rankban      = { enabled = true, name = 'rankban',      permission = nil },
     rankunban    = { enabled = true, name = 'rankunban',    permission = nil },
@@ -2313,25 +2297,25 @@ Config.Commands = {
 }
 
 -- ============================================================================
--- 32. GLOBAL SWITCHES
+-- ٣٢. المفاتيح العامة
 -- ============================================================================
 
 Config.Global = {
-    -- Freeze ranked queueing (maintenance)
+    -- تجميد البحث بالرانكد (وقت الصيانة)
     rankedFrozen   = false,
-    frozenMessage  = 'Ranked is temporarily disabled by the administration.',
+    frozenMessage  = 'Ranked is temporarily disabled by the administration.',  -- الرسالة الي تطلع
 
-    -- Minimum level / playtime before ranked is unlocked
+    -- أقل مستوى ووقت لعب قبل ما ينفتح الرانكد
     requirements = {
-        enabled     = false,
-        minLevel    = 0,
-        minPlaytime = 0 -- seconds
+        enabled     = false,   -- تشغيل الشروط
+        minLevel    = 0,       -- أقل مستوى
+        minPlaytime = 0        -- أقل وقت لعب بالثواني
     },
 
-    -- Announce big events in the server chat
+    -- إعلان الأحداث الكبيرة بشات السيرفر
     announce = {
-        radiantPromotion = true,
-        aces             = true,
-        winStreaks       = 10
+        radiantPromotion = true,   -- الوصول لرانك Radiant
+        aces             = true,   -- قتل الفريق كله لحاله
+        winStreaks       = 10      -- سلسلة فوز من هذا الطول فوق
     }
 }

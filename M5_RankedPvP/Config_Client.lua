@@ -2,299 +2,295 @@
     ============================================================================
      M5 Ranked PvP — Config_Client.lua
     ----------------------------------------------------------------------------
-     CLIENT SIDE SETTINGS ONLY.
-     Never place sensitive data here (permissions, webhooks, RP formulas, ...).
-     Everything in this file is readable by any player.
+     إعدادات جهة الكلنت فقط.
+     لا تحط هنا أي شي حساس (صلاحيات، ويب هوك، معادلات RP ... إلخ).
+     كل الي بهذا الملف أي لاعب يقدر يقرأه، فخلّه شكل وواجهة بس.
     ============================================================================
 ]]
 
 Config = {}
 
-Config.ResourceName = 'M5_RankedPvP'
-Config.Debug        = false
+Config.ResourceName = 'M5_RankedPvP'  -- اسم المجلد؛ لازم يطابق اسم الريسورس
+Config.Debug        = false           -- true يطبع رسائل تتبّع بالكونسول
 
 -- ============================================================================
--- 1. LANGUAGE / TEXT
+-- ١. اللغة والنصوص
 -- ============================================================================
 
-Config.Language = 'en' -- 'en' | 'ar'
+Config.Language = 'en' -- لغة نصوص الواجهة: 'en' أو 'ar'
 
 Config.Text = {
     en = {
-        openPrompt      = '[E] Open M5 Ranked PvP',
-        returnToZone    = 'RETURN TO COMBAT ZONE',
-        warning         = 'WARNING',
-        matchFound      = 'MATCH FOUND',
-        searching       = 'SEARCHING FOR MATCH',
-        roundStart      = 'GO',
-        victory         = 'VICTORY',
-        defeat          = 'DEFEAT',
-        draw            = 'DRAW',
-        overtime        = 'OVERTIME',
-        suddenDeath     = 'SUDDEN DEATH',
-        spectating      = 'SPECTATING',
-        eliminated      = 'ELIMINATED',
-        afkWarning      = 'AFK WARNING — MOVE NOW',
-        reconnect       = 'RECONNECT TO MATCH',
-        noPermission    = 'You do not have access to this feature.',
-        alreadyInMatch  = 'You are already in a match.'
+        openPrompt      = '[E] Open M5 Ranked PvP',   -- تلميح الفتح عند النقطة
+        returnToZone    = 'RETURN TO COMBAT ZONE',    -- تحذير الخروج من الزون
+        warning         = 'WARNING',                  -- كلمة "تحذير"
+        matchFound      = 'MATCH FOUND',              -- لقينا لك قيم
+        searching       = 'SEARCHING FOR MATCH',      -- جاري البحث
+        roundStart      = 'GO',                       -- بداية الراوند
+        victory         = 'VICTORY',                  -- فوز
+        defeat          = 'DEFEAT',                   -- خسارة
+        draw            = 'DRAW',                     -- تعادل
+        overtime        = 'OVERTIME',                 -- وقت إضافي
+        suddenDeath     = 'SUDDEN DEATH',             -- الموت المفاجئ
+        spectating      = 'SPECTATING',               -- وضع المشاهدة
+        eliminated      = 'ELIMINATED',               -- انقصيت
+        afkWarning      = 'AFK WARNING — MOVE NOW',   -- تحذير خمول
+        reconnect       = 'RECONNECT TO MATCH',       -- رجوع لقيم منقطعة
+        noPermission    = 'You do not have access to this feature.', -- ما عندك صلاحية
+        alreadyInMatch  = 'You are already in a match.'              -- أنت أصلاً بقيم
     },
     ar = {
-        openPrompt      = '[E] فتح M5 Ranked PvP',
-        returnToZone    = 'عد إلى منطقة القتال',
-        warning         = 'تحذير',
-        matchFound      = 'تم إيجاد مباراة',
-        searching       = 'جاري البحث عن مباراة',
-        roundStart      = 'ابدأ',
-        victory         = 'فوز',
-        defeat          = 'خسارة',
-        draw            = 'تعادل',
-        overtime        = 'وقت إضافي',
-        suddenDeath     = 'الموت المفاجئ',
-        spectating      = 'مشاهدة',
-        eliminated      = 'تم إقصاؤك',
-        afkWarning      = 'تحذير خمول — تحرك الآن',
-        reconnect       = 'العودة إلى المباراة',
-        noPermission    = 'ليس لديك صلاحية.',
-        alreadyInMatch  = 'أنت بالفعل داخل مباراة.'
+        openPrompt      = '[E] فتح M5 Ranked PvP',    -- تلميح الفتح عند النقطة
+        returnToZone    = 'عد إلى منطقة القتال',      -- تحذير الخروج من الزون
+        warning         = 'تحذير',                    -- كلمة "تحذير"
+        matchFound      = 'تم إيجاد مباراة',          -- لقينا لك قيم
+        searching       = 'جاري البحث عن مباراة',     -- جاري البحث
+        roundStart      = 'ابدأ',                     -- بداية الراوند
+        victory         = 'فوز',                      -- فوز
+        defeat          = 'خسارة',                    -- خسارة
+        draw            = 'تعادل',                    -- تعادل
+        overtime        = 'وقت إضافي',                -- وقت إضافي
+        suddenDeath     = 'الموت المفاجئ',            -- الموت المفاجئ
+        spectating      = 'مشاهدة',                   -- وضع المشاهدة
+        eliminated      = 'تم إقصاؤك',                -- انقصيت
+        afkWarning      = 'تحذير خمول — تحرك الآن',   -- تحذير خمول
+        reconnect       = 'العودة إلى المباراة',      -- رجوع لقيم منقطعة
+        noPermission    = 'ليس لديك صلاحية.',         -- ما عندك صلاحية
+        alreadyInMatch  = 'أنت بالفعل داخل مباراة.'   -- أنت أصلاً بقيم
     }
 }
 
 -- ============================================================================
--- 2. OPEN MENU — location / command / keybind / vRP menu
+-- ٢. فتح القائمة — نقطة / كوماند / كيبايند / قائمة vRP
 -- ============================================================================
 
 Config.OpenMenu = {
 
     location = {
-        enabled = true,
+        enabled = true,          -- تشغيل نقطة الفتح بالخريطة
 
-        coords = vector3(
+        coords = vector3(        -- إحداثية النقطة
             -1035.42,
             -2733.18,
             13.75
         ),
 
-        distance     = 2.0,   -- interaction distance
-        drawDistance = 15.0,  -- marker draw distance
+        distance     = 2.0,   -- مدى التفاعل (متر) عشان يظهر لك [E]
+        drawDistance = 15.0,  -- من كم متر يبدأ يرسم الماركر
 
         marker = {
-            enabled = true,
-            type    = 1,
-            scale   = vector3(1.0, 1.0, 1.0),
-            color   = { r = 255, g = 40, b = 70, a = 110 },
-            zOffset = -0.95,
-            bobUpAndDown = false,
-            rotate  = false
+            enabled = true,                                  -- رسم الماركر
+            type    = 1,                                     -- نوع الماركر (رقم GTA)
+            scale   = vector3(1.0, 1.0, 1.0),                -- حجمه
+            color   = { r = 255, g = 40, b = 70, a = 110 },  -- لونه وشفافيته
+            zOffset = -0.95,                                 -- رفع/نزول عن الأرض
+            bobUpAndDown = false,                            -- يطلع وينزل
+            rotate  = false                                  -- يدور حول نفسه
         },
 
         blip = {
-            enabled = true,
-            sprite  = 304,
-            color   = 1,
-            scale   = 0.8,
-            display = 4,
-            shortRange = true,
-            name    = 'M5 Ranked PvP'
+            enabled = true,                 -- بلب بالخريطة
+            sprite  = 304,                  -- شكل الأيقونة
+            color   = 1,                    -- لونها
+            scale   = 0.8,                  -- حجمها
+            display = 4,                    -- طريقة العرض بالخريطة
+            shortRange = true,              -- ما يبين إلا لما تقرب
+            name    = 'M5 Ranked PvP'       -- الاسم بالخريطة
         }
     },
 
-    -- vRP main menu entry (server side registration, toggled from here for convenience)
+    -- إضافة الخيار داخل قائمة vRP الرئيسية (التسجيل بالسيرفر، والمفتاح هنا للسهولة)
     vrpRegisterMenu = {
-        enabled     = true,
-        name        = 'PvP Ranked',
-        description = 'Open the M5 Ranked PvP competitive hub'
+        enabled     = true,                                    -- تشغيل الخيار
+        name        = 'PvP Ranked',                            -- اسم الخيار بالقائمة
+        description = 'Open the M5 Ranked PvP competitive hub'  -- وصفه
     },
 
     command = {
-        enabled = true,
-        name    = 'pvp'
+        enabled = true,     -- تشغيل الكوماند
+        name    = 'pvp'     -- يعني /pvp يفتح الواجهة
     },
 
     keybind = {
-        enabled = true,
-        key     = 'F6',
-        label   = 'M5 Ranked PvP — Open Menu'
+        enabled = true,                             -- تشغيل زر الفتح
+        key     = 'F6',                             -- الزر الافتراضي (اللاعب يقدر يغيّره)
+        label   = 'M5 Ranked PvP — Open Menu'       -- الاسم داخل إعدادات فايف ام
     },
 
-    -- The search dock stays on screen after the hub is closed. NUI without
-    -- focus cannot receive clicks, so this key cancels the search from the
-    -- game world; the dock's X still works while the hub is open.
+    -- شريط البحث يضل بالشاشة حتى بعد ما تسكّر الواجهة. الـ NUI بدون فوكس ما
+    -- يستقبل ضغطات، فهذا الزر يلغي البحث وأنت باللعبة؛ وزر X بالشريط يشتغل
+    -- عادي طول ما الواجهة مفتوحة.
     cancelKeybind = {
-        enabled = true,
-        key     = 'F7',
-        label   = 'M5 Ranked PvP — Cancel Search'
+        enabled = true,                             -- تشغيل زر إلغاء البحث
+        key     = 'F7',                             -- الزر الافتراضي
+        label   = 'M5 Ranked PvP — Cancel Search'   -- الاسم داخل إعدادات فايف ام
     }
 }
 
 -- ============================================================================
--- 2a. COMING BACK
+-- ٢أ. الرجوع لمكانك
 -- ============================================================================
 --
--- Where a player is put once they are finished — after the training range,
--- after a match, and after withdrawing from one. Nothing here changes what
--- happens inside a match; it only decides where you land when it is over.
+-- وين يرجع اللاعب لما يخلّص — بعد التدريب، وبعد القيم، وبعد الانسحاب منها.
+-- ما لها أي علاقة بالي يصير داخل القيم؛ بس تحدد وين تنزل لما تنتهي.
 --
--- The spot you were standing on is remembered the moment you are taken out of
--- the world, so it is wherever you actually were: the point you queued from,
--- the place you were driving through, anywhere.
+-- مكانك ينحفظ باللحظة الي تنسحب فيها من العالم، فهو مكانك الحقيقي: النقطة
+-- الي بحثت منها، أو الطريق الي كنت تسوق فيه، أي مكان.
 
 Config.Return = {
-    -- false leaves the player wherever the match dropped them, which is what
-    -- the resource did before this existed.
+    -- false يخلي اللاعب مكان ما نزّلته القيم، وهذا كان تصرف السكربت قبل الميزة.
     enabled = true,
 
-    -- true  — everyone comes back to `coords` below, wherever they went in
-    --         from. Use this for a lobby or an arena entrance.
-    -- false — everyone comes back to the exact spot they left from.
+    -- true  — الكل يرجع للإحداثية `coords` تحت مهما كان دخل من وين.
+    --         استخدمها إذا عندك لوبي أو مدخل ساحة.
+    -- false — كل واحد يرجع لنفس المكان الي طلع منه بالضبط.
     useCoords = false,
-    coords    = vector4(-1038.5, -2737.6, 20.2, 328.0),
+    coords    = vector4(-1038.5, -2737.6, 20.2, 328.0),  -- x, y, z, اتجاه النظر
 
-    -- Each way out can be turned off on its own. A false here means that one
-    -- leaves the player where they are, whatever the two settings above say.
-    afterTraining  = true,
-    afterMatch     = true,
-    afterSurrender = true,
+    -- كل طريق خروج تقدر تطفيه لحاله. false هنا يعني هذا الطريق يخلي اللاعب
+    -- مكانه، مهما كانت الإعدادات فوق.
+    afterTraining  = true,   -- بعد الخروج من التدريب
+    afterMatch     = true,   -- بعد نهاية القيم
+    afterSurrender = true,   -- بعد الانسحاب
 
-    -- A spot is only worth returning to if it was a real one. A position
-    -- recorded while the player was falling through the map, or in the sky,
-    -- is not — so anything above this height is ignored and the coordinates
-    -- above are used instead, if they are set.
+    -- المكان ما يستاهل الرجوع له إلا إذا كان مكان حقيقي. الإحداثية الي تنحفظ
+    -- واللاعب طايح تحت الماب أو طاير بالسما ما تنفع — فأي ارتفاع فوق هذا الرقم
+    -- ينتجاهل ويستخدم الإحداثية فوق إذا كانت مفعّلة.
     maxHeight = 900.0
 }
 
 -- ============================================================================
--- 2b. TRAINING
+-- ٢ب. التدريب
 -- ============================================================================
 
 Config.Training = {
-    -- How the player leaves the training range.
+    -- كيف يطلع اللاعب من ساحة التدريب.
     exit = {
-        enabled = true,
+        enabled = true,   -- تشغيل الخروج من التدريب
 
-        -- Key binding. The player can rebind it in
+        -- زر الخروج. اللاعب يقدر يغيّره من
         -- FiveM: Settings > Key Bindings > FiveM.
         keybind = {
-            enabled = true,
-            key     = 'BACK',                              -- backspace
-            display = 'BACKSPACE',                         -- shown in the on screen hint
-            label   = 'M5 Ranked PvP — Exit Training'
+            enabled = true,                                -- تشغيل الزر
+            key     = 'BACK',                              -- باك سبيس
+            display = 'BACKSPACE',                         -- الي ينكتب بالتلميح
+            label   = 'M5 Ranked PvP — Exit Training'      -- الاسم داخل إعدادات فايف ام
         },
 
-        -- Chat command, e.g. /exittraining
+        -- كوماند بالشات، مثال /exittraining
         command = {
-            enabled = true,
-            name    = 'exittraining'
+            enabled = true,             -- تشغيل الكوماند
+            name    = 'exittraining'    -- اسمه
         },
 
-        -- On screen hint inside the training panel
+        -- تلميح على الشاشة داخل لوحة التدريب
         hint = {
-            enabled = true,
-            text    = 'EXIT TRAINING'
+            enabled = true,             -- إظهار التلميح
+            text    = 'EXIT TRAINING'   -- نصه
         },
 
-        -- Press the key twice inside this window (ms) to leave.
-        -- 0 = a single press exits immediately.
+        -- اضغط الزر مرتين خلال هذي المدة (ملي ثانية) عشان تطلع.
+        -- 0 = ضغطة وحدة تطلعك على طول.
         confirmWindow = 2500
     }
 }
 
 -- ============================================================================
--- 3. ADAPTIVE THREAD TIMING (performance)
+-- ٣. توقيت الثريدات المتكيّف (أداء)
 -- ============================================================================
--- The proximity thread scales its wait time with the distance to the point,
--- so it costs almost nothing when nobody is around.
+-- ثريد القرب يزيد وقت انتظاره كل ما بعدت عن النقطة، فتكلفته شبه صفر إذا ما
+-- فيه أحد قريب منها.
 
 Config.Timing = {
-    idleFar     = 3000, -- > 150m from the point
-    idleMid     = 1000, -- 50m .. 150m
-    idleNear    = 250,  -- drawDistance .. 50m
-    active      = 0,    -- inside drawDistance (marker rendering requires per frame)
-    hudTick     = 200,  -- HUD refresh while inside a match
-    matchTick   = 250,  -- match logic (zone bounds, afk, spectator)
-    spectateTick= 0     -- spectator camera (only while spectating)
+    idleFar     = 3000, -- أبعد من ١٥٠ متر عن النقطة
+    idleMid     = 1000, -- بين ٥٠ و ١٥٠ متر
+    idleNear    = 250,  -- من مدى الرسم إلى ٥٠ متر
+    active      = 0,    -- داخل مدى الرسم (رسم الماركر يحتاج كل فريم)
+    hudTick     = 200,  -- تحديث الهود داخل القيم
+    matchTick   = 250,  -- منطق القيم (حدود الزون، الخمول، المشاهدة)
+    spectateTick= 0     -- كاميرا المشاهدة (بس وقت ما تكون مشاهد)
 }
 
 -- ============================================================================
--- 3b. BRAND — the name shown at the top of the hub
+-- ٣ب. اسم السيرفر — الي يطلع فوق الواجهة
 -- ============================================================================
 --
--- Drawn above the page title, exactly where "FUTURE RP / MATCHMAKING" sits in
--- the reference. `name` is plain and `accent` is tinted with your accent
--- colour, so "FUTURE" + "RP" reads as one name in two tones.
+-- ينرسم فوق عنوان الصفحة، بنفس مكان "FUTURE RP / MATCHMAKING" بالصورة
+-- المرجعية. الـ `name` يطلع بلون عادي و `accent` يطلع بلون الأكسنت حقك،
+-- فـ "FUTURE" + "RP" تقرأ كاسم واحد بلونين.
 --
 Config.Brand = {
-    enabled = true,
+    enabled = true,      -- إظهار الاسم فوق الواجهة
 
-    name   = 'FUTURE',   -- plain half
-    accent = 'RP',       -- tinted half; set to '' for a single-colour name
+    name   = 'FUTURE',   -- النص العادي
+    accent = 'RP',       -- النص الملوّن؛ خلّه '' إذا تبي الاسم بلون واحد
 
-    -- The small line underneath. Leave it as it is to always read
-    -- MATCHMAKING like the reference, or set it to '' to show the name of the
-    -- page you are on instead (LEADERBOARD, STORE, ...).
+    -- السطر الصغير الي تحته. خلّه زي ما هو عشان يكتب MATCHMAKING دايم مثل
+    -- الصورة، أو حطه '' عشان يكتب اسم الصفحة الي أنت فيها (LEADERBOARD،
+    -- STORE ... إلخ).
     subtitle = 'MATCHMAKING'
 }
 
 -- ============================================================================
--- 4. UI / THEME
+-- ٤. الواجهة والألوان
 -- ============================================================================
 
 Config.UI = {
 
     -- ------------------------------------------------------------------
-    -- COLOURS
-    -- Every colour the interface uses lives here. They are pushed into the
-    -- NUI as CSS variables the moment the hub opens, so changing a value
-    -- here restyles the whole script — menu, HUD, kill feed, overlays and
-    -- native drawings alike. Accepts any CSS colour (#hex, rgb(), hsl()).
+    -- الألوان
+    -- كل لون تستخدمه الواجهة موجود هنا. تنرسل للـ NUI كمتغيرات CSS بلحظة
+    -- فتح الواجهة، فتغيير أي قيمة هنا يغيّر شكل السكربت كامل — القائمة،
+    -- الهود، الكيل فيد، الشاشات، وحتى الرسم داخل اللعبة. يقبل أي لون CSS
+    -- (‎#hex أو rgb() أو hsl()).
     -- ------------------------------------------------------------------
     colors = {
-        -- brand accent
-        accent      = '#2E9BE6',   -- primary blue
-        accentDark  = '#1B6FB0',   -- gradient end / pressed state
-        accentSoft  = 'rgba(46,155,230,.16)', -- tinted fills
-        accentGlow  = 'rgba(46,155,230,.45)', -- glows and shadows
+        -- لون الهوية
+        accent      = '#2E9BE6',   -- الأزرق الأساسي
+        accentDark  = '#1B6FB0',   -- نهاية التدرج / حالة الضغط
+        accentSoft  = 'rgba(46,155,230,.16)', -- تعبئة خفيفة
+        accentGlow  = 'rgba(46,155,230,.45)', -- التوهج والظلال
 
-        -- surfaces
-        background  = '#080B10',   -- page ground
-        panel       = '#0D131B',   -- cards, modals
-        panelAlt    = '#121A24',   -- raised rows
-        panelDeep   = '#070A0F',   -- inputs, wells
+        -- الأسطح
+        background  = '#080B10',   -- خلفية الصفحة
+        panel       = '#0D131B',   -- البطاقات والنوافذ
+        panelAlt    = '#121A24',   -- الصفوف المرفوعة
+        panelDeep   = '#070A0F',   -- الحقول والمناطق الغائرة
 
-        -- lines
-        edge        = 'rgba(70,150,220,.24)',  -- accented borders
-        edgeSoft    = 'rgba(255,255,255,.07)', -- neutral borders
+        -- الخطوط
+        edge        = 'rgba(70,150,220,.24)',  -- حدود بلون الهوية
+        edgeSoft    = 'rgba(255,255,255,.07)', -- حدود محايدة
 
-        -- type
-        text        = '#EAF1F8',
-        textDim     = '#8FA0B4',
-        textFaint   = '#5C6B7D',
+        -- النصوص
+        text        = '#EAF1F8',   -- النص الأساسي
+        textDim     = '#8FA0B4',   -- نص ثانوي
+        textFaint   = '#5C6B7D',   -- نص باهت
 
-        -- states
-        win         = '#2FDD9B',
-        lose        = '#FF3B4E',
-        gold        = '#F5C542',
+        -- الحالات
+        win         = '#2FDD9B',   -- فوز
+        lose        = '#FF3B4E',   -- خسارة
+        gold        = '#F5C542',   -- ذهبي / مميّز
 
-        -- teams (players may override these in Settings)
-        teamA       = '#3FA9FF',
-        teamB       = '#FF4757',
+        -- الفرق (اللاعب يقدر يغيّرها من الإعدادات)
+        teamA       = '#3FA9FF',   -- الفريق الأول
+        teamB       = '#FF4757',   -- الفريق الثاني
 
-        -- avatar tile gradient
-        avatarFrom  = '#2E9BE6',
-        avatarTo    = '#1B6FB0',
+        -- تدرج مربع الأفتار
+        avatarFrom  = '#2E9BE6',   -- بدايته
+        avatarTo    = '#1B6FB0',   -- نهايته
 
-        -- light tips of gradients and small accents
-        accentLight = '#7FD0FF',   -- bright end of accent bars
-        winLight    = '#8CF5CE',   -- bright end of the health bar
-        levelBadge  = '#2E9BE6',   -- level pill on the avatar
-        leaderMark  = '#F5C542'    -- party leader crown
+        -- أطراف التدرجات الفاتحة واللمسات الصغيرة
+        accentLight = '#7FD0FF',   -- الطرف الفاتح لأشرطة الهوية
+        winLight    = '#8CF5CE',   -- الطرف الفاتح لشريط الدم
+        levelBadge  = '#2E9BE6',   -- شارة المستوى على الأفتار
+        leaderMark  = '#F5C542'    -- تاج قائد القروب
     },
 
-    -- Corner rounding used across the interface (px)
+    -- تدوير الحواف بكل الواجهة (بكسل)
     radius = 10,
 
-    -- Rank colours. The server sends the authoritative list on boot; these
-    -- are the fallback used before the payload arrives.
+    -- ألوان الرانكات. السيرفر يرسل القائمة المعتمدة عند التشغيل؛ هذي بس
+    -- احتياط يستخدم قبل ما توصل.
     rankColors = {
         UNRANKED  = '#5A616D',
         IRON      = '#7C7C80',
@@ -309,315 +305,307 @@ Config.UI = {
     },
 
     animations = {
-        enabled        = true,
-        pageFade       = 180,
-        counterSpeed   = 900,   -- RP counter roll duration (ms)
-        rankUpDuration = 5200
+        enabled        = true,  -- تشغيل حركات الواجهة
+        pageFade       = 180,   -- سرعة ظهور الصفحة (ملي ثانية)
+        counterSpeed   = 900,   -- مدة دوران عدّاد الـ RP (ملي ثانية)
+        rankUpDuration = 5200   -- مدة عرض حركة تغيّر الرانك (ملي ثانية)
     },
 
-    scale = 1.0,           -- global UI scale multiplier
-    blurBackground = false, -- blur the game behind the hub (GTA screen blur)
+    scale = 1.0,           -- مضاعف حجم الواجهة كامل
+    blurBackground = false, -- تشويش خلفية اللعبة خلف الواجهة (بلور GTA)
 
-    -- Decorative layers behind the hub
+    -- طبقات زخرفية خلف الواجهة
     decor = {
-        grain     = true,  -- fine film grain
-        vignette  = true,  -- darkened corners
-        glow      = true   -- accent glow bloom
+        grain     = true,  -- حبيبات فيلم خفيفة
+        vignette  = true,  -- تعتيم الزوايا
+        glow      = true   -- توهج بلون الهوية
     }
 }
 
 -- ============================================================================
--- 5. HUD
+-- ٥. الهود (شاشة القيم)
 -- ============================================================================
 
 Config.HUD = {
-    enabled          = true,
-    scale            = 1.0,
-    showPing         = true,
-    showAlivePlayers = true,
-    showAmmo         = true,
-    showHealth       = true,
-    showArmor        = true,
-    showWeapon       = true,
-    showRoundTimer   = true,
+    enabled          = true,   -- تشغيل الهود كامل
+    scale            = 1.0,    -- حجم الهود
+    showPing         = true,   -- إظهار البنق
+    showAlivePlayers = true,   -- إظهار عدد الأحياء
+    showAmmo         = true,   -- إظهار الذخيرة
+    showHealth       = true,   -- إظهار الدم
+    showArmor        = true,   -- إظهار الدرع
+    showWeapon       = true,   -- إظهار السلاح
+    showRoundTimer   = true,   -- إظهار وقت الراوند
 
-    -- Shown over the arena between the deploy and the first countdown: the map
-    -- name, both team names and every player on them. The countdown closes it
-    -- early, so `duration` is only the cap for a slow start.
+    -- شاشة العرض فوق الساحة بين النزول وأول عد تنازلي: اسم الماب، واسم
+    -- الفريقين، وكل اللاعبين فيهم. العد التنازلي يسكّرها بدري، فـ `duration`
+    -- بس السقف الأعلى إذا تأخرت البداية.
     showcase = {
-        enabled  = true,
-        duration = 8,        -- seconds
-        showIds  = true      -- print the player id next to the name
+        enabled  = true,     -- تشغيل شاشة العرض
+        duration = 8,        -- بالثواني
+        showIds  = true      -- كتابة آيدي اللاعب جنب اسمه
     },
 
-    -- Player card, bottom left of the match HUD.
+    -- بطاقة اللاعب، تحت يسار هود القيم.
     player = {
-        enabled  = true,
-        showId   = true,
-        segments = 10        -- ticks across the health and armour bars
+        enabled  = true,     -- إظهار البطاقة
+        showId   = true,     -- إظهار الآيدي فيها
+        segments = 10        -- عدد الشرط بشريط الدم والدرع
     },
 
-    -- Weapon card, bottom right of the match HUD.
+    -- بطاقة السلاح، تحت يمين هود القيم.
     weapon = {
-        enabled  = true,
-        segments = 12,       -- ticks across the magazine bar
-        -- Optional artwork per weapon. Put the files under Files/ui/img/ and
-        -- point at them with nui://m5_rankedpvp/Files/ui/img/<file>. Anything
-        -- not listed here falls back to a drawn silhouette, so this can stay
-        -- empty and the panel still looks finished.
+        enabled  = true,     -- إظهار البطاقة
+        segments = 12,       -- عدد الشرط بشريط المخزن
+        -- صورة اختيارية لكل سلاح. حط الملفات بـ Files/ui/img/ وأشّر لها بـ
+        -- nui://m5_rankedpvp/Files/ui/img/<الملف>. أي سلاح مو مكتوب هنا
+        -- يترسم له شكل بديل، فتقدر تخلي القائمة فاضية والبطاقة تطلع كاملة.
         images = {
             -- ['WEAPON_PISTOL_MK2']   = 'nui://m5_rankedpvp/Files/ui/img/pistol_mk2.png',
             -- ['WEAPON_CARBINERIFLE'] = 'nui://m5_rankedpvp/Files/ui/img/carbine.png',
         }
     },
 
-    -- Full scoreboard shown while a key is held during a match.
-    -- The key is registered with FiveM's keybinding system, so a player can
-    -- rebind it under Settings > Key Bindings > FiveM > M5 Ranked PvP.
+    -- السكور بورد الكامل الي يطلع وأنت ضاغط زر داخل القيم.
+    -- الزر مسجّل بنظام فايف ام، فاللاعب يقدر يغيّره من
+    -- Settings > Key Bindings > FiveM > M5 Ranked PvP.
     scoreboard = {
-        enabled  = true,
-        key      = 'TAB',            -- default binding
-        display  = 'TAB',            -- what the hint at the bottom shows
-        label    = 'M5 Ranked PvP — Scoreboard',
-        showHint = true,
-        -- Show it automatically during the round-end and match-end pauses
+        enabled  = true,             -- تشغيل السكور بورد
+        key      = 'TAB',            -- الزر الافتراضي
+        display  = 'TAB',            -- الي ينكتب بالتلميح تحت
+        label    = 'M5 Ranked PvP — Scoreboard',   -- الاسم داخل إعدادات فايف ام
+        showHint = true,             -- إظهار التلميح
+        -- يطلع لحاله بوقفات نهاية الراوند ونهاية القيم
         autoOnRoundEnd = true
     },
 
-    -- Hold a key to leave the match. A hold rather than a press so it can
-    -- never be hit by accident mid fight, and it is bound through FiveM's
-    -- keybinding system so the player can move it off X.
+    -- اضغط مطوّل عشان تنسحب من القيم. ضغط مطوّل مو نقرة عشان ما ينضغط غلط
+    -- وسط القتال، ومسجّل بنظام فايف ام فاللاعب يقدر ينقله من زر X.
     surrender = {
-        enabled  = true,
-        key      = 'X',
-        display  = 'X',
-        label    = 'M5 Ranked PvP — Surrender (hold)',
-        holdTime = 5,                 -- seconds the key must stay down
-        -- Refuse while the round is still counting down, so nobody quits
-        -- before the first shot by leaning on the key.
+        enabled  = true,              -- تشغيل الانسحاب
+        key      = 'X',               -- الزر الافتراضي
+        display  = 'X',               -- الي ينكتب بالتلميح
+        label    = 'M5 Ranked PvP — Surrender (hold)',  -- الاسم داخل إعدادات فايف ام
+        holdTime = 5,                 -- كم ثانية لازم يضل الزر مضغوط
+        -- يرفض الانسحاب والراوند لسه بالعد التنازلي، عشان ما أحد يطلع قبل أول
+        -- طلقة لأنه متكي على الزر.
         blockDuringCountdown = true
     },
 
-    -- The match result panel. It is an overlay with no NUI focus, so it cannot
-    -- be clicked away — this key is how the player dismisses it. ESC is not
-    -- bindable in FiveM (the pause menu owns it), so the default is BACKSPACE.
-    -- It is registered with FiveM's keybinding system, so it can be rebound
-    -- under Settings > Key Bindings > FiveM.
+    -- لوحة نتيجة القيم. هي شاشة بدون فوكس NUI، يعني ما تنضغط بالماوس — فهذا
+    -- الزر هو الي يسكّرها. زر ESC ما ينحجز بفايف ام (قائمة الوقفة تملكه)،
+    -- فالافتراضي باك سبيس. ومسجّل بنظام فايف ام فيقدر اللاعب يغيّره من
+    -- Settings > Key Bindings > FiveM.
     result = {
-        enabled = true,
-        key     = 'BACK',        -- backspace
-        display = 'BACKSPACE',   -- what the hint on the panel shows
-        label   = 'M5 Ranked PvP — Close Result',
-        -- Seconds before it closes on its own. 0 = only the key closes it.
+        enabled = true,          -- إظهار لوحة النتيجة
+        key     = 'BACK',        -- باك سبيس
+        display = 'BACKSPACE',   -- الي ينكتب باللوحة
+        label   = 'M5 Ranked PvP — Close Result',  -- الاسم داخل إعدادات فايف ام
+        -- كم ثانية وتسكّر لحالها. 0 = ما تسكّر إلا بالزر.
         autoClose = 20
     },
 
-    -- The word thrown across the screen as a round starts and ends: FIGHT when
-    -- it goes live, VICTORY or DEFEAT when it is decided.
+    -- الكلمة الي ترتمي بالشاشة ببداية الراوند ونهايته: FIGHT لما يبدأ،
+    -- و VICTORY أو DEFEAT لما ينحسم.
     banner = {
-        enabled   = true,
-        -- shown the moment the countdown runs out and the freeze lifts
+        enabled   = true,      -- تشغيل الشاشة
+        -- تطلع باللحظة الي يخلص فيها العد التنازلي وينفك التجميد
         startWord = 'FIGHT',
-        -- how long each one stays up, in milliseconds
-        startMs   = 1500,
-        endMs     = 2600,
-        -- The round number and the score still sit under the word. Turn this
-        -- off for a bare banner.
+        -- كم تضل كل وحدة، بالملي ثانية
+        startMs   = 1500,      -- بداية الراوند
+        endMs     = 2600,      -- نهاية الراوند
+        -- رقم الراوند والنتيجة يقعدون تحت الكلمة. طفّه إذا تبيها بدون تفاصيل.
         showRound = true
     },
 
-    -- The promotion screen, shown once the result panel is dismissed and only
-    -- when the rank actually changed.
+    -- شاشة تغيّر الرانك، تطلع بعد ما تسكّر لوحة النتيجة، وبس إذا الرانك فعلاً
+    -- تغيّر.
     rankChange = {
-        enabled = true,
-        -- Seconds before it closes on its own. 0 = only the key closes it.
+        enabled = true,     -- تشغيل الشاشة
+        -- كم ثانية وتسكّر لحالها. 0 = ما تسكّر إلا بالزر.
         autoClose = 0
     },
 
     killFeed = {
-        enabled   = true,
-        position  = 'right', -- 'right' | 'left'
-        maxLines  = 6,
-        lifetime  = 6000,
-        showHeadshotIcon = true
+        enabled   = true,    -- تشغيل الكيل فيد
+        position  = 'right', -- مكانه: 'right' أو 'left'
+        maxLines  = 6,       -- أكثر عدد أسطر تطلع بنفس الوقت
+        lifetime  = 6000,    -- كم يضل السطر (ملي ثانية)
+        showHeadshotIcon = true   -- إظهار أيقونة الهيدشوت
     },
 
-    -- Disable the GTA minimap while inside a match (mode can override)
+    -- إخفاء خريطة GTA داخل القيم (الطور يقدر يتجاوزها)
     hideMinimap = true,
-    -- Hide the default vRP/HUD elements event (fired for other resources to hook)
+    -- إيفنت إخفاء هود vRP الأساسي (تطلقه للسكربتات الثانية عشان تسمع له)
     externalHudEvent = 'm5rp:hud:external'
 }
 
 -- ============================================================================
--- 6. SOUNDS
+-- ٦. الأصوات
 -- ============================================================================
--- name = the file-less native frontend sound (soundset), or an html5 key played
--- by the NUI. `nui = true` plays a synthesised WebAudio cue from app.js.
+-- name = صوت الواجهة الجاهز باللعبة (soundset)، أو مفتاح html5 يشغّله الـ NUI.
+-- `nui = true` يعني صوت مركّب من WebAudio داخل app.js.
 
 Config.Sounds = {
-    enabled = true,
-    volume  = 0.55,
+    enabled = true,   -- تشغيل الأصوات
+    volume  = 0.55,   -- الصوت العام (من 0 إلى 1)
 
-    click        = { nui = true,  key = 'click' },
-    hover        = { nui = true,  key = 'hover' },
-    open         = { nui = true,  key = 'open' },
-    close        = { nui = true,  key = 'close' },
-    queueStart   = { nui = true,  key = 'queue' },
-    matchFound   = { nui = true,  key = 'found' },
-    accept       = { nui = true,  key = 'accept' },
-    countdown    = { nui = true,  key = 'tick' },
-    roundStart   = { nui = true,  key = 'go' },
-    roundWin     = { nui = true,  key = 'roundwin' },
-    roundLoss    = { nui = true,  key = 'roundloss' },
-    kill         = { nui = true,  key = 'kill' },
-    headshot     = { nui = true,  key = 'headshot' },
-    victory      = { nui = true,  key = 'victory' },
-    defeat       = { nui = true,  key = 'defeat' },
-    rankUp       = { nui = true,  key = 'rankup' },
-    rankDown     = { nui = true,  key = 'rankdown' },
-    error        = { nui = true,  key = 'error' },
-    warning      = { nui = true,  key = 'warning' }
+    click        = { nui = true,  key = 'click' },      -- ضغطة زر
+    hover        = { nui = true,  key = 'hover' },      -- مرور الماوس
+    open         = { nui = true,  key = 'open' },       -- فتح الواجهة
+    close        = { nui = true,  key = 'close' },      -- إغلاق الواجهة
+    queueStart   = { nui = true,  key = 'queue' },      -- بداية البحث
+    matchFound   = { nui = true,  key = 'found' },      -- لقينا قيم
+    accept       = { nui = true,  key = 'accept' },     -- قبول القيم
+    countdown    = { nui = true,  key = 'tick' },       -- تكة العد التنازلي
+    roundStart   = { nui = true,  key = 'go' },         -- بداية الراوند
+    roundWin     = { nui = true,  key = 'roundwin' },   -- فوز راوند
+    roundLoss    = { nui = true,  key = 'roundloss' },  -- خسارة راوند
+    kill         = { nui = true,  key = 'kill' },       -- قتلة
+    headshot     = { nui = true,  key = 'headshot' },   -- هيدشوت
+    victory      = { nui = true,  key = 'victory' },    -- فوز القيم
+    defeat       = { nui = true,  key = 'defeat' },     -- خسارة القيم
+    rankUp       = { nui = true,  key = 'rankup' },     -- ترقية رانك
+    rankDown     = { nui = true,  key = 'rankdown' },   -- نزول رانك
+    error        = { nui = true,  key = 'error' },      -- خطأ
+    warning      = { nui = true,  key = 'warning' }     -- تحذير
 }
 
 -- ============================================================================
--- 7. CAMERA / SPECTATOR
+-- ٧. الكاميرا والمشاهدة
 -- ============================================================================
 
 Config.Spectator = {
-    enabled          = true,
-    followDistance   = 2.4,
-    followHeight     = 0.65,
-    smoothing        = 0.12,
-    freecamSpeed     = 0.6,
-    freecamFastSpeed = 2.2,
-    showOverlay      = true,
+    enabled          = true,   -- تشغيل وضع المشاهدة بعد الموت
+    followDistance   = 2.4,    -- بعد الكاميرا عن اللاعب
+    followHeight     = 0.65,   -- ارتفاعها فوقه
+    smoothing        = 0.12,   -- نعومة حركتها (أقل = أنعم وأبطأ)
+    freecamSpeed     = 0.6,    -- سرعة الكاميرا الحرة
+    freecamFastSpeed = 2.2,    -- سرعتها وأنت ضاغط الشفت
+    showOverlay      = true,   -- إظهار واجهة المشاهدة
 
     keys = {
-        next      = 174, -- LEFT ARROW  (INPUT_CELLPHONE_LEFT)
-        prev      = 175, -- RIGHT ARROW
-        toggleCam = 22,  -- SPACE
-        exit      = 202  -- BACKSPACE
+        next      = 174, -- السهم الأيسر  (INPUT_CELLPHONE_LEFT) — اللاعب الي بعده
+        prev      = 175, -- السهم الأيمن — اللاعب الي قبله
+        toggleCam = 22,  -- سبيس — تبديل نوع الكاميرا
+        exit      = 202  -- باك سبيس — خروج من المشاهدة
     }
 }
 
 -- ============================================================================
--- 8. VISUAL EFFECTS
+-- ٨. المؤثرات البصرية
 -- ============================================================================
 
 Config.Effects = {
-    enabled = true,
+    enabled = true,   -- تشغيل المؤثرات
 
     -- ------------------------------------------------------------------
-    -- Screen tints are OFF. GTA's screen effects wash the whole picture in
-    -- a colour, which is exactly what you do not want in a gun fight, and a
-    -- looped one can survive a crash and stay burned on the screen. Set any
-    -- of these to a GTA effect name to bring it back; false means none.
+    -- تلوين الشاشة مطفي. مؤثرات GTA تغسل الصورة كلها بلون، وهذا آخر شي
+    -- تبيه وأنت بقتال، وإذا كان مؤثر متكرر ممكن يبقى عالق بالشاشة حتى بعد
+    -- الكراش. حط اسم أي مؤثر GTA إذا تبي ترجعه؛ و false يعني بدون مؤثر.
     -- ------------------------------------------------------------------
-    countdownEffect   = false,   -- was 'MinigameTransitionIn'
-    deathEffect       = false,   -- was 'DeathFailOut'
-    outOfBoundsEffect = false,   -- was 'DeathFailMPDark'
+    countdownEffect   = false,   -- كان 'MinigameTransitionIn'
+    deathEffect       = false,   -- كان 'DeathFailOut'
+    outOfBoundsEffect = false,   -- كان 'DeathFailMPDark'
 
-    -- Hit feedback is drawn by the NUI, not by a screen effect, so it stays
-    hitmarker       = true,
-    hitmarkerTime   = 140,
-    headshotMarkerColor = { r = 255, g = 60, b = 70 },
-    hitmarkerColor      = { r = 255, g = 255, b = 255 },
+    -- علامة الإصابة يرسمها الـ NUI مو مؤثر شاشة، فهي باقية
+    hitmarker       = true,      -- إظهار علامة الإصابة
+    hitmarkerTime   = 140,       -- كم تضل (ملي ثانية)
+    headshotMarkerColor = { r = 255, g = 60, b = 70 },     -- لونها بالهيدشوت
+    hitmarkerColor      = { r = 255, g = 255, b = 255 },   -- لونها بالإصابة العادية
 
-    -- Spawn protection shimmer
+    -- لمعة حماية النزول
     spawnProtectionAlpha = 120
 }
 
 -- ============================================================================
--- 8b. LOADOUT — making sure a spawn actually arms the player
+-- ٨ب. السلاح — نتأكد إن النزول فعلاً يسلّح اللاعب
 -- ============================================================================
--- Spawning with an empty hand is the one bug a player cannot work around, so
--- the loadout the server hands out is defended twice.
+-- النزول بيد فاضية هو الباق الوحيد الي اللاعب ما يقدر يسويله شي، فالسلاح الي
+-- يعطيه السيرفر محمي بطبقتين.
 
 Config.Loadout = {
-    -- How long after a spawn the client keeps checking that the weapons stuck.
-    -- A respawn does not finish on the frame it is asked for: the engine keeps
-    -- working on the ped and strips it as it goes, and other resources often
-    -- re-apply their own inventory on spawn as well. If a weapon disappears
-    -- inside this window the whole loadout is handed back.
+    -- كم يضل الكلنت يتأكد بعد النزول إن الأسلحة ثبتت.
+    -- الرسبن ما يخلص بنفس الفريم الي ينطلب فيه: المحرك يضل يشتغل على البلاير
+    -- ويشيل أسلحته وهو ماشي، وكثير سكربتات ترجّع أغراضها عند النزول. إذا
+    -- اختفى سلاح داخل هذي المدة، ينعطى السلاح كامل من جديد.
     settleSeconds = 3.0,
 
-    -- Last line of defence. While a round is live, a player left holding
-    -- nothing is re-armed from the last loadout the server sent. Nothing in a
-    -- match disarms a player legitimately — the weapon wheel is disabled and
-    -- weapons cannot be dropped — so this only ever undoes a mistake.
+    -- آخر خط دفاع. طول ما الراوند شغّال، أي لاعب يده فاضية ينعطى آخر سلاح
+    -- أرسله السيرفر. ما فيه شي داخل القيم ينزع سلاح اللاعب بشكل صحيح — عجلة
+    -- الأسلحة مقفولة والرمي ممنوع — فهذا ما يصلّح إلا الغلط.
     rearmWhenEmpty = true,
-    rearmEvery     = 1.0   -- seconds between checks
+    rearmEvery     = 1.0   -- كم ثانية بين كل فحص
 }
 
 -- ============================================================================
--- 9. MAP BOUNDARY (client presentation only, logic is server driven)
+-- ٩. حدود الماب (عرض بالكلنت فقط، المنطق كله بالسيرفر)
 -- ============================================================================
 
 Config.Boundary = {
-    warningText   = 'RETURN TO COMBAT ZONE',
-    countdownFrom = 5,
-    drawArrow     = true,
-    -- off with the rest of the screen tints: the NUI already draws a warning
-    -- frame and a countdown, which reads without washing the picture out
+    warningText   = 'RETURN TO COMBAT ZONE',   -- نص التحذير
+    countdownFrom = 5,      -- من كم يبدأ العد التنازلي قبل العقوبة
+    drawArrow     = true,   -- رسم سهم يوجّهك للزون
+    -- مطفي مع بقية تلوين الشاشة: الـ NUI أصلاً يرسم إطار تحذير وعدّاد، وهذا
+    -- يوصل الفكرة بدون ما يغسل الصورة
     tintScreen    = false,
-    pulseHud      = true,
+    pulseHud      = true,   -- نبض الهود وأنت برا الزون
 
-    -- How far above or below the map's centre height a player may go before
-    -- they count as having left. The zone is a cylinder: `radius` covers the
-    -- ground, this covers the air, and the two are measured separately so a
-    -- roof or an upper deck does not eat into the radius. A map can override
-    -- it with its own `height` field. Generous on purpose — it is here to
-    -- catch someone who has left the arena entirely, not to police a ramp.
+    -- كم يقدر اللاعب يطلع أو ينزل عن ارتفاع مركز الماب قبل ما ينحسب طالع.
+    -- الزون أسطوانة: `radius` يغطي الأرض، وهذا يغطي الجو، والاثنين ينقاسون
+    -- منفصلين عشان السطح أو الدور الفوقاني ما ياكل من نصف القطر. أي ماب يقدر
+    -- يتجاوزه بحقل `height` حقه. الرقم كبير بقصد — هو موجود يمسك الي طلع من
+    -- الساحة كلها، مو يحاسب على منحدر.
     verticalLimit = 250.0
 }
 
 -- ============================================================================
--- 10. DISPLAY / MISC
+-- ١٠. العرض ومتفرقات
 -- ============================================================================
 
 Config.Display = {
-    -- Nameplates above teammates while in a match
+    -- أسماء فوق رؤوس زملاء الفريق داخل القيم
     teammateNameplates = true,
-    nameplateDistance  = 60.0,
+    nameplateDistance  = 60.0,   -- من كم متر تبين
 
-    -- Show the enemy team nameplates (usually off for competitive integrity)
+    -- إظهار أسماء الفريق الخصم (غالباً مطفي عشان نزاهة المنافسة)
     enemyNameplates    = false,
 
-    -- Force first person while inside a ranked match
+    -- إجبار المنظور الأول داخل القيم الرانكد
     forceFirstPerson   = false,
 
-    -- Disable radio / weapon wheel inside matches
+    -- تعطيل الراديو وعجلة الأسلحة داخل القيم
     disableWeaponWheel = true,
 
-    -- Draw a small marker above the last player who damaged you
+    -- رسم علامة صغيرة فوق آخر لاعب ضربك
     showDamageSource   = false
 }
 
 -- ============================================================================
--- 11. CLIENT COMMANDS (openers only — gameplay commands are server side)
+-- ١١. كوماندات الكلنت (فتح فقط — كوماندات اللعب كلها بالسيرفر)
 -- ============================================================================
 
 Config.ClientCommands = {
-    -- Toggle the personal HUD
+    -- تشغيل/إطفاء الهود الشخصي
     toggleHud = { enabled = true, name = 'pvphud' }
 }
 
 -- ============================================================================
--- 12. DEFAULT PERSONAL SETTINGS (stored in NUI localStorage, synced on demand)
+-- ١٢. الإعدادات الشخصية الافتراضية (تنحفظ بـ localStorage داخل الـ NUI)
 -- ============================================================================
 
 Config.DefaultSettings = {
-    uiVolume        = 55,
-    musicVolume     = 25,
-    killSounds      = true,
-    hudSize         = 100,
-    killFeedPos     = 'right',
-    showPing        = true,
-    showMinimap     = false,
-    teamColorA      = '#2ED9C3',
-    teamColorB      = '#FF4757',
-    spectatorAuto   = true,
-    language        = 'en',
-    visualEffects   = true,
-    lowSpecMode     = false
+    uiVolume        = 55,          -- صوت الواجهة
+    musicVolume     = 25,          -- صوت الموسيقى
+    killSounds      = true,        -- أصوات القتل
+    hudSize         = 100,         -- حجم الهود (نسبة مئوية)
+    killFeedPos     = 'right',     -- مكان الكيل فيد
+    showPing        = true,        -- إظهار البنق
+    showMinimap     = false,       -- إظهار الخريطة الصغيرة
+    teamColorA      = '#2ED9C3',   -- لون الفريق الأول
+    teamColorB      = '#FF4757',   -- لون الفريق الثاني
+    spectatorAuto   = true,        -- دخول المشاهدة تلقائي بعد الموت
+    language        = 'en',        -- لغة اللاعب
+    visualEffects   = true,        -- المؤثرات البصرية
+    lowSpecMode     = false        -- وضع الأجهزة الضعيفة
 }
