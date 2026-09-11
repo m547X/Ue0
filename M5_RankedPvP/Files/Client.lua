@@ -1,71 +1,22 @@
---[[
-    ============================================================================
-     M5 Ranked PvP — Files/Client.lua
-    ----------------------------------------------------------------------------
-     Client side presentation and input layer.
 
-     The client never decides anything that matters: it renders, it listens and
-     it *reports* observations. RP, ranks, kills, MVP and headshot validation
-     are all resolved on the server.
 
-     Thread policy
-        · One always-on proximity thread with an adaptive wait (3000ms when far
-          away, 0ms only while the marker is actually on screen).
-        · One match thread that only exists while the player is inside a match.
-          It runs per frame exclusively during a live round while the player is
-          alive — that is where bullet detection has to happen — and drops to
-          200ms in every other state.
-        · One spectator thread that only exists while spectating.
 
-     Layout of this file
-        01  State
-        02  Helpers
-        03  NUI bridge
-        04  Boot / data events
-        05  Open menu (marker, command, keybind, vRP menu)
-        06  Match lifecycle
-        07  Combat detection (headshot, damage, death)
-        08  Boundary
-        09  HUD
-        10  Spectator
-        11  Training
-        11b Bot match (staff practice)
-        12  Notifications & misc events
-    ============================================================================
-]]
-
--- ============================================================================
--- 01. STATE
--- ============================================================================
-
--- ---------------------------------------------------------------------------
--- Text (Locale.lua)
---
--- The English line is the key. Everything the player reads — here, in the
--- notifications the server sends, and in the interface — is resolved through
--- this one table, so Locale.lua is the only file to edit to change wording.
--- ---------------------------------------------------------------------------
 local Lang = Locale.default or 'en'
 
 local function localeTable(code)
     return (Locale and Locale[code]) or (Locale and Locale[Locale.fallback or 'en']) or {}
 end
 
---- Translates one line, or returns it unchanged when there is no translation.
 local function _L(str)
     if type(str) ~= 'string' then return str end
     return localeTable(Lang)[str] or str
 end
 
---- Translates then formats. The pattern has to be translated before the
---- values go in, or the placeholders would be filled into the English line.
 local function _Lf(str, ...)
     local ok, res = pcall(string.format, _L(str), ...)
     return ok and res or _L(str)
 end
 
---- Notifications can be pinned to one language with Locale.notifications,
---- independently of the language the player set the interface to.
 local function notifyLang()
     return Locale.notifications or Lang
 end
@@ -80,16 +31,11 @@ local function _Lnf(str, ...)
     return ok and res or _Ln(str)
 end
 
---- Legacy shim: Config.Text keys still work, but resolve through Locale.
 local L = setmetatable({}, { __index = function(_, key)
     local legacy = (Config.Text and Config.Text.en and Config.Text.en[key]) or key
     return _L(legacy)
 end })
 
---- The bundle every NUI open() needs: the active language, its whole string
---- table and whether it reads right to left. Sending the table means the
---- interface never keeps a dictionary of its own — Locale.lua is the only
---- source of wording anywhere in the resource.
 local function localePayload()
     local langs, tables = {}, {}
     for _, entry in ipairs(Locale.available or {}) do
@@ -98,12 +44,8 @@ local function localePayload()
     end
     return {
         language  = Lang,
-        -- toasts raised inside the interface follow this, not `language`
         notifyLanguage = notifyLang(),
         languages = langs,
-        -- every table, not just the active one: the interface can then switch
-        -- language instantly instead of waiting on a round trip to Lua, which
-        -- would leave it showing the previous language until the reply landed
         strings   = tables,
         rtl       = Locale.rtl or {}
     }
@@ -115,7 +57,7 @@ local State = {
     menuOpen   = false,
     menuPage   = nil,
 
-    profile    = nil,   -- boot payload
+    profile    = nil,
 
     inMatch    = false,
     matchId    = nil,
@@ -126,9 +68,9 @@ local State = {
     frozen     = false,
     roundLive  = false,
 
-    map        = nil,   -- { center, radius }
-    settings   = {},    -- match settings from the server
-    roster     = {},    -- [serverId] = { name, team }
+    map        = nil,
+    settings   = {},
+    roster     = {},
 
     spectating = false,
     spectateTargets = {},
@@ -139,18 +81,15 @@ local State = {
     training   = false,
     trainingProps = {},
 
-    -- bot match (staff practice): local peds, reported by this client only
     bots        = {},
     botsActive  = false,
     botsHeld    = false,
     botMatchId  = nil,
     botHeadshot = false,
 
-    -- boundary
     outside      = false,
     outsideUntil = 0,
 
-    -- combat bookkeeping
     lastHealth   = 200,
     lastArmor    = 0,
     lastShotAt   = 0,
@@ -161,12 +100,10 @@ local State = {
     reportedDeath  = false,
     spawnProtectUntil = 0,
 
-    -- afk activity
     lastActivityPush = 0,
     lastCamHeading   = 0.0,
     lastPos          = vector3(0.0, 0.0, 0.0),
 
-    -- proximity
     nearPoint = false
 }
 
@@ -174,24 +111,10 @@ local blipHandle = nil
 local matchThreadRunning = false
 local spectateThreadRunning = false
 
--- ============================================================================
--- 02. HELPERS
--- ============================================================================
 
--- Both are defined further down but used by code above them, so the locals
--- have to exist first.
 local clearBots
 local idleVisualGuard
 
--- ---------------------------------------------------------------------------
--- The natives on the per frame path, held as upvalues.
---
--- A native is a global, and every call through a global name is a hash lookup
--- in the environment table. The match loop runs these sixty times a second,
--- some of them several times over, so binding them once here turns each of
--- those lookups into a register read. Nothing else changes: these are the
--- same functions under the same names.
--- ---------------------------------------------------------------------------
 local GetGameTimer          = GetGameTimer
 local PlayerPedId           = PlayerPedId
 local PlayerId              = PlayerId
@@ -219,13 +142,6 @@ end
 
 local function playerPed() return PlayerPedId() end
 
--- ---------------------------------------------------------------------------
--- Integration hooks (Export.lua)
---
--- Calls the matching M5.Client hook and fires the same moment as an event, so
--- other resources can listen without touching this file. Errors inside a hook
--- are printed and swallowed — nothing there may break the match.
--- ---------------------------------------------------------------------------
 local function hook(name, data)
     local fn = M5 and M5.Client and M5.Client[name]
     if type(fn) == 'function' then
@@ -235,12 +151,6 @@ local function hook(name, data)
     TriggerEvent('m5rp:' .. name, data)
 end
 
---- The whitelist the server validates against, hashed once.
----
---- This used to be a table literal walked with GetHashKey on every lookup —
---- a fresh 33 entry table and up to 33 native calls, on the HUD tick five
---- times a second and again on every death. Hashing it once at load turns
---- that into a single table read.
 local WEAPON_NAME_BY_HASH = {}
 do
     local names = {
@@ -261,7 +171,6 @@ do
     end
 end
 
---- Empty hands. Hashed once rather than on every check of them.
 local UNARMED_HASH = GetHashKey('WEAPON_UNARMED')
 
 local function weaponNameFromHash(hash)
@@ -284,19 +193,8 @@ local function isPlayerPed(ped)
     return ped and ped ~= 0 and DoesEntityExist(ped) and IsPedAPlayer(ped)
 end
 
--- Bumped on every loadout. A settle thread that finds a newer number has been
--- overtaken by a later spawn and gets out of the way instead of fighting it.
 local loadoutSeq = 0
 
---- Applies a loadout handed down by the server.
----
---- `settle` is for the loadouts handed out on a spawn. NetworkResurrectLocalPlayer
---- does not finish on the frame it is called: the engine keeps working on the
---- ped over the next few, and strips its weapons as part of that. A loadout
---- given on the same frame is therefore sometimes wiped a moment later and the
---- player lands empty handed with nothing to explain it. Watching the primary
---- weapon for a few frames and handing it back if it vanishes closes that
---- window; away from a respawn there is nothing to race, so it is skipped.
 local function applyLoadout(loadout, settle)
     loadoutSeq = loadoutSeq + 1
     local seq = loadoutSeq
@@ -321,7 +219,6 @@ local function applyLoadout(loadout, settle)
                 if i == 1 then primary = hash end
             end
         end
-        -- put it in their hands, not on their back
         if primary then SetCurrentPedWeapon(ped, primary, true) end
 
         State.lastHealth = GetEntityHealth(ped)
@@ -332,34 +229,21 @@ local function applyLoadout(loadout, settle)
     local primary = give()
     if not settle or not primary then return end
 
-    -- A respawn is not over on the frame it starts, and other resources tend
-    -- to re-apply their own inventory on spawn too, so the window is measured
-    -- in seconds rather than in frames.
     local window = ((Config.Loadout and Config.Loadout.settleSeconds) or 3.0) * 1000
     Citizen.CreateThread(function()
         local until_ = ms() + window
         while ms() < until_ do
             Citizen.Wait(0)
-            -- a newer loadout owns the ped now
             if seq ~= loadoutSeq then return end
             if not HasPedGotWeapon(playerPed(), primary, false) then
-                -- whatever took it took everything, so hand the whole loadout
-                -- back rather than patching one weapon in
                 give()
             end
         end
     end)
 end
 
---- Puts the last loadout back on a player who somehow ended up holding nothing.
----
---- The settle window above covers the spawn itself. This covers the rest of the
---- round: nothing in a match disarms a player legitimately — the weapon wheel
---- is disabled and weapons cannot be dropped — so an empty hand mid fight is
---- always something else's doing, and the player has no way to recover from it.
 local nextRearm = 0
 
---- True when the ped is holding none of the loadout it was given.
 local function holdingNothing(ped)
     local lo = State.loadout
     if not lo or not lo.weapons or #lo.weapons == 0 then return false end
@@ -373,15 +257,8 @@ end
 local function rearmGuard(ped)
     local cfg = Config.Loadout or {}
     if cfg.rearmWhenEmpty == false then return end
-    -- Not `roundLive`, and not `not frozen`. A round based match spawns the
-    -- player frozen and only goes live once the countdown runs out, so those
-    -- two conditions switched the guard off for the whole freeze — which is
-    -- exactly the window where a spawn strips the ped and nobody notices
-    -- until the round has already started.
     if not State.inMatch or not State.alive then return end
 
-    -- the clock before the loadout: this runs every frame and only does its
-    -- work once a second, so the cheapest test comes first
     local t = ms()
     if t < nextRearm then return end
 
@@ -390,19 +267,11 @@ local function rearmGuard(ped)
     nextRearm = t + math.floor(((cfg.rearmEvery or 1.0) * 1000))
 
     if holdingNothing(ped) then
-        -- none of the loadout is on the ped at all: hand the whole thing back
         dbg('re-arming: the player was left with none of their loadout')
         applyLoadout(lo, false)
         return
     end
 
-    -- Owning a weapon and holding one are different things, and only the second
-    -- is what a player means by "I have no gun". A ped can come out of a
-    -- respawn, or off the floor, with the loadout still in its inventory and
-    -- empty hands — and the check above is happy, because the weapon is there.
-    -- Nothing in a match puts a player deliberately unarmed, so this is always
-    -- worth undoing, and putting a weapon back in a hand that already holds one
-    -- is not possible here: it only runs when the hands are empty.
     local ok, held = GetCurrentPedWeapon(ped, true)
     if ok and held ~= UNARMED_HASH then return end
 
@@ -428,7 +297,6 @@ local function teleport(spawn, freeze)
         State.frozen = true
     end
 
-    -- give the world a moment then release the collision
     Citizen.CreateThread(function()
         local timeout = ms() + 5000
         while not HasCollisionLoadedAroundEntity(ped) and ms() < timeout do
@@ -438,19 +306,8 @@ local function teleport(spawn, freeze)
     end)
 end
 
--- ---------------------------------------------------------------------------
--- Coming back
---
--- A match and the training range both take the player out of the world and
--- put them somewhere else. What used to happen at the end was nothing: they
--- were left standing in an empty arena, or on whatever the bucket dropped
--- them into. These two remember where they came from and put them back.
--- ---------------------------------------------------------------------------
 local returnPoint = nil
 
---- Records where the player is standing, for as long as it takes to get back.
---- Called on the way out, and only then — a second call while already away
---- would record the arena rather than the world.
 local function rememberPoint()
     if State.inMatch or State.training then return end
     local cfg = Config.Return or {}
@@ -460,15 +317,11 @@ local function rememberPoint()
     local pos = GetEntityCoords(ped)
     local max = cfg.maxHeight or 900.0
 
-    -- Somewhere in the sky is not a place anybody chose to be, and sending
-    -- them back to it would be worse than leaving them where they are.
     if pos.z > max then returnPoint = nil return end
 
     returnPoint = { x = pos.x, y = pos.y, z = pos.z, h = GetEntityHeading(ped) }
 end
 
---- Puts the player back. `which` names the way out, so each one can be turned
---- off on its own: 'afterTraining', 'afterMatch' or 'afterSurrender'.
 local function returnHome(which)
     local cfg = Config.Return or {}
     if cfg.enabled == false then return end
@@ -487,19 +340,12 @@ local function returnHome(which)
     teleport(target, false)
 end
 
--- Looped effects run until something stops them. Every one started without a
--- duration is remembered here so it can always be cleared, whatever happens
--- next — leaving the match, disconnecting, the resource restarting. Without
--- this, walking out of the combat zone and then leaving the match left the
--- boundary tint burned onto the screen with no way back.
 local activeEffects = {}
 local blurOn = false
 
 local function screenEffect(name, duration)
     if not Config.Effects.enabled or not name then return end
     if duration and duration > 0 then
-        -- StartScreenEffect takes milliseconds. Dividing by 1000 made every
-        -- timed effect last about a millisecond, so none of them were visible.
         StartScreenEffect(name, duration, false)
     else
         StartScreenEffect(name, 0, true)
@@ -513,12 +359,9 @@ local function stopScreenEffect(name)
     activeEffects[name] = nil
 end
 
---- Clears every looped effect this resource started. Safe to call at any time.
 local function clearScreenEffects()
     for name in pairs(activeEffects) do StopScreenEffect(name) end
     activeEffects = {}
-    -- belt and braces: an effect started before a resource restart is not in
-    -- the table above, and the player has no other way to get rid of it
     StopAllScreenEffects()
     AnimpostfxStopAll()
     TriggerScreenblurFadeOut(0)
@@ -529,17 +372,11 @@ local function clearScreenEffects()
     blurOn = false
 end
 
--- ============================================================================
--- 03. NUI BRIDGE
--- ============================================================================
 
 local function nui(payload)
     SendNUIMessage(payload)
 end
 
--- Forward declaration. The out-of-bounds panel is owned by the boundary code
--- much further down, but the match events above it have to be able to take the
--- panel down, and a local declared later is not in scope up here.
 local showBoundary, hideBoundary, clearBoundary
 
 local function setFocus(on)
@@ -550,7 +387,6 @@ end
 local function openMenu(page)
     if State.menuOpen then return end
     if State.inMatch and State.roundLive and State.alive then
-        -- the hub cannot be opened during a live round while alive
         nui({ action = 'toast', kind = 'warning', message = L.alreadyInMatch })
         return
     end
@@ -567,9 +403,6 @@ local function openMenu(page)
         action = 'open',
         page   = page,
         theme  = Config.UI,
-        -- the server name rides with every open, exactly like the theme does.
-        -- Leaving it out here left the markup's placeholder name on screen for
-        -- anyone who opened the hub the normal way.
         brand  = Config.Brand,
         sounds = Config.Sounds,
         text   = L,
@@ -585,9 +418,6 @@ local function openMenu(page)
 end
 
 local function closeMenu()
-    -- the blur is dropped even when the menu was already considered closed:
-    -- the popups that grab focus on their own set menuOpen without ever
-    -- touching the blur, and one missed fade-out leaves the screen hazy.
     if blurOn then
         TriggerScreenblurFadeOut(180)
         blurOn = false
@@ -639,7 +469,6 @@ RegisterNUICallback('admin', function(data, cb)
 end)
 
 RegisterNUICallback('store', function(data, cb)
-    -- id only: the price and the balance are the server's business
     TriggerServerEvent('m5rp:sv:store', data.action, data.kind, data.id)
     cb('ok')
 end)
@@ -648,8 +477,6 @@ RegisterNUICallback('settings', function(data, cb)
     if data and data.settings then
         TriggerServerEvent('m5rp:sv:settings', data.settings)
 
-        -- Follow the player's choice here as well, so the notifications this
-        -- file and the server produce switch language with the interface.
         local picked = data.settings.language
         if picked and Locale[picked] and picked ~= Lang then
             Lang = picked
@@ -667,15 +494,10 @@ RegisterNUICallback('action', function(data, cb)
     cb('ok')
 end)
 
--- ============================================================================
--- 04. BOOT / DATA EVENTS
--- ============================================================================
 
 RegisterNetEvent('m5rp:cl:boot', function(payload)
     State.booted  = true
     State.profile = payload
-    -- the theme and the server name ride along so the HUD and overlays are
-    -- styled and titled from the config even when the player never opens the hub
     nui({ action = 'boot', data = payload, theme = Config.UI, brand = Config.Brand })
 end)
 
@@ -704,7 +526,6 @@ RegisterNetEvent('m5rp:cl:matchFound', function(payload)
 
     if payload and not payload.cancel and not payload.done then
         if not State.menuOpen then
-            -- the accept popup needs focus even if the hub was closed
             State.menuOpen = true
             setFocus(true)
             nui({ action = 'open', page = 'ranked', theme = Config.UI, brand = Config.Brand, sounds = Config.Sounds,
@@ -729,9 +550,6 @@ RegisterNetEvent('m5rp:cl:mapVote', function(payload)
     end
 end)
 
--- ============================================================================
--- 05. OPEN MENU — marker, command, keybind, vRP menu
--- ============================================================================
 
 RegisterNetEvent('m5rp:cl:openMenu', function(page)
     openMenu(page)
@@ -752,9 +570,6 @@ if Config.OpenMenu.keybind and Config.OpenMenu.keybind.enabled then
         'keyboard', Config.OpenMenu.keybind.key or 'F6')
 end
 
--- Leaving the training range. The overlay itself has no NUI focus, so the
--- in-world exit is a key binding; the hub's Training page also carries a
--- clickable button while training is active.
 local function exitTraining()
     if not State.training then return end
     TriggerServerEvent('m5rp:sv:action', 'training', { enable = false })
@@ -774,8 +589,6 @@ if Config.Training and Config.Training.exit and Config.Training.exit.enabled the
             return
         end
 
-        -- press twice inside the window to leave, so a stray key press during
-        -- a training run does not throw the player out
         if ms() <= confirmUntil then
             confirmUntil = 0
             exitTraining()
@@ -818,9 +631,6 @@ if Config.ClientCommands.toggleHud and Config.ClientCommands.toggleHud.enabled t
     end, false)
 end
 
--- ---------------------------------------------------------------------------
--- Blip
--- ---------------------------------------------------------------------------
 
 local function createBlip()
     local cfg = Config.OpenMenu.location
@@ -838,9 +648,6 @@ local function createBlip()
     EndTextCommandSetBlipName(blipHandle)
 end
 
--- ---------------------------------------------------------------------------
--- Proximity thread (adaptive wait — this is the only always-on thread)
--- ---------------------------------------------------------------------------
 
 local function drawMarkerText(x, y, z, text)
     SetDrawOrigin(x, y, z, 0)
@@ -876,7 +683,6 @@ Citizen.CreateThread(function()
             goto continue
         end
 
-        -- the interaction point is disabled while the player is busy
         if State.inMatch or State.spectating or State.training then
             State.nearPoint = false
             Citizen.Wait(2000)
@@ -914,7 +720,7 @@ Citizen.CreateThread(function()
                 if dist <= cfg.distance then
                     State.nearPoint = true
                     drawMarkerText(point.x, point.y, point.z + 0.9, L.openPrompt)
-                    if IsControlJustReleased(0, 38) then -- E
+                    if IsControlJustReleased(0, 38) then
                         openMenu()
                     end
                 else
@@ -928,16 +734,11 @@ Citizen.CreateThread(function()
     end
 end)
 
--- ============================================================================
--- 06. MATCH LIFECYCLE
--- ============================================================================
 
-local startMatchThread   -- forward declaration
-local stopSpectate       -- forward declaration
+local startMatchThread
+local stopSpectate
 
 RegisterNetEvent('m5rp:cl:setup', function(data)
-    -- before anything sets State.inMatch: this is the last moment the player
-    -- is still standing where they queued from
     rememberPoint()
 
     State.inMatch    = true
@@ -963,7 +764,6 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
     local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}
     data.scoreboardHint = (sbCfg.enabled ~= false and sbCfg.showHint ~= false)
                           and (sbCfg.display or 'TAB') or nil
-    -- the NUI draws the showcase and both HUD cards from these
     data.hudCfg = {
         showcase = Config.HUD.showcase,
         player   = Config.HUD.player,
@@ -987,7 +787,6 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
 
     TriggerEvent(Config.HUD.externalHudEvent, false)
 
-    -- movement / jump modifiers coming from a custom room
     local ped = playerPed()
     SetRunSprintMultiplierForPlayer(PlayerId(), State.settings.movement or 1.0)
     SetPedCanRagdoll(ped, false)
@@ -1010,7 +809,7 @@ RegisterNetEvent('m5rp:cl:round', function(data)
     if data.matchId and data.matchId ~= State.matchId then return end
 
     if data.phase == 'spawn' or data.phase == 'respawn' then
-        nui({ action = 'scoreboard', show = false })   -- the break is over
+        nui({ action = 'scoreboard', show = false })
         State.alive = true
         State.reportedDeath = false
         clearBoundary()
@@ -1019,11 +818,6 @@ RegisterNetEvent('m5rp:cl:round', function(data)
 
         if data.spawn then teleport(data.spawn, data.freeze == true) end
 
-        -- A player the framework put on the ground in a coma is still lying
-        -- there, and health going back up does not stand them up by itself.
-        -- Cleared here, before the loadout, and only when they are actually
-        -- down: doing it as part of arming them can knock the weapon straight
-        -- back out of their hands.
         do
             local ped = playerPed()
             if IsPedRagdoll(ped) or IsPedFalling(ped) or IsPedDeadOrDying(ped, true) then
@@ -1032,8 +826,6 @@ RegisterNetEvent('m5rp:cl:round', function(data)
             end
         end
 
-        -- settle: the teleport above resurrected the ped, and the engine is
-        -- still finishing with it for the next few frames
         if data.loadout then applyLoadout(data.loadout, true) end
 
         local ped = playerPed()
@@ -1056,22 +848,18 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         State.roundLive = true
         State.frozen    = false
         FreezeEntityPosition(playerPed(), false)
-        -- release the freeze restrictions
         DisablePlayerFiring(PlayerId(), false)
         SetPlayerCanDoDriveBy(PlayerId(), true)
         nui({ action = 'round', data = { phase = 'live', round = data.round, time = data.time } })
         hook('onRoundStart', { matchId = State.matchId, round = data.round, time = data.time })
 
     elseif data.phase == 'loadout' then
-        -- gun game promotion
         if data.loadout then applyLoadout(data.loadout) end
         nui({ action = 'event', data = {
             type = 'KILLSTREAK', extra = data.gunLevel
         } })
 
     elseif data.phase == 'rearm' then
-        -- the answer to the client having asked for its loadout back; the
-        -- server decided what is in it, the same as on any spawn
         if data.loadout then
             applyLoadout(data.loadout, true)
             nui({ action = 'toast', kind = 'ok',
@@ -1079,7 +867,6 @@ RegisterNetEvent('m5rp:cl:round', function(data)
         end
 
     elseif data.phase == 'revive' then
-        -- headshot only rooms: body damage never kills
         local ped = playerPed()
         local maxH = (data.health or 100) + 100
         SetEntityHealth(ped, maxH)
@@ -1087,8 +874,6 @@ RegisterNetEvent('m5rp:cl:round', function(data)
 
     elseif data.phase == 'end' then
         State.roundLive = false
-        -- the boundary check stops running between rounds, so its tint has to
-        -- be dropped here or it stays up through the whole break
         clearBoundary()
         nui({ action = 'round', data = {
             phase = 'end', round = data.round, winner = data.winner,
@@ -1112,8 +897,6 @@ RegisterNetEvent('m5rp:cl:hud', function(data)
     State.matchState = data.state or State.matchState
     State.alive      = data.alive == true
 
-    -- keep a serverId -> team/name map so nameplates and the kill feed colour
-    -- correctly without any extra traffic
     if data.scoreboard then
         State.teamOfServerId = {}
         State.nameOfServerId = {}
@@ -1141,8 +924,6 @@ RegisterNetEvent('m5rp:cl:end', function(data)
     State.roundLive = false
     State.matchState = 'MATCH_END'
 
-    -- The match is over, so the match HUD goes with it. Leaving it up put the
-    -- round timer, the scores and the ammo counter behind the result panel.
     nui({ action = 'hudVisible', value = false })
     nui({ action = 'scoreboard', show = false })
 
@@ -1150,23 +931,14 @@ RegisterNetEvent('m5rp:cl:end', function(data)
     nui({ action = 'matchEnd', data = data,
           dismissHint = rc.enabled ~= false and (rc.display or 'BACKSPACE') or nil,
           autoClose   = rc.autoClose,
-          -- the promotion screen waits behind the result and is closed by the
-          -- same key, so it gets the same hint
           rankCfg     = (Config.HUD and Config.HUD.rankChange) or {} })
     hook('onMatchEnd', {
         matchId = data.matchId, result = data.result,
         scores = data.scores, rp = data.rp
     })
 
-    -- The result is an overlay, not a menu: no NUI focus, no cursor. That also
-    -- means the panel cannot be clicked away, so the dismiss key below is the
-    -- way out — taking focus here would lock the mouse the instant a match
-    -- ends, which is the worst possible moment for it.
 end)
 
---- Hold-free dismiss for the result panel. ESC cannot be bound in FiveM (the
---- pause menu owns it), so the default is BACKSPACE; the player can rebind it
---- under Settings > Key Bindings > FiveM.
 CreateThread(function()
     local rc = (Config.HUD and Config.HUD.result) or {}
     if rc.enabled == false then return end
@@ -1223,37 +995,22 @@ RegisterNetEvent('m5rp:cl:cleanup', function(data)
 
     TriggerEvent(Config.HUD.externalHudEvent, true)
 
-    -- `keepScreens` is the end of a match being handed back in two parts: the
-    -- world now, the interface when the result has been read. Without it the
-    -- overlay the player is still looking at — the result, the rank change —
-    -- would be swept away in the same breath that sends them home.
     if not (data and data.keepScreens) then
         nui({ action = 'hudVisible', value = false })
         nui({ action = 'matchCleanup' })
     end
 
-    -- Back to where they came from. Withdrawing is its own way out, so it has
-    -- its own switch: a server can send everyone to a lobby at the end of a
-    -- match and still leave a player who walked out where they stood.
     local reason = (data and data.reason) or 'END'
     returnHome(reason == 'LEAVE' and 'afterSurrender' or 'afterMatch')
 
-    -- refresh the profile so the hub shows the new RP straight away
     TriggerServerEvent('m5rp:sv:boot')
 end)
 
---- Takes down what was left standing when the world was handed back early.
---- Sent once the result has had its time on screen; the player is long since
---- home by then, so there is nothing here but the interface.
 RegisterNetEvent('m5rp:cl:endScreens', function()
     nui({ action = 'hudVisible', value = false })
     nui({ action = 'matchCleanup' })
 end)
 
--- ============================================================================
--- 07. COMBAT DETECTION
--- ============================================================================
--- Reports only. The server decides who died.
 
 local HEAD_BONES = {}
 for _, bone in ipairs({ 31086, 39317, 12844, 20178, 21550 }) do HEAD_BONES[bone] = true end
@@ -1261,10 +1018,6 @@ for _, bone in ipairs({ 31086, 39317, 12844, 20178, 21550 }) do HEAD_BONES[bone]
 local SHOT_REPORT_INTERVAL = 220
 local lastShotReport = 0
 
---- Attacker side raycast. It runs on the frame the weapon fires and tells the
---- server which player was under the crosshair and whether the impact landed on
---- the head. The server keeps it only as corroboration — a hit is still only
---- counted once the victim confirms taking damage.
 local function traceShot(ped)
     ped = ped or playerPed()
     local camCoords = GetGameplayCamCoord()
@@ -1315,7 +1068,6 @@ local function reportShot(force, ped)
     end
 end
 
---- Damage taken on the victim's own machine, where the numbers are exact.
 AddEventHandler('gameEventTriggered', function(name, args)
     if name ~= 'CEventNetworkEntityDamage' then return end
     if not State.inMatch or not State.roundLive then return end
@@ -1330,7 +1082,6 @@ AddEventHandler('gameEventTriggered', function(name, args)
     local attackerSrc = serverIdOfPed(attacker)
     if not attackerSrc then return end
 
-    -- spawn protection is enforced by the server too, this only avoids traffic
     if State.spawnProtectUntil > ms() then return end
 
     local weaponHash = args[7] or args[5]
@@ -1348,8 +1099,6 @@ AddEventHandler('gameEventTriggered', function(name, args)
 
     if isHead and Config.Headshot.enabled and Config.Headshot.oneShotKill
        and State.settings.headshotOneShot ~= false then
-        -- Distance is deliberately not part of the decision. A real head hit is
-        -- lethal at 10 m and at 500 m alike; the server does the final check.
         TriggerServerEvent('m5rp:sv:combat', 'hs', {
             attacker = attackerSrc,
             weapon   = weapon,
@@ -1359,18 +1108,7 @@ AddEventHandler('gameEventTriggered', function(name, args)
     end
 end)
 
--- ---------------------------------------------------------------------------
--- Coma
--- ---------------------------------------------------------------------------
--- vRP does not let a player die: it drops them to a floor — twenty by default —
--- and leaves them there in a coma. To the engine they are alive and unhurt from
--- that point on, which used to mean the round waited for a death that was never
--- coming, and the health bar sat on twenty while its owner was face down.
---
--- Everything below works on the 0-100 scale the HUD shows, not on the engine's
--- 100-200, so `Config.Coma.health` is the number a player actually sees.
 
---- The floor, or nil when the server has no coma system.
 local function comaFloor()
     local c = Config.Coma
     if not c or c.enabled == false then return nil end
@@ -1379,7 +1117,6 @@ local function comaFloor()
     return v
 end
 
---- Health on the HUD's scale: 0 is dead, whatever the engine says underneath.
 local function displayHealth(ped)
     local raw = GetEntityHealth(ped) - 100
     if raw < 0 then raw = 0 end
@@ -1387,20 +1124,12 @@ local function displayHealth(ped)
     local floor = comaFloor()
     if not floor or Config.Coma.rescaleHud == false then return raw end
 
-    -- Everything at or under the floor reads as nothing left, and what is above
-    -- it is stretched back over the full bar, so a bar that empties means the
-    -- player is out rather than "twenty left and lying down".
     local maxHp = tonumber(State.settings and State.settings.health) or 100
     if maxHp <= floor then return raw end
     if raw <= floor then return 0 end
     return math.floor(((raw - floor) / (maxHp - floor)) * maxHp + 0.5)
 end
 
---- Is this player out of the fight — dead, or held in a coma at the floor?
----
---- Measured on the same 0-100 scale as the bar, so nothing is left resting on
---- how quickly IsEntityDead catches up. On this scale the engine's 100 is
---- nothing left, and a coma floor sits a little above it.
 local function isDown(ped)
     if IsEntityDead(ped) then return true end
 
@@ -1414,16 +1143,13 @@ local function isDown(ped)
     return false
 end
 
---- Per frame combat scan. Only ever runs inside a live round while alive.
 local function combatScan(ped)
     ped = ped or playerPed()
 
-    -- ---- shooting ------------------------------------------------------
     if IsPedShooting(ped) then
         reportShot(false, ped)
     end
 
-    -- ---- damage taken --------------------------------------------------
     local health = GetEntityHealth(ped)
     local armor  = GetPedArmour(ped)
     local lost   = (State.lastHealth - health) + (State.lastArmor - armor)
@@ -1439,8 +1165,6 @@ local function combatScan(ped)
         nui({ action = 'damaged', amount = math.floor(lost) })
     end
 
-    -- HEADSHOT ONLY: body damage is reported for statistics, then undone. Only
-    -- a validated head hit can kill, and that kill comes from the server.
     if State.settings.headshotOnly and State.alive then
         local maxH = (State.settings.health or 100) + 100
         if health < maxH then
@@ -1456,9 +1180,6 @@ local function combatScan(ped)
     State.lastHealth = health
     State.lastArmor  = armor
 
-    -- ---- death ---------------------------------------------------------
-    -- A coma counts: the player is on the floor and the round has to move on,
-    -- whatever the engine thinks about whether they are alive.
     if isDown(ped) and not State.reportedDeath then
         State.reportedDeath = true
         State.alive = false
@@ -1473,16 +1194,10 @@ local function combatScan(ped)
             weapon = currentWeaponName(ped)
         })
 
-        -- The HUD thread only runs while the player is alive, so this frame is
-        -- the last one that can touch the bar. Without this it freezes on
-        -- whatever it happened to show a moment ago — which in a coma is a
-        -- player lying on the floor with health still on the card.
         nui({ action = 'localHud', data = { vitalsOnly = true, health = 0, armor = 0 } })
     end
 end
 
---- The server tells the client to die. This is what makes a headshot lethal
---- regardless of the damage the engine actually applied.
 RegisterNetEvent('m5rp:cl:die', function(data)
     if data.matchId and data.matchId ~= State.matchId then return end
 
@@ -1515,20 +1230,12 @@ RegisterNetEvent('m5rp:cl:die', function(data)
     end
 end)
 
--- ============================================================================
--- 08. BOUNDARY
--- ============================================================================
 
---- The out-of-bounds panel has one owner. Every path that hides it goes
---- through here, and the state is tracked so a repeated call costs nothing.
 local boundaryShown = false
 
 local boundarySeconds, boundaryDistance = -1, -1
 
 showBoundary = function(seconds, distance)
-    -- The panel shows whole seconds and whole metres, and this is called on
-    -- every frame the player is outside. Only a message that would change
-    -- something on screen is worth sending.
     if boundaryShown and seconds == boundarySeconds and distance == boundaryDistance then
         return
     end
@@ -1545,8 +1252,6 @@ hideBoundary = function()
     stopScreenEffect(Config.Effects.outOfBoundsEffect)
 end
 
---- Resets the boundary state completely: used by anything that moves the
---- player itself, rather than leaving the flag and the panel to disagree.
 clearBoundary = function()
     State.outside = false
     hideBoundary()
@@ -1554,21 +1259,11 @@ end
 
 local function boundaryCheck(pos)
     if not State.map or not State.map.center or not State.map.radius then return end
-    -- Nothing to measure until the player has actually been put in the arena.
-    -- Between the match setup and the spawn teleport they are still standing
-    -- wherever they were, hundreds of metres away, and warning them about a
-    -- zone they have not been placed in yet is what started this.
     if not State.alive then clearBoundary() return end
 
     pos = pos or GetEntityCoords(playerPed())
     local c = State.map.center
 
-    -- A combat zone is a cylinder, not a sphere. Measuring in three dimensions
-    -- meant every metre climbed was a metre stolen from the radius, so on an
-    -- arena with ramps, roofs or an upper deck a player standing in the middle
-    -- of the map could read as being outside it. Height is checked on its own,
-    -- with a limit generous enough to ignore normal arena geometry and tight
-    -- enough to still catch someone who has left the map entirely.
     local dx, dy = pos.x - c.x, pos.y - c.y
     local flat   = math_sqrt(dx * dx + dy * dy)
     local climb  = math_abs(pos.z - c.z)
@@ -1596,24 +1291,11 @@ local function boundaryCheck(pos)
             TriggerServerEvent('m5rp:sv:combat', 'oob')
         end
     else
-        -- Unconditional, not `elseif State.outside`. The warning used to be
-        -- taken down only when this function was the one that put it up, so a
-        -- spawn clearing State.outside behind its back left the panel on
-        -- screen with nothing able to remove it — which is exactly what a
-        -- player saw at the start of a match, warned about a distance measured
-        -- before the spawn teleport had landed. Being inside is now enough.
         State.outside = false
         hideBoundary()
     end
 end
 
---- Prints where you are relative to the current map's zone.
----
---- The imported arenas came without a boundary size, so every radius in the
---- config is a guess. Rather than leaving it at that: stand at the edge of the
---- playable area and run this. It reports the horizontal distance from the
---- centre, so the radius that arena actually wants is that number plus a
---- little headroom.
 RegisterCommand('pvpzone', function()
     local m = State.map
     if not m or not m.center or not m.radius then
@@ -1638,21 +1320,14 @@ RegisterCommand('pvpzone', function()
     nui({ action = 'toast', kind = 'info', message = line, title = 'ZONE' })
 end, false)
 
--- ============================================================================
--- 09. MATCH THREAD
--- ============================================================================
 
 local function pushActivity(ped, pos)
-    -- The AFK detector is fed from real inputs: movement, camera, shooting and
-    -- interaction. Nothing is sent while nothing happens.
     ped = ped or playerPed()
     pos = pos or GetEntityCoords(ped)
     local heading = GetGameplayCamRot(2).z
 
     local movedOk = #(pos - State.lastPos) >= 1.5
     local camOk   = math_abs(((heading - State.lastCamHeading + 180) % 360) - 180) >= 4.0
-    -- short circuit order matters here: three of these are natives, and the
-    -- first one that answers yes ends the question
     local acted   = movedOk or camOk
                     or IsPedShooting(ped) or IsControlPressed(0, 24)
                     or IsControlPressed(0, 25) or IsControlPressed(0, 38)
@@ -1668,27 +1343,24 @@ local function pushActivity(ped, pos)
     end
 end
 
--- read once: the config does not change while the resource runs, and this is
--- called on every frame of every round
 local NO_WEAPON_WHEEL = Config.Display.disableWeaponWheel == true
 
 local function applyMatchRestrictions()
     if NO_WEAPON_WHEEL then
-        DisableControlAction(0, 37, true)   -- weapon wheel
-        DisableControlAction(0, 157, true)  -- weapon slots 1..
+        DisableControlAction(0, 37, true)
+        DisableControlAction(0, 157, true)
         DisableControlAction(0, 158, true)
         DisableControlAction(0, 160, true)
         DisableControlAction(0, 164, true)
         DisableControlAction(0, 165, true)
     end
     if not State.settings.jump then
-        DisableControlAction(0, 22, true)   -- jump
+        DisableControlAction(0, 22, true)
     end
     if not State.settings.vehicles then
-        DisableControlAction(0, 23, true)   -- enter vehicle
-        DisableControlAction(0, 75, true)   -- exit vehicle
+        DisableControlAction(0, 23, true)
+        DisableControlAction(0, 75, true)
     end
-    -- no phone / no radio inside a match
     DisableControlAction(0, 288, true)
     DisableControlAction(0, 289, true)
     DisableControlAction(0, 170, true)
@@ -1698,8 +1370,6 @@ end
 local function drawTeammateTags(myPed, myPos)
     if not Config.Display.teammateNameplates or State.ffa then return end
 
-    -- Nothing to draw until the server has sent a scoreboard to resolve teams
-    -- from, and this runs every frame — so it leaves before touching a native.
     local teams = State.teamOfServerId
     if not teams then return end
 
@@ -1710,10 +1380,6 @@ local function drawTeammateTags(myPed, myPos)
     myPos = myPos or GetEntityCoords(myPed)
 
     for _, player in ipairs(GetActivePlayers()) do
-        -- The team is a table read; the ped, its coordinates and the distance
-        -- are three natives and a vector. Asking the cheap question first
-        -- skips all of that for everyone who is not on your side, which on a
-        -- busy server is nearly everyone.
         local sid = GetPlayerServerId(player)
         if teams[sid] == myTeam then
             local ped = GetPlayerPed(player)
@@ -1742,25 +1408,14 @@ startMatchThread = function()
 
     Citizen.CreateThread(function()
         local hudAcc = 0
-        -- the last card the interface was sent, so an unchanged one is not
-        -- sent again. It lives with the thread, so a new match always pushes.
         local lastHud = {}
 
         while State.inMatch do
             local liveCombat = State.roundLive and State.alive and not State.spectating
-            -- The freeze also has to run per frame: DisablePlayerFiring and
-            -- DisableControlAction only hold for the frame they are called on,
-            -- so at 200ms the trigger would work between checks.
             local wait = (liveCombat or State.frozen) and 0 or 200
 
             if liveCombat then
-                -- One PlayerPedId for the whole frame. Every helper below used
-                -- to ask for it again — a dozen native calls a frame, and more
-                -- inside the nameplate loop — for a value that cannot change
-                -- between them.
                 local ped = playerPed()
-                -- and one GetEntityCoords: the zone check, the AFK detector
-                -- and the nameplates each asked for the same position
                 local pos = GetEntityCoords(ped)
 
                 combatScan(ped)
@@ -1769,7 +1424,6 @@ startMatchThread = function()
                 rearmGuard(ped)
                 pushActivity(ped, pos)
 
-                -- spawn protection shimmer
                 if State.spawnProtectUntil > ms() then
                     SetEntityInvincible(ped, true)
                     SetEntityAlpha(ped, Config.Effects.spawnProtectionAlpha, false)
@@ -1792,19 +1446,12 @@ startMatchThread = function()
                     if ok then
                         local has, clipAmmo = GetAmmoInClip(ped, weapon)
                         clip = has and clipAmmo or 0
-                        -- the magazine bar needs the capacity, not just the count
                         clipMax = GetMaxAmmoInClip(ped, weapon, true) or 0
                     end
                     local health = displayHealth(ped)
                     local armor  = GetPedArmour(ped)
                     local name   = (ok and WEAPON_NAME_BY_HASH[weapon]) or 'WEAPON_UNARMED'
 
-                    -- A player who is standing still with a full magazine
-                    -- sends the same six numbers five times a second. Each
-                    -- one is a JSON encode, a message into CEF and a full
-                    -- pass over the health, armour and magazine bars — for a
-                    -- card that is already showing exactly this. Sending it
-                    -- only when something moved costs one comparison.
                     if health ~= lastHud.health or armor ~= lastHud.armor
                        or clip ~= lastHud.clip or ammo ~= lastHud.ammo
                        or clipMax ~= lastHud.clipMax or name ~= lastHud.weapon then
@@ -1819,30 +1466,23 @@ startMatchThread = function()
                     end
                 end
             else
-                -- non combat states: keep the restrictions but stay cheap
                 if State.frozen then
                     local ped = playerPed()
                     FreezeEntityPosition(ped, true)
-                    -- the countdown is part of the spawn, and a ped stripped
-                    -- during it used to stay stripped until the round started
                     rearmGuard(ped)
 
-                    -- No shooting before the round goes live. The server
-                    -- already refuses damage while the match is not LIVE, so
-                    -- this is the half that stops the weapon firing at all —
-                    -- no wasted magazine, no shot into a frozen opponent.
                     DisablePlayerFiring(PlayerId(), true)
                     SetPlayerCanDoDriveBy(PlayerId(), false)
-                    DisableControlAction(0, 24,  true)   -- attack
-                    DisableControlAction(0, 25,  true)   -- aim
-                    DisableControlAction(0, 47,  true)   -- throw / detonate
-                    DisableControlAction(0, 58,  true)   -- throw grenade
-                    DisableControlAction(0, 140, true)   -- melee light
-                    DisableControlAction(0, 141, true)   -- melee heavy
-                    DisableControlAction(0, 142, true)   -- melee alternate
-                    DisableControlAction(0, 257, true)   -- attack 2
-                    DisableControlAction(0, 263, true)   -- melee attack 1
-                    DisableControlAction(0, 264, true)   -- melee attack 2
+                    DisableControlAction(0, 24,  true)
+                    DisableControlAction(0, 25,  true)
+                    DisableControlAction(0, 47,  true)
+                    DisableControlAction(0, 58,  true)
+                    DisableControlAction(0, 140, true)
+                    DisableControlAction(0, 141, true)
+                    DisableControlAction(0, 142, true)
+                    DisableControlAction(0, 257, true)
+                    DisableControlAction(0, 263, true)
+                    DisableControlAction(0, 264, true)
                 end
                 if State.inMatch and not State.alive and not State.spectating then
                     boundaryCheck()
@@ -1856,9 +1496,6 @@ startMatchThread = function()
     end)
 end
 
--- ============================================================================
--- 10. SPECTATOR
--- ============================================================================
 
 local function spectateTargetPed()
     local entry = State.spectateTargets[State.spectateIndex]
@@ -1902,11 +1539,9 @@ local function startSpectateThread()
                 break
             end
 
-            -- the spectated player may have died or left
             local ped = spectateTargetPed()
             if not ped then spectateNext(1) end
 
-            -- block every gameplay control while spectating
             DisableControlAction(0, 24, true)
             DisableControlAction(0, 25, true)
             DisableControlAction(0, 140, true)
@@ -1945,7 +1580,6 @@ RegisterNetEvent('m5rp:cl:spectate', function(data)
     State.spectateIndex   = 1
 
     if #State.spectateTargets == 0 then
-        -- nobody left to watch: sit on a static overview camera
         if data.map and data.map.center then
             local cam = CreateCam('DEFAULT_SCRIPTED_CAMERA', true)
             SetCamCoord(cam, data.map.center.x, data.map.center.y, data.map.center.z + 60.0)
@@ -1971,9 +1605,6 @@ RegisterNetEvent('m5rp:cl:spectate', function(data)
     startSpectateThread()
 end)
 
--- ============================================================================
--- 11. TRAINING
--- ============================================================================
 
 local function clearTrainingTargets()
     for i = 1, #State.trainingProps do
@@ -2037,7 +1668,6 @@ RegisterNetEvent('m5rp:cl:training', function(data)
         return
     end
 
-    -- while still standing in the world, before the range takes over
     rememberPoint()
 
     State.training = true
@@ -2062,7 +1692,6 @@ RegisterNetEvent('m5rp:cl:training', function(data)
         } or nil
     } })
 
-    -- lightweight training loop: respawn targets, report nothing to the server
     Citizen.CreateThread(function()
         local hits, headshots, shots = 0, 0, 0
         local startedAt = ms()
@@ -2112,14 +1741,6 @@ RegisterNetEvent('m5rp:cl:training', function(data)
     end)
 end)
 
--- ============================================================================
--- 11b. BOT MATCH  (staff practice)
--- ============================================================================
---
--- Only a client can create a ped and give it combat AI, so the bots live here.
--- Everything that counts — rounds, score, when a round starts and ends — stays
--- on the server; this file reports one thing back, that a bot went down, and
--- the server treats that as worthless outside a staff practice session.
 
 clearBots = function()
     for i = 1, #State.bots do
@@ -2131,7 +1752,6 @@ clearBots = function()
     State.botsHeld   = false
 end
 
---- Arms one ped: stats, weapon, accuracy and combat behaviour.
 local function configureBot(ped, cfg, relationship)
     SetEntityInvincible(ped, false)
     SetPedCanRagdoll(ped, false)
@@ -2153,9 +1773,9 @@ local function configureBot(ped, cfg, relationship)
     SetPedCombatMovement(ped, cfg.combatMovement or 2)
     SetPedAlertness(ped, cfg.alertness or 2)
     SetPedFleeAttributes(ped, 0, false)
-    SetPedCombatAttributes(ped, 46, true)   -- always fight
-    SetPedCombatAttributes(ped, 5,  true)   -- may use vehicles: off by task below
-    SetPedCombatAttributes(ped, 0,  true)   -- use cover
+    SetPedCombatAttributes(ped, 46, true)
+    SetPedCombatAttributes(ped, 5,  true)
+    SetPedCombatAttributes(ped, 0,  true)
     SetPedSeeingRange(ped, 200.0)
     SetPedHearingRange(ped, 200.0)
     SetPedRelationshipGroupHash(ped, relationship)
@@ -2170,7 +1790,6 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
     end
 
     if data.release then
-        -- the countdown is over: let them fight
         State.botsHeld = false
         local me = playerPed()
         for i = 1, #State.bots do
@@ -2199,7 +1818,6 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
         return
     end
 
-    -- a group of their own so they fight the player and not each other
     local group = GetHashKey('M5RP_BOTS')
     AddRelationshipGroup('M5RP_BOTS')
     SetRelationshipBetweenGroups(5, group, GetHashKey('PLAYER'))
@@ -2212,7 +1830,7 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
         local ped = CreatePed(4, model, p.x, p.y, p.z, p.h or 0.0, false, false)
         if DoesEntityExist(ped) then
             configureBot(ped, data.bot or {}, group)
-            FreezeEntityPosition(ped, true)      -- held until the round goes live
+            FreezeEntityPosition(ped, true)
             State.bots[#State.bots + 1] = { ped = ped, down = false }
         end
     end
@@ -2223,8 +1841,6 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
 
     if not State.botsActive then return end
 
-    -- One watcher for the whole session. It only looks for a bot dying and
-    -- tells the server; it never decides anything about the round.
     Citizen.CreateThread(function()
         while State.botsActive do
             local anyAlive = false
@@ -2240,7 +1856,6 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
                         })
                     else
                         anyAlive = true
-                        -- one shot headshot applies to bots as well
                         if State.botHeadshot then
                             local hasBone, bone = GetPedLastDamageBone(b.ped)
                             if hasBone and HEAD_BONES[bone]
@@ -2249,7 +1864,6 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
                                 SetEntityHealth(b.ped, 0)
                             end
                         end
-                        -- keep them engaged if they lost the target
                         if not State.botsHeld and not IsPedInCombat(b.ped, playerPed()) then
                             TaskCombatPed(b.ped, playerPed(), 0, 16)
                         end
@@ -2257,24 +1871,13 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
                 end
             end
 
-            -- nothing left to watch until the next round spawns a new set
             if not anyAlive then State.botsActive = false end
             Citizen.Wait(150)
         end
     end)
 end)
 
--- ============================================================================
--- 12. NOTIFICATIONS & MISC
--- ============================================================================
 
--- ---------------------------------------------------------------------------
--- Scoreboard (hold to show)
---
--- A +/- command pair is the only way FiveM gives a "while held" binding, and
--- registering it means the player can rebind the key in the pause menu instead
--- of being stuck with TAB. It needs no NUI focus: the board is display only.
--- ---------------------------------------------------------------------------
 do
     local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}
     if sbCfg.enabled ~= false then
@@ -2282,24 +1885,12 @@ do
             return State.inMatch and State.matchState ~= 'NONE'
         end
 
-        -- Asking for the loadout back is not free, so a held key cannot ask
-        -- twice a second. The server rate limits it as well.
         local nextAsk = 0
 
         RegisterCommand('+m5rp_scoreboard', function()
             if not canShow() then return end
             nui({ action = 'scoreboard', show = true })
 
-            --- The same key also puts the weapon back.
-            ---
-            --- A respawn is sometimes overtaken by another resource applying
-            --- its own inventory, and the player lands empty handed with no
-            --- way out of it. The guard on the match thread catches that on
-            --- its own, but only once a second and only while it is running,
-            --- so this gives the player something to press rather than a wait
-            --- to sit through. It asks the server, which decides what the
-            --- loadout is; the client names no weapon and gets nothing it was
-            --- not already meant to be holding.
             local t = ms()
             if t < nextAsk then return end
             if not State.alive or not State.loadout then return end
@@ -2317,10 +1908,6 @@ do
     end
 end
 
--- Wipe the screen clean the moment the resource starts. An effect left behind
--- by a crash, or by a build that predates the fix, survives a restart because
--- nothing was ever clearing it on the way in — only on the way out. This is
--- why restarting did not help.
 AddEventHandler('onClientResourceStart', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     clearScreenEffects()
@@ -2333,17 +1920,11 @@ AddEventHandler('onClientResourceStart', function(resource)
     DisplayRadar(true)
 end)
 
---- Safety net: whenever the player is idle — no match, no training, no menu,
---- not spectating — nothing of ours should be on screen. Checked on the slow
---- proximity tick, so it costs nothing.
 idleVisualGuard = function()
     if State.inMatch or State.training or State.menuOpen or State.spectating then return end
     if next(activeEffects) ~= nil or blurOn then clearScreenEffects() end
 end
 
--- ---------------------------------------------------------------------------
--- Exports — for other resources on this client. Read only.
--- ---------------------------------------------------------------------------
 exports('isInMatch',   function() return State.inMatch end)
 exports('isTraining',  function() return State.training end)
 exports('getMatchInfo', function()
@@ -2354,13 +1935,6 @@ exports('getMatchInfo', function()
     }
 end)
 
--- ---------------------------------------------------------------------------
--- Surrender — hold the key to leave the match
---
--- A +/- binding gives the hold; the ring on screen fills while the key is
--- down and the match is only left once it completes. Letting go at any point
--- cancels, so a stray tap costs nothing.
--- ---------------------------------------------------------------------------
 do
     local sCfg = (Config.HUD and Config.HUD.surrender) or {}
     if sCfg.enabled ~= false then
@@ -2421,9 +1995,6 @@ do
     end
 end
 
--- Escape hatch. If a screen effect ever survives — a crash mid match, an old
--- build, another resource leaving one behind — this wipes the screen clean
--- without a reconnect.
 RegisterCommand('pvpclear', function()
     clearScreenEffects()
     local ped = playerPed()
@@ -2436,21 +2007,17 @@ RegisterCommand('pvpclear', function()
 end, false)
 
 RegisterNetEvent('m5rp:cl:notify', function(data)
-    -- The server sends the English line plus any values to fill in; the swap
-    -- happens here because this is the side that knows the chosen language.
     local message = data.args and _Lnf(data.message, table.unpack(data.args))
                     or _Ln(data.message)
     nui({ action = 'toast', kind = data.kind or 'info',
           message = message, title = _Ln(data.title) })
 end)
 
--- Close the hub with ESC / BACKSPACE without needing NUI focus tricks
 RegisterNUICallback('escape', function(_, cb)
     closeMenu()
     cb('ok')
 end)
 
--- Resource restart / player exit safety
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
 
@@ -2479,7 +2046,6 @@ AddEventHandler('onResourceStop', function(resource)
     if blipHandle then RemoveBlip(blipHandle) end
 end)
 
--- Ask the server for the profile once the player has spawned.
 AddEventHandler('playerSpawned', function()
     Citizen.SetTimeout(4000, function()
         if not State.booted then TriggerServerEvent('m5rp:sv:boot') end

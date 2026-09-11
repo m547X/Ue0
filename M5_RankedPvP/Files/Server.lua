@@ -1,51 +1,27 @@
 
 local RES = "M5_RankedPvP"
 
--- ============================================================================
--- 01. UTILITIES
--- ============================================================================
 
 local function now()  return os.time() end
 local function ms()   return GetGameTimer() end
 
--- ============================================================================
--- 01b. PERF — where the server's time actually goes
--- ============================================================================
--- Counters only: a number goes up, and once a second at most a clock is read.
--- Nothing here allocates, and nothing here is conditional on a debug flag,
--- because a report you have to turn on first is a report nobody has when they
--- need it.
---
--- Read it with `m5perf` in the server console, or /pvpperf in game as staff.
--- `m5perf reset` starts the window again, which is how you measure one thing:
--- reset, do the thing, read it.
 Perf = {}
 
 function Perf.reset()
     Perf.startedAt = ms()
-    -- `cpu` on the database is process CPU measured across the await. A query
-    -- yields, and everything else the server does during that yield lands in
-    -- the same reading, so it is subtracted from the loop's own time rather
-    -- than reported as if this resource had spent it.
     Perf.db    = { calls = 0, wall = 0, cpu = 0, kinds = {},
                    worst = 0, worstKind = '',
                    reads  = { n = 0, wall = 0 },
                    writes = { n = 0, wall = 0 },
-                   -- what an empty query costs on this server, measured once at
-                   -- boot. If SELECT 1 is slow then nothing about the queries
-                   -- is the problem: the connection or the scheduler is.
                    baseline = Perf.db and Perf.db.baseline or nil }
     Perf.vrp   = { calls = 0, wall = 0 }
     Perf.loop  = { ticks = 0, busy = 0, cpu = 0, worst = 0,
-                   -- what kept the loop at the fast rate, counted per tick, so
-                   -- "busy on an empty server" stops being a guess
                    causeMatch = 0, causeBots = 0, causeQueue = 0 }
     Perf.net   = {}
     Perf.boots = 0
 end
 Perf.reset()
 
---- Records one database round trip. `kind` is the DB.* function that ran.
 function Perf.dbCall(kind, startedMs, startedClock)
     local d    = Perf.db
     local took = ms() - startedMs
@@ -55,10 +31,6 @@ function Perf.dbCall(kind, startedMs, startedClock)
     d.kinds[kind] = (d.kinds[kind] or 0) + 1
     if took > d.worst then d.worst, d.worstKind = took, kind end
 
-    -- Reads and writes are kept apart because the gap between them is a
-    -- diagnosis on its own: a database that reads in single digits and writes
-    -- in hundreds is flushing every commit to a slow disk, and no query is at
-    -- fault. Lumped into one average that signature is invisible.
     local w = (kind == 'write' or kind == 'insert' or kind == 'update'
                or kind == 'transaction')
     local side = w and d.writes or d.reads
@@ -66,7 +38,6 @@ function Perf.dbCall(kind, startedMs, startedClock)
     side.wall = side.wall + took
 end
 
---- Records one inbound net event, grouped by its rate limit bucket.
 function Perf.event(bucket)
     local k = bucket or 'default'
     Perf.net[k] = (Perf.net[k] or 0) + 1
@@ -84,15 +55,6 @@ local function err(fmt, ...)
     print(('^1[M5RP][error] ' .. fmt .. '^7'):format(...))
 end
 
--- ---------------------------------------------------------------------------
--- Integration hooks (Export.lua)
---
--- One entry point for everything the server owner wants to run around a match.
--- Each hook is called inside pcall so a mistake in Export.lua prints an error
--- and the match carries on; nothing in here may take the system down. The same
--- moment is also broadcast as an event, so other resources can listen without
--- touching this one.
--- ---------------------------------------------------------------------------
 
 local function hook(name, data)
     local fn = M5 and M5.Server and M5.Server[name]
@@ -152,15 +114,6 @@ local function jsonDecode(v, fallback)
     return fallback or {}
 end
 
---- Reads a MySQL TINYINT(1) back as a Lua boolean.
----
---- This is not decoration. oxmysql sits on node-mysql2, which converts
---- TINYINT(1) to a JavaScript boolean, so the column arrives in Lua as `true`
---- or `false` — not as 1 or 0. `tonumber(true)` is nil, so the obvious
---- `tonumber(row.flag) == 1` evaluates to false for a flag that is set, and a
---- player whose placement was finished reads back as Unranked on every load.
---- Older driver versions do hand back a number, and a few setups a string, so
---- all three forms are accepted.
 local function toBool(v)
     if type(v) == 'boolean' then return v end
     if type(v) == 'number'  then return v ~= 0 end
@@ -185,15 +138,6 @@ local function inList(list, value)
     return false
 end
 
---- `inList` for a list that never changes.
----
---- The config lists are read on the hottest paths there are — every reported
---- hit asks whether the damage source is a valid one, every headshot asks
---- twice more, and the AFK check asks once per match per tick — and each ask
---- was a walk down the list. The set is built the first time a list is asked
---- about and remembered against the list itself, so the answer becomes one
---- table read. Only use it for a list nothing writes to at runtime; the
---- config lists it is used on are read-only.
 local ListSets = setmetatable({}, { __mode = 'k' })
 local function inSet(list, value)
     if not list or value == nil then return false end
@@ -217,38 +161,16 @@ local function sqlDate(ts)
     return os.date('%Y-%m-%d %H:%M:%S', ts or now())
 end
 
--- ============================================================================
--- 02. vRP  (Dunko vRP)
--- ============================================================================
--- Direct integration, no abstraction layer. `@vrp/lib/utils.lua` is loaded by
--- fxmanifest.lua and provides the `module`, `Proxy` and `Tunnel` globals.
 
 local Proxy  = module('vrp', 'lib/Proxy')
 local Tunnel = module('vrp', 'lib/Tunnel')
 
--- Tunnel.getInterface(name, identifier): the second argument is THIS resource's
--- name. Omitting it makes vRP register "vRP:nil:tunnel_res" and throw.
 vRP       = Proxy.getInterface('vRP')
 vRPclient = Tunnel.getInterface('vRP', RES)
 
--- ---------------------------------------------------------------------------
--- Permission answers, remembered for a moment
--- ---------------------------------------------------------------------------
--- Every vRP.hasPermission is a Proxy round trip into the framework, and the
--- panel asks the same handful of questions over and over: one boot payload used
--- to fire around ninety of them, because the set of allowed admin actions is
--- resolved by asking about every action in turn, and each of those asks about
--- the super and admin permissions first.
---
--- The answer to "does this user hold this permission" does not change from one
--- millisecond to the next, so it is remembered per user for a short window. A
--- group added in game therefore takes effect within PERM_TTL rather than
--- instantly; that is the whole cost, and staff changes are rare next to the
--- number of times the question is asked.
 local PERM_TTL   = 20000
 local PermCache  = {}
 
---- vRP.hasPermission, memoised. Always returns a boolean.
 local function hasPerm(userId, perm)
     if not userId or not perm then return false end
 
@@ -260,8 +182,6 @@ local function hasPerm(userId, perm)
 
     local v = c.map[perm]
     if v == nil then
-        -- a real trip into the framework: this is the number the cache exists
-        -- to keep down, so it is the one worth counting
         local t = ms()
         local ok, res = pcall(function() return vRP.hasPermission({ userId, perm }) end)
         Perf.vrp.calls = Perf.vrp.calls + 1
@@ -272,15 +192,10 @@ local function hasPerm(userId, perm)
     return v
 end
 
---- Drops what is remembered about one user, or about everyone. Called when a
---- player leaves, and after a staff action that can change their groups, so a
---- grant made through the panel is not held back by the window above.
 local function forgetPerms(userId)
     if userId then PermCache[userId] = nil else PermCache = {} end
 end
 
---- Display name. GetPlayerName is the only source: it is synchronous, always
---- available, and costs no database round trip.
 local function playerName(user_id, source)
     if source then
         local name = GetPlayerName(source)
@@ -289,8 +204,6 @@ local function playerName(user_id, source)
     return 'User ' .. tostring(user_id)
 end
 
---- Adds the "PvP Ranked" entry to the vRP main menu. It opens exactly the same
---- NUI as the command, the keybind and the world marker.
 local function registerVrpMenu()
     local cfg = Config.vRP.registerMenu
     if not cfg or not cfg.enabled then return end
@@ -316,19 +229,9 @@ local function registerVrpMenu()
     log('vRP menu entry registered ("%s")', cfg.name)
 end
 
--- ============================================================================
--- 03. DATABASE LAYER
--- ============================================================================
 
---- Set once the schema exists and the active season is known. Loading a profile
---- before that point would stamp its per-season rows with season 0, and every
---- later save (which targets the real season) would then silently update
---- nothing — the player's rank and stats would reappear as fresh on the next
---- join. Every entry point that can load a profile waits on this.
 local Boot = { ready = false }
 
---- Blocks the calling thread until the boot sequence has finished.
---- Returns false if it never does, so callers can bail instead of hanging.
 local function waitForBoot(timeoutMs)
     local waited = 0
     local limit  = timeoutMs or 30000
@@ -342,7 +245,6 @@ end
 
 local DB = {
     ready = false,
-    -- Write batching. Dirty players are flushed on Config.Database.flushInterval.
     dirtyPlayers = {},
     dirtyStats   = {},
     dirtyRanks   = {},
@@ -724,10 +626,6 @@ local SCHEMA = {
   KEY `idx_pen_user` (`user_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
 
--- Store wallet and equipped cosmetics. Kept in its own table rather than as
--- columns on m5_players, because the schema is created with CREATE TABLE IF
--- NOT EXISTS — adding columns to a table that already exists would need an
--- ALTER that never runs on a live server.
 [[CREATE TABLE IF NOT EXISTS `m5_player_store` (
   `user_id` INT UNSIGNED NOT NULL,
   `coins` BIGINT NOT NULL DEFAULT 0,
@@ -803,10 +701,6 @@ function DB.update(sql, params)
     return res or 0
 end
 
---- Same query, but reports whether it actually ran. DB.update returns 0 both
---- for "the query failed" and for "nothing needed changing", which makes it
---- unsafe for anything that clears a dirty flag on success — a transient error
---- would drop the change for good. Returns ok, affectedRows.
 function DB.write(sql, params)
     local ok, res = pcall(function()
         return MySQL.update.await(sql, params)
@@ -818,40 +712,17 @@ function DB.write(sql, params)
     return true, res or 0
 end
 
---- Does this oxmysql offer an awaitable transaction? Resolved once, so the
---- report can say which path the flush is taking rather than leaving it to be
---- inferred from the absence of a line.
 DB.txAvailable = type(MySQL) == 'table'
              and type(MySQL.transaction) == 'table'
              and type(MySQL.transaction.await) == 'function'
 
---- Runs several writes in one round trip.
----
---- This is the difference between a flush costing one trip and costing one per
---- row. On a server where a round trip is measured in tens of milliseconds —
---- and that is most shared boxes, because the cost is the trip and not the
---- query — saving thirty players used to mean well over a hundred trips.
----
---- `list` is { { query = sql, values = { ... } }, ... }. It is all or nothing:
---- either every statement lands or none does, which is also why the callers can
---- clear their dirty flags together on success and keep them all on failure.
----
---- Falls back to writing them one at a time if this build of oxmysql has no
---- transaction support, so an older install still works, only slower.
 function DB.transaction(list)
     if not list or #list == 0 then return true end
 
     if #list == 1 then
-        -- a transaction around a single statement is a round trip spent on
-        -- nothing; this is the common case for one player
         return (DB.write(list[1].query, list[1].values))
     end
 
-    -- `MySQL.transaction` alone is not enough to go on: some builds expose it as
-    -- a plain callback function with no `.await`, and calling that would throw
-    -- inside the pcall below, be read as a failed write, and leave every dirty
-    -- flag set — a flush that silently never saves and retries forever. The
-    -- awaitable form has to actually be there.
     if DB.txAvailable then
         local t, c = ms(), os.clock()
         local ok, res = pcall(function()
@@ -871,9 +742,6 @@ function DB.transaction(list)
     return allOk
 end
 
--- Every database call is counted, in one place rather than six. Wrapping them
--- here keeps the functions above readable and means a new DB.* helper is
--- counted the moment it is added to the list.
 for _, kind in ipairs({ 'query', 'single', 'scalar', 'insert', 'update', 'write' }) do
     local inner = DB[kind]
     DB[kind] = function(sql, params)
@@ -884,13 +752,6 @@ for _, kind in ipairs({ 'query', 'single', 'scalar', 'insert', 'update', 'write'
     end
 end
 
---- Brings a database created before per-mode ranks up to date.
----
---- CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
---- an existing install would keep the old two-column key and every ladder
---- would overwrite the one before it. This adds the column, stamps the old
---- rows with the legacy pool so nobody loses a rank, and widens the primary
---- key. It is idempotent: once the column is there it does nothing at all.
 local function migrateRankPools()
     local db = DB.scalar('SELECT DATABASE()')
     if not db then return end
@@ -898,8 +759,6 @@ local function migrateRankPools()
     local pools = Config.RankPools or {}
     local legacy = pools.legacy or pools.default or '1v1'
 
-    -- the store gained an effect, a frame and an avatar slot; same idempotent
-    -- shape, so a server that already has some of them only gets the rest
     for _, col in ipairs({ 'effect', 'frame', 'avatar' }) do
         local there = tonumber(DB.scalar(
             [[SELECT COUNT(*) FROM information_schema.TABLES
@@ -921,7 +780,6 @@ local function migrateRankPools()
               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = 'mode']],
             { db, t }) or 0) or 0
 
-        -- the table may simply not exist yet on a fresh install
         local tableThere = tonumber(DB.scalar(
             [[SELECT COUNT(*) FROM information_schema.TABLES
               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?]], { db, t }) or 0) or 0
@@ -938,14 +796,6 @@ local function migrateRankPools()
     end
 end
 
---- What a query that does no work costs on this server.
----
---- A round trip is a round trip: if `SELECT 1` takes fifty milliseconds then
---- every query in the resource takes at least fifty milliseconds, and no amount
---- of tuning the queries will change that — the connection, or the scheduler
---- resuming the coroutine afterwards, is the cost. Measured once at boot, three
---- times, keeping the best, so a single unlucky sample cannot slander a healthy
---- database.
 function DB.measureBaseline()
     local best
     for _ = 1, 3 do
@@ -966,9 +816,6 @@ end
 
 function DB.init()
     if not Config.Database.autoCreateTables then
-        -- Even with auto-create off, a table missing the per-mode column would
-        -- reject every rank write from here on. Say so loudly rather than
-        -- failing silently once a match ends.
         local db = DB.scalar('SELECT DATABASE()')
         if db then
             local has = tonumber(DB.scalar(
@@ -995,18 +842,12 @@ function DB.init()
     log('database schema verified (%d tables)', #SCHEMA)
 end
 
--- ============================================================================
--- 04. SEASONS
--- ============================================================================
 
 local Season = {
-    current = nil,   -- { id, number, name, start_at, end_at }
+    current = nil,
     endsAt  = 0
 }
 
---- oxmysql hands DATETIME back either as a string or as a millisecond
---- timestamp depending on the driver version. A value we cannot read must
---- never resolve to "now", otherwise the season would roll over instantly.
 local function toTimestamp(value, fallback)
     if type(value) == 'number' then
         return value > 100000000000 and math.floor(value / 1000) or math.floor(value)
@@ -1063,12 +904,9 @@ function Season.id()
     return Season.current and Season.current.id or 0
 end
 
--- ============================================================================
--- 05. RANK / RP / MMR MATHS
--- ============================================================================
 
 local RankById   = {}
-local RankedList = {}   -- ranks with id > 0, ordered ascending
+local RankedList = {}
 
 for i = 1, #Config.Ranks do
     local r = Config.Ranks[i]
@@ -1083,7 +921,6 @@ function Rank.get(id)
     return RankById[id] or RankById[0]
 end
 
---- Resolve the rank entry for a given RP value.
 function Rank.fromRP(rp)
     local best = RankedList[1]
     for i = 1, #RankedList do
@@ -1096,7 +933,6 @@ function Rank.fromRP(rp)
     return best
 end
 
---- Base RP of the tier the player belongs to (used by demotion protection).
 function Rank.tierFloor(rankId)
     local r = Rank.get(rankId)
     if not r or r.id == 0 then return 0 end
@@ -1119,7 +955,6 @@ function Rank.nextThreshold(rp)
     return nil, nil
 end
 
---- Progress data used by the rank card in the UI.
 function Rank.progress(rp, rankId, placementDone)
     local cur = Rank.get(rankId)
     if not placementDone or rankId == 0 then
@@ -1140,7 +975,6 @@ function Rank.progress(rp, rankId, placementDone)
     }
 end
 
---- Public (client safe) rank table for the NUI.
 local function rankTableForClient()
     local out = {}
     for i = 1, #Config.Ranks do
@@ -1153,9 +987,6 @@ local function rankTableForClient()
     return out
 end
 
--- ---------------------------------------------------------------------------
--- MMR
--- ---------------------------------------------------------------------------
 
 local MMR = {}
 
@@ -1165,17 +996,10 @@ function MMR.kFactor(pd)
     return Config.MMR.kBase
 end
 
---- Expected score of A against B (classic elo).
 function MMR.expected(a, b)
     return 1 / (1 + 10 ^ ((b - a) / 400))
 end
 
---- Returns the new MMR value.
--- @param pd            player data
--- @param teamMMR       average MMR of the player's team
--- @param enemyMMR      average MMR of the enemy team
--- @param won           boolean
--- @param performance   -1.0 .. 1.0 relative performance inside the lobby
 function MMR.calculate(pd, teamMMR, enemyMMR, won, performance)
     local k   = MMR.kFactor(pd)
     local exp = MMR.expected(teamMMR, enemyMMR)
@@ -1185,7 +1009,6 @@ function MMR.calculate(pd, teamMMR, enemyMMR, won, performance)
     local perf = (performance or 0) * k * Config.MMR.performanceFactor
     local delta = base + perf
 
-    -- Uncertainty widens the swing for new accounts
     local uFactor = 1 + ((pd.uncertainty - Config.MMR.uncertaintyMin) /
                          math.max(1, Config.MMR.uncertaintyStart)) * 0.5
 
@@ -1194,13 +1017,9 @@ function MMR.calculate(pd, teamMMR, enemyMMR, won, performance)
     return newMMR
 end
 
--- ---------------------------------------------------------------------------
--- RP calculation
--- ---------------------------------------------------------------------------
 
 local RP = {}
 
---- Normalised performance value (0 .. 2, 1 = lobby average).
 local function ratio(value, average)
     if average <= 0 then
         return value > 0 and 2.0 or 1.0
@@ -1208,13 +1027,6 @@ local function ratio(value, average)
     return clamp(value / average, 0.0, 2.0)
 end
 
---- Computes the RP change for one player at the end of a ranked match.
--- @param ctx table {
---   won, draw, roundsWon, roundsLost, mvp,
---   kills, deaths, damage, headshots, clutches, objective,
---   avgKills, avgDamage, avgHeadshots, avgKD,
---   teamScoreShare, allyMMR, enemyMMR, allyRank, enemyRank,
---   winStreak, loseStreak, balanced, pd }
 function RP.calculate(ctx)
     local C = Config.RankedPoints
     local W = C.weights
@@ -1223,27 +1035,22 @@ function RP.calculate(ctx)
     local base = ctx.won and C.winBase or -C.lossBase
     if ctx.draw then base = 0 end
 
-    -- --- round dominance -------------------------------------------------
     local diff = (ctx.roundsWon or 0) - (ctx.roundsLost or 0)
     local roundBonus = clamp(diff * W.roundDiffPerRound, -W.roundDiffMax, W.roundDiffMax)
     if not ctx.won and not ctx.draw then
-        -- a close loss costs less, a blowout costs more
         roundBonus = clamp(roundBonus, -W.roundDiffMax, W.roundDiffMax)
     end
 
-    -- --- opponent strength ------------------------------------------------
     local mmrGap    = (ctx.enemyMMR or 1000) - (ctx.allyMMR or 1000)
     local mmrFactor = ctx.won and W.mmrFactorWin or W.mmrFactorLoss
     local mmrBonus  = (mmrGap / W.mmrScale) * mmrFactor
-    if not ctx.won then mmrBonus = mmrBonus * -1 end       -- losing to stronger teams hurts less
+    if not ctx.won then mmrBonus = mmrBonus * -1 end
     mmrBonus = clamp(mmrBonus, -10, 10)
 
-    -- --- rank gap ----------------------------------------------------------
     local rankGap   = clamp((ctx.enemyRank or 0) - (ctx.allyRank or 0),
                             -W.rankGapMax, W.rankGapMax)
     local rankBonus = rankGap * W.rankGapFactor * (ctx.won and 1 or -1)
 
-    -- --- individual performance -------------------------------------------
     local kd     = (ctx.deaths or 0) > 0 and (ctx.kills or 0) / ctx.deaths or (ctx.kills or 0)
     local perf   = 0
     perf = perf + (ratio(kd, ctx.avgKD or 1) - 1) * W.kdWeight
@@ -1256,7 +1063,6 @@ function RP.calculate(ctx)
 
     perf = clamp(perf, -W.maxPerformanceMalus, W.maxPerformanceBonus)
 
-    -- --- bonuses -----------------------------------------------------------
     local bonus = 0
     if ctx.mvp then bonus = bonus + C.mvpBonus end
 
@@ -1272,15 +1078,12 @@ function RP.calculate(ctx)
         bonus = bonus + math.max(streakBonus, streak >= 2 and C.winStreakBonus or 0)
     end
 
-    -- --- assemble ----------------------------------------------------------
     local total = base + roundBonus + mmrBonus + rankBonus + perf + bonus
 
-    -- Unbalanced lobbies are worth less
     if ctx.balanced == false then
         total = total * W.unbalancedPenalty
     end
 
-    -- Lose streak protection
     if not ctx.won and not ctx.draw and Config.RankSettings.loseStreakProtection.enabled then
         local lsp = Config.RankSettings.loseStreakProtection
         if (ctx.loseStreak or 0) >= lsp.afterLosses then
@@ -1288,7 +1091,6 @@ function RP.calculate(ctx)
         end
     end
 
-    -- Never let bonuses flip the sign of the result
     if ctx.won then
         total = clamp(total, C.minimumGain, C.maximumGain)
     elseif ctx.draw then
@@ -1306,7 +1108,6 @@ function RP.calculate(ctx)
     }
 end
 
---- Applies an RP delta with demotion / rank protection and returns a summary.
 function RP.apply(pd, delta, reason)
     local before      = pd.rp
     local beforeRank  = pd.rankId
@@ -1314,7 +1115,6 @@ function RP.apply(pd, delta, reason)
 
     local target = clamp(before + delta, settings.minRP, settings.maxRP)
 
-    -- Demotion protection: stay inside the current tier for `rankProtection` games
     if delta < 0 and settings.demotionProtection then
         local floorRP = Rank.tierFloor(beforeRank)
         if pd.rankProtection > 0 and target < floorRP then
@@ -1325,10 +1125,9 @@ function RP.apply(pd, delta, reason)
     pd.rp = target
     local newRank = Rank.fromRP(pd.rp)
 
-    -- Radiant slot cap
     if newRank.tier == 'RADIANT' and (settings.radiantSlots or 0) > 0 then
         if not Rank.radiantSlotFree(pd.userId, pd.rp) then
-            newRank = Rank.get(22) -- Immortal
+            newRank = Rank.get(22)
         end
     end
 
@@ -1368,12 +1167,10 @@ function RP.apply(pd, delta, reason)
     }
 end
 
---- Radiant is limited to the top N RP holders of the season.
 function Rank.radiantSlotFree(userId, rp)
     local slots = Config.RankSettings.radiantSlots or 0
     if slots <= 0 then return true end
     local threshold = RankById[23] and RankById[23].rpRequired or 2600
-    -- the cap is per ladder: the top slots of 1v1 are not the top slots of 2v2
     local pool = (Players[userId] and Players[userId].pool) or defaultPool()
     local higher = DB.scalar(
         'SELECT COUNT(*) FROM m5_player_ranks WHERE season_id = ? AND mode = ? AND user_id <> ? AND rp >= ? AND rp > ?',
@@ -1381,13 +1178,10 @@ function Rank.radiantSlotFree(userId, rp)
     return tonumber(higher) < slots
 end
 
--- ============================================================================
--- 06. PLAYER REGISTRY
--- ============================================================================
 
-local Players   = {}   -- [userId] = playerData
-local SrcToUser = {}   -- [source] = userId
-local UserToSrc = {}   -- [userId] = source
+local Players   = {}
+local SrcToUser = {}
+local UserToSrc = {}
 
 local function srcOf(userId)
     local s = UserToSrc[userId]
@@ -1427,18 +1221,6 @@ end
 
 local Player = {}
 
--- ---------------------------------------------------------------------------
--- RANK POOLS
--- ---------------------------------------------------------------------------
--- One pool is one independent ladder — RP, rank, placement and MMR. Which pool
--- a mode belongs to is decided here and nowhere else.
---
--- Everything downstream (RP.apply, the rank getters, the boot payload, the
--- admin grants) keeps reading pd.rp / pd.rankId / pd.mmr exactly as it always
--- has: those flat fields are a window onto whichever pool is active. Switching
--- pools writes the window back and reads the next one in, so the hundreds of
--- call sites never had to learn about pools at all.
--- ---------------------------------------------------------------------------
 
 local POOL_RANK_FIELDS = {
     'rp', 'rankId', 'division', 'highestRankId', 'highestRP',
@@ -1446,12 +1228,10 @@ local POOL_RANK_FIELDS = {
 }
 local POOL_MMR_FIELDS = { 'mmr', 'uncertainty', 'mmrGames', 'peakMMR' }
 
---- The pool the hub opens on, and the home of any row saved before pools.
 local function defaultPool()
     return (Config.RankPools or {}).default or '1v1'
 end
 
---- The pool a mode's rank belongs to.
 function Player.poolOf(mode)
     local cfg = Config.RankPools or {}
     if cfg.perMode == false then return cfg.default or '1v1' end
@@ -1469,7 +1249,6 @@ local function emptyPool()
     }
 end
 
---- Copies the live fields back into the pool they belong to.
 function Player.syncPool(pd)
     if not pd or not pd.pool then return end
     local into = pd.pools[pd.pool]
@@ -1486,7 +1265,6 @@ function Player.syncPool(pd)
     pd.poolDirty[pd.pool] = d
 end
 
---- Makes `pool` the live one. Safe to call with the pool already active.
 function Player.usePool(pd, pool)
     if not pd then return end
     pool = pool or (Config.RankPools or {}).default or '1v1'
@@ -1509,13 +1287,10 @@ function Player.usePool(pd, pool)
     pd.dirtyMMR  = d.mmr
 end
 
---- Switches to the pool that owns `mode`. The one every caller should use.
 function Player.useMode(pd, mode)
     Player.usePool(pd, Player.poolOf(mode))
 end
 
---- Read one pool without disturbing the live one. For matchmaking, which has
---- to weigh several players against a mode none of them are inside yet.
 function Player.poolData(pd, pool)
     if not pd then return emptyPool() end
     if pd.pool == pool then
@@ -1531,11 +1306,7 @@ function Player.poolData(pd, pool)
     return pd.pools[pool] or emptyPool()
 end
 
---- Loads (or creates) every persisted row for a user and puts it in the cache.
 function Player.load(userId, source)
-    -- Re-loading a profile that is already cached replaces the live table, so
-    -- anything not yet written (an admin grant, a match result) would be lost.
-    -- Flush it first; the read below then returns the same values.
     local cached = Players[userId]
     if cached then Player.save(cached, false) end
 
@@ -1544,7 +1315,6 @@ function Player.load(userId, source)
     local name     = playerName(userId, source)
     local ipHash   = ids.ip ~= '' and hashString(ids.ip) or ''
 
-    -- ---- core row --------------------------------------------------------
     local row = DB.single('SELECT * FROM m5_players WHERE user_id = ?', { userId })
     if not row then
         DB.insert([[INSERT INTO m5_players (user_id, name, license, discord, ip_hash, settings, titles, badges)
@@ -1556,17 +1326,12 @@ function Player.load(userId, source)
             frame = 'default', settings = '{}', commendations = 0, reports = 0, playtime = 0
         }
     elseif source then
-        -- only refresh identity columns for a real connection; loading an
-        -- offline row for an admin edit must not overwrite the stored name
         DB.update('UPDATE m5_players SET name = ?, license = ?, discord = ?, ip_hash = ?, last_seen = ? WHERE user_id = ?',
             { name, ids.license, ids.discord, ipHash, sqlDate(), userId })
     else
         name = row.name or name
     end
 
-    -- ---- rank + mmr rows, one per pool -----------------------------------
-    -- Every pool the player has ever played comes back in one read each; a
-    -- pool with no row yet simply starts empty when it is first activated.
     local pools = {}
     local function poolEntry(name)
         local e = pools[name]
@@ -1610,12 +1375,9 @@ function Player.load(userId, source)
         e.peakMMR     = tonumber(r.peak_mmr) or Config.MMR.startValue
     end
 
-    -- the pool the hub opens on always exists, so a brand new player has
-    -- something to be Unranked in
     local startPool = defaultPool()
     local rank = poolEntry(startPool)
 
-    -- ---- stats row -------------------------------------------------------
     local stats = DB.single('SELECT * FROM m5_player_stats WHERE user_id = ? AND season_id = ?',
         { userId, seasonId })
     if not stats then
@@ -1645,7 +1407,6 @@ function Player.load(userId, source)
         reports   = tonumber(row.reports) or 0,
         playtime  = tonumber(row.playtime) or 0,
 
-        -- every ladder the player has, and the one these flat fields mirror
         pools     = pools,
         pool      = startPool,
         poolDirty = {},
@@ -1693,8 +1454,7 @@ function Player.load(userId, source)
             map_stats = type(stats.map_stats) == 'table' and stats.map_stats or {}
         },
 
-        -- runtime
-        state     = 'IDLE',     -- IDLE | QUEUE | READY | MATCH | CUSTOM | TRAINING
+        state     = 'IDLE',
         matchId   = nil,
         team      = 0,
         partyId   = nil,
@@ -1717,24 +1477,6 @@ function Player.load(userId, source)
     return pd
 end
 
---- Flushes one player's dirty rows.
----
---- The per-season tables are written as upserts on purpose. A plain UPDATE
---- silently succeeds with zero affected rows when the (user_id, season_id) row
---- is missing — which is exactly how an admin-granted rank could disappear on
---- the next join. Upserting means the write always lands, whether the row was
---- created at load time, dropped by a season reset, or never existed at all.
---- Gathers everything this player has outstanding, as statements rather than
---- writes, and appends them to `out`.
----
---- Each entry carries a `done` closure that clears the dirty flag it belongs
---- to. Nothing is cleared here: the caller runs the statements and calls `done`
---- only on the ones that actually landed, so a failed write is retried on the
---- next flush instead of being dropped.
----
---- Returns true when the player still has something unwritten that this pass
---- could not collect (no active season), which is the one case where the entry
---- must stay in memory regardless.
 local function collectSaves(pd, out)
     local seasonId = Season.id()
 
@@ -1750,9 +1492,6 @@ local function collectSaves(pd, out)
         }
     end
 
-    -- Season 0 is not a season: it only happens if a profile was touched before
-    -- Season.load() ran. Writing there would bury the data in a phantom season,
-    -- so the dirty flags are kept and the next flush retries.
     if seasonId == 0 then
         if pd.dirtyRank or pd.dirtyMMR or pd.dirtyStats then
             err('no active season — holding unsaved ranked data for user %d', pd.userId)
@@ -1761,9 +1500,6 @@ local function collectSaves(pd, out)
         return false
     end
 
-    -- Every pool the player has touched this session is written, not just the
-    -- live one: they can win a 2v2 and then open the hub on 1v1, and the 2v2
-    -- result must not be sitting in memory when they disconnect.
     Player.syncPool(pd)
     for pool, dirty in pairs(pd.poolDirty) do
         local e = pd.pools[pool]
@@ -1782,8 +1518,6 @@ local function collectSaves(pd, out)
                 values = { pd.userId, seasonId, pool, e.rp, e.rankId, e.division, e.highestRankId, e.highestRP,
                   e.placementDone and 1 or 0, e.placementPlayed, jsonEncode(e.placementData),
                   e.rankProtection },
-                -- keep it dirty on a failed write so the next flush retries
-                -- instead of dropping an admin grant or a match result
                 done = function() dirty.rank = false end }
         end
 
@@ -1831,14 +1565,12 @@ local function collectSaves(pd, out)
     return false
 end
 
---- The live rank flags follow whatever is still outstanding on the active pool.
 local function refreshLiveDirty(pd)
     local liveDirty = pd.poolDirty[pd.pool] or { rank = false, mmr = false }
     pd.dirtyRank = liveDirty.rank
     pd.dirtyMMR  = liveDirty.mmr
 end
 
---- Is anything still waiting to be written for this player?
 local function stillPending(pd)
     if pd.dirtyPlayer or pd.dirtyStats then return true end
     for _, d in pairs(pd.poolDirty) do
@@ -1858,8 +1590,6 @@ function Player.save(pd, removeAfter)
     end
     refreshLiveDirty(pd)
 
-    -- Dropping the cache entry while something is still unwritten would throw
-    -- the change away, so a failed save keeps the player in memory to retry.
     if removeAfter then
         if stillPending(pd) then
             err('keeping user %d cached: unsaved data still pending', pd.userId)
@@ -1869,11 +1599,6 @@ function Player.save(pd, removeAfter)
     end
 end
 
---- The batch flush: everything every player has outstanding, in one round trip.
----
---- This used to be a loop of Player.save, so a full server cost one round trip
---- per dirty row — a few hundred of them every flush, each paying the trip cost
---- again. Collected together it is one.
 function Player.saveAll()
     local writes, owners = {}, {}
     for _, pd in pairs(Players) do
@@ -1889,7 +1614,6 @@ function Player.saveAll()
     for i = 1, #owners do refreshLiveDirty(owners[i]) end
 end
 
---- Recomputes the favourite weapon / map from the aggregated stat maps.
 function Player.refreshFavourites(pd)
     local bestW, bestWn = '', -1
     for w, n in pairs(pd.stats.weapon_stats) do
@@ -1903,13 +1627,9 @@ function Player.refreshFavourites(pd)
     pd.stats.fav_map    = bestM
 end
 
--- ============================================================================
--- 07. SECURITY
--- ============================================================================
 
 local Security = {}
 
---- Sliding window rate limiter. Returns false when the caller must be ignored.
 function Security.allow(pd, bucketName)
     if not pd then return false end
     local cfg = Config.Security.rateLimits[bucketName] or Config.Security.rateLimits.default
@@ -1930,12 +1650,6 @@ function Security.allow(pd, bucketName)
     return true
 end
 
---- The whitelist and the blacklist, indexed once.
----
---- This is asked on every reported shot and again on every reported hit, and
---- it used to be two linear scans of the config lists — up to sixty string
---- comparisons a bullet, per player. The lists are fixed at load, so they are
---- turned into sets here and the question becomes two table reads.
 local WeaponAllowSet, WeaponDenySet
 local function weaponSets()
     if not WeaponAllowSet then
@@ -1968,9 +1682,6 @@ function Security.validSource(source, pd)
     return pd ~= nil and pd.source == source
 end
 
--- ============================================================================
--- 08. DISCORD LOGGING
--- ============================================================================
 
 local Logger = { queue = {} }
 
@@ -1989,7 +1700,6 @@ local function logFields(pd, extra)
     return fields
 end
 
---- Queue a Discord embed. Never blocks the caller.
 function Logger.send(channel, title, description, pd, extraFields)
     if not Config.Webhooks.enabled then return end
     local url = Config.Webhooks.urls[channel]
@@ -2011,7 +1721,6 @@ end
 function Logger.flush()
     if #Logger.queue == 0 then return end
 
-    -- Group embeds by webhook url (Discord accepts up to 10 embeds per message)
     local grouped = {}
     for i = 1, #Logger.queue do
         local item = Logger.queue[i]
@@ -2030,41 +1739,20 @@ function Logger.flush()
     end
 end
 
--- ---------------------------------------------------------------------------
--- Client push helpers
--- ---------------------------------------------------------------------------
 
--- ---------------------------------------------------------------------------
--- Text (Locale.lua)
---
--- The English line is the key, so nothing here needs a lookup table of its
--- own: every message written in this file is handed to _L() on its way out and
--- comes back in the player's language, or unchanged when there is no
--- translation for it.
---
--- The server does not know which language a given player picked until they
--- have booted, so the actual swap happens on their client, which holds the
--- table. What the server sends is the English key plus the values to fill in.
--- ---------------------------------------------------------------------------
 
---- Translates a line into the server default. Used for console output and
---- Discord logs, where there is no player to ask.
 local function _L(str)
     if type(str) ~= 'string' then return str end
     local lang = (Locale and Locale[Locale.default]) or nil
     return (lang and lang[str]) or str
 end
 
---- Same, but formats afterwards. The pattern is translated *before* the values
---- are substituted, which is the only order that works.
 local function _Lf(str, ...)
     return _L(str):format(...)
 end
 
 local function notify(source, kind, message, title, ...)
     if not source then return end
-    -- The client translates and formats: it is the side that knows the
-    -- player's chosen language.
     TriggerClientEvent('m5rp:cl:notify', source, {
         kind = kind or 'info', message = message, title = title,
         args = select('#', ...) > 0 and { ... } or nil
@@ -2076,11 +1764,8 @@ local function notifyUser(userId, kind, message, title, ...)
     if s then notify(s, kind, message, title, ...) end
 end
 
--- ============================================================================
--- 09. RANKED BANS & PENALTIES
--- ============================================================================
 
-local Bans = { cache = {} } -- [userId] = { list of active bans }
+local Bans = { cache = {} }
 
 local function parseSqlDate(v)
     if not v then return 0 end
@@ -2111,14 +1796,11 @@ function Bans.get(userId)
     return Bans.cache[userId] or Bans.load(userId)
 end
 
---- Returns the blocking ban entry or nil.
--- @param kind 'RANKED' | 'CUSTOM' | 'CHAT' | 'PARTY' | 'MODE'
 function Bans.check(userId, kind, mode)
     local list = Bans.get(userId)
     for i = 1, #list do
         local b = list[i]
         if b.expiry ~= 0 and b.expiry <= now() then
-            -- expired between refreshes
             DB.update('UPDATE m5_rank_bans SET active = 0 WHERE id = ?', { b.id })
         else
             if b.type == 'PERMANENT' then return b end
@@ -2180,11 +1862,8 @@ function Bans.remove(userId, banId, adminName)
     return q
 end
 
--- ---------------------------------------------------------------------------
--- Leave / AFK penalties
--- ---------------------------------------------------------------------------
 
-local Penalty = { cooldowns = {} } -- [userId] = expiry timestamp
+local Penalty = { cooldowns = {} }
 
 function Penalty.cooldownLeft(userId)
     local c = Penalty.cooldowns[userId]
@@ -2203,7 +1882,6 @@ function Penalty.setCooldown(userId, seconds)
     end
 end
 
---- Counts recent offences inside the configured rolling window.
 function Penalty.recentOffences(userId)
     local since = sqlDate(now() - (Config.LeavePenalty.windowDays * 86400))
     local n = DB.scalar('SELECT COUNT(*) FROM m5_player_penalties WHERE user_id = ? AND created_at >= ?',
@@ -2211,8 +1889,6 @@ function Penalty.recentOffences(userId)
     return tonumber(n) or 0
 end
 
---- Applies the escalating leave / AFK penalty.
--- @param kind 'LEAVE' | 'AFK'
 function Penalty.apply(userId, kind, matchId, preLive)
     if not Config.LeavePenalty.enabled then return nil end
     local pd = Players[userId]
@@ -2274,20 +1950,12 @@ function Penalty.apply(userId, kind, matchId, preLive)
     return { rp = rpLoss, cooldown = cooldown, offence = offence, result = result }
 end
 
--- ============================================================================
--- 10. PARTY
--- ============================================================================
 
--- Forward declaration. The store subsystem is defined much further down, but
--- the party roster below needs to read a member's equipped cosmetics, and a
--- local declared later in the file is not in scope up here.
 local Store
 
-local Parties = {}  -- [partyId] = party
-local Invites  = {} -- [userId] = { partyId, from, expires }
+local Parties = {}
+local Invites  = {}
 
--- forward declaration: the party code needs the matchmaker (party size drives
--- the searched mode), and the matchmaker needs the party code back
 local Matchmaker
 
 local PartyMgr = {}
@@ -2298,8 +1966,6 @@ local function partyPayload(party)
         local uidv = party.members[i]
         local mpd = Players[uidv]
         if mpd then
-            -- the card art and title a member bought are part of who they
-            -- are on the roster, not just something they see on their own card
             Store.load(uidv)
             members[#members + 1] = {
                 userId = uidv,
@@ -2327,8 +1993,6 @@ end
 function PartyMgr.sync(party)
     if not party then return end
 
-    -- the searched mode depends on the party size, so a size change while a
-    -- search is running invalidates it
     if party.searching and party.lastSize and party.lastSize ~= #party.members then
         party.searching = false
         for i = 1, #party.members do
@@ -2517,16 +2181,13 @@ function PartyMgr.allReady(party)
     return true
 end
 
--- ============================================================================
--- 11. QUEUE & MATCHMAKING
--- ============================================================================
 
-local Queue        = {}   -- [mode] = { entry, ... }
-local ReadyChecks  = {}   -- [id]   = readyCheck
-local Avoid        = {}   -- [userId] = { [otherId] = expiry }
-local RecentOpp    = {}   -- [userId] = { [otherId] = timestamp }
+local Queue        = {}
+local ReadyChecks  = {}
+local Avoid        = {}
+local RecentOpp    = {}
 
-Matchmaker = {}           -- (forward declared above)
+Matchmaker = {}
 
 local function modeCfg(mode)
     local m = Config.Modes[mode]
@@ -2551,15 +2212,6 @@ local function queueList(mode)
     return Queue[mode]
 end
 
---- Is there anything for the matchmaker to do at all?
----
---- The master loop asks this before running a pass and before deciding how fast
---- to spin, so an empty server stops paying for a search over every mode four
---- times a second. A pending ready check counts: its entries have already left
---- the queue, and the pass is what expires it when nobody accepts.
----
---- Queue[mode] is created empty on first use and stays, so the lists have to be
---- looked into rather than the table just being tested for keys.
 function Matchmaker.waiting()
     if next(ReadyChecks) ~= nil then return true end
     for _, list in pairs(Queue) do
@@ -2577,7 +2229,6 @@ function Matchmaker.inQueue(userId)
     return nil
 end
 
---- Returns nil when the player may queue, or a reason string.
 function Matchmaker.canQueue(pd, mode)
     if Config.Global.rankedFrozen then return Config.Global.frozenMessage end
     if not Config.Matchmaking.enabled then return 'Matchmaking is disabled.' end
@@ -2611,7 +2262,6 @@ function Matchmaker.canQueue(pd, mode)
     return nil
 end
 
---- The mode a party of this size should default to (autoMode).
 function Matchmaker.modeForSize(size)
     for i = 1, #Config.RankedQueueModes do
         local key = Config.RankedQueueModes[i]
@@ -2621,18 +2271,11 @@ function Matchmaker.modeForSize(size)
     return nil
 end
 
---- Is auto fill something this server offers at all?
 function Matchmaker.autoFillEnabled()
     local af = (Config.PartyQueue or {}).autoFill
     return af ~= nil and af.enabled ~= false
 end
 
---- Validates the requested mode against the party size.
--- `autoFill` is the player's own switch: with it on, a mode that needs more
--- people than the party has stops being locked and matchmaking fills the rest
--- of their side. It is asked for by the client and granted here, so a client
--- that asks for it on a server that has it switched off is simply refused.
--- Returns list, errorMessage.
 function Matchmaker.resolveModes(request, size, autoFill)
     local P = Config.PartyQueue
 
@@ -2645,8 +2288,6 @@ function Matchmaker.resolveModes(request, size, autoFill)
     local filling = autoFill == true and Matchmaker.autoFillEnabled()
 
     if cfg.type ~= 'ffa' then
-        -- Never relaxed, whatever the switch says: a mode smaller than the
-        -- party has nowhere to put the rest of them.
         if size > cfg.teamSize then
             return nil, ('Your party is too large for %s.'):format(cfg.label)
         end
@@ -2678,7 +2319,6 @@ function Matchmaker.join(userId, mode, autoFill)
     local modes, modeErr = Matchmaker.resolveModes(mode, #members, filling)
     if not modes then return false, modeErr end
 
-    -- Every member must be allowed to queue for the first mode of the set
     for i = 1, #members do
         local mpd = Players[members[i]]
         if not mpd then return false, 'A party member is not loaded.' end
@@ -2686,7 +2326,6 @@ function Matchmaker.join(userId, mode, autoFill)
         if reason then return false, _Lf('%s: %s', mpd.name, _L(reason)) end
     end
 
-    -- Party rank gap check
     if party and Config.Matchmaking.partyRankGapEnabled and #members > 1 then
         local gapPool = Player.poolOf(modes[1])
         local lo, hi = 99, -1
@@ -2702,9 +2341,6 @@ function Matchmaker.join(userId, mode, autoFill)
         end
     end
 
-    -- A group can search several modes at once and each mode has its own
-    -- ladder, so the entry is seeded from the first mode's pool. The RP that
-    -- actually moves is applied against whichever mode the match lands in.
     local searchPool = Player.poolOf(modes[1])
     local totalMMR, totalRank = 0, 0
     for i = 1, #members do
@@ -2713,8 +2349,6 @@ function Matchmaker.join(userId, mode, autoFill)
         totalRank = totalRank + e.rankId
     end
 
-    -- One entry per searched mode, all sharing a group key so that filling any
-    -- one of them cancels the rest.
     local groupKey = uid('G')
     local joinedAt, joinedMs = now(), ms()
 
@@ -2731,9 +2365,6 @@ function Matchmaker.join(userId, mode, autoFill)
             rankId    = math.floor(totalRank / #members),
             joinedAt  = joinedAt,
             joinedMs  = joinedMs,
-            -- kept on the entry so a filled slot is visible in a log or a
-            -- dump, not because matchmaking reads it: assembling a team from
-            -- several entries is what it already did
             autoFill  = filling or nil,
             range     = Config.Matchmaking.mmrRangeStart,
             rankRange = Config.Matchmaking.rankRangeStart
@@ -2773,7 +2404,6 @@ function Matchmaker.leave(userId, silent)
     local _, entry = Matchmaker.inQueue(userId)
     if not entry then return false end
 
-    -- a random search sits in several queues at once: clear every sibling
     for _, list in pairs(Queue) do
         for i = #list, 1, -1 do
             if list[i].key == entry.key
@@ -2803,7 +2433,6 @@ function Matchmaker.leave(userId, silent)
     return true
 end
 
---- Number of players currently searching (all modes) — displayed in the UI.
 function Matchmaker.searchingCount(mode)
     local n, seen = 0, {}
     for m, list in pairs(Queue) do
@@ -2835,9 +2464,6 @@ local function entriesCompatible(a, b)
     local rankRange = math.max(a.rankRange, b.rankRange)
     if math.abs(a.rankId - b.rankId) > rankRange then return false end
 
-    -- Ping preference relaxes after a while. This is asked about every pair of
-    -- waiting entries on every matchmaking tick, so the clock is read once and
-    -- the config once rather than twice and three times per pair.
     local MM = Config.Matchmaking
     local maxPing = MM.maxPing
     if maxPing > 0 then
@@ -2857,20 +2483,12 @@ local function entriesCompatible(a, b)
     return true
 end
 
---- Attempts to build a full lobby. Entries are tried oldest first, and a seed
---- that cannot be satisfied is skipped rather than blocking the whole queue.
--- hoisted out of tryBuildLobby, which is called over and over per mode per
--- tick: the comparator was a new closure on every one of those calls
 local function byJoinTime(x, y) return x.joinedMs < y.joinedMs end
 
 local function tryBuildLobby(mode, cfg)
     local list = queueList(mode)
     if #list == 0 then return nil end
 
-    -- How many people are waiting for this mode at all. A team mode cannot
-    -- fill two sides out of fewer than teamSize * 2, so counting first turns
-    -- the usual case — a mode nobody is queued for in numbers — from a scan
-    -- of every entry against every other into one pass and an exit.
     local waiting = 0
     for i = 1, #list do waiting = waiting + #list[i].members end
     if cfg.type == 'ffa' then
@@ -2881,7 +2499,6 @@ local function tryBuildLobby(mode, cfg)
 
     table.sort(list, byJoinTime)
 
-    -- ---- free for all ---------------------------------------------------
     if cfg.type == 'ffa' then
         local minP = cfg.minPlayers or 4
         local maxP = cfg.maxPlayers or 12
@@ -2899,11 +2516,6 @@ local function tryBuildLobby(mode, cfg)
         return { entries = picked, teams = nil, ffa = true }
     end
 
-    -- ---- team matching rules --------------------------------------------
-    -- 'fullTeam': a complete party only ever faces another complete party, so
-    -- a duo searching 2V2 waits for a second duo instead of being handed two
-    -- solo players. A party that has waited past fallbackAfter is released
-    -- back into the normal pool so nobody waits forever.
     local need = cfg.teamSize
     local TM = (Config.PartyQueue or {}).teamMatching or {}
     local fullTeamOnly = TM.mode == 'fullTeam'
@@ -2917,13 +2529,10 @@ local function tryBuildLobby(mode, cfg)
         return fullTeamOnly and isFullTeam(e) and not relaxed(e)
     end
 
-    -- Try every entry as a seed. A reserved party with no mirror yet simply
-    -- keeps waiting while the rest of the queue continues to match.
     for si = 1, #list do
         local seed = list[si]
 
         if reserved(seed) then
-            -- complete party: look for its mirror only
             for i = 1, #list do
                 local e = list[i]
                 if e.key ~= seed.key and isFullTeam(e) and entriesCompatible(seed, e) then
@@ -2977,8 +2586,6 @@ local function tryBuildLobby(mode, cfg)
     return nil
 end
 
---- Removes the given entries — and every sibling entry of the same search —
---- from every queue they sit in.
 local function removeEntries(mode, entries)
     local keys, groups = {}, {}
     for i = 1, #entries do
@@ -2995,7 +2602,6 @@ local function removeEntries(mode, entries)
     end
 end
 
--- forward declaration, defined by the match engine
 local Match
 
 local function startReadyCheck(mode, cfg, lobby)
@@ -3084,7 +2690,6 @@ function Matchmaker.accept(userId, checkId)
     return true
 end
 
---- Handles a ready check that timed out or was declined.
 local function failReadyCheck(rc, declinedBy)
     ReadyChecks[rc.id] = nil
 
@@ -3114,8 +2719,6 @@ local function failReadyCheck(rc, declinedBy)
         end
 
         if requeue and entryOk then
-            -- put the entry back with its original queue time so it keeps
-            -- priority, restoring every mode a random search covered
             local restore = entry.groupModes or { rc.mode }
             for _, m in ipairs(restore) do
                 local clone = copy(entry)
@@ -3148,11 +2751,8 @@ function Matchmaker.decline(userId, checkId)
     return true
 end
 
---- Main matchmaking pass, called from the master loop.
 function Matchmaker.tick()
-    -- expand search windows and drop stale entries
     local t = ms()
-    -- read once per tick rather than six times per waiting entry
     local MM       = Config.Matchmaking
     local expandMs = MM.expandInterval
     local maxWait  = MM.maxQueueTime * 1000
@@ -3182,12 +2782,10 @@ function Matchmaker.tick()
         end
     end
 
-    -- ready check expiry
     for id, rc in pairs(ReadyChecks) do
         if ms() >= rc.expires then failReadyCheck(rc, nil) end
     end
 
-    -- try to build lobbies
     for mode, list in pairs(Queue) do
         if #list > 0 then
             local cfg = modeCfg(mode)
@@ -3204,7 +2802,6 @@ function Matchmaker.tick()
         end
     end
 
-    -- push queue timers to searching players (once per group, not per mode)
     local total = Matchmaker.searchingCount()
     local pushed = {}
     for _, list in pairs(Queue) do
@@ -3231,15 +2828,12 @@ function Matchmaker.tick()
     end
 end
 
--- ============================================================================
--- 12. MATCH ENGINE
--- ============================================================================
 
-local Matches       = {}   -- [matchId] = match
-local UsedBuckets   = {}   -- [bucket]  = matchId
-local Reconnects    = {}   -- [userId]  = { matchId, expires, team }
+local Matches       = {}
+local UsedBuckets   = {}
+local Reconnects    = {}
 
-Match = {}                 -- (forward declared above)
+Match = {}
 
 local MapById = {}
 for i = 1, #Config.Maps do MapById[Config.Maps[i].id] = Config.Maps[i] end
@@ -3272,7 +2866,6 @@ for i = 1, #Config.WeaponPresets do
     PresetById[Config.WeaponPresets[i].id] = Config.WeaponPresets[i]
 end
 
---- Resolves the weapon list a room selected in the custom match UI.
 local function presetWeapons(ids)
     local out = {}
     for i = 1, #(ids or {}) do
@@ -3287,7 +2880,6 @@ end
 function Match.loadoutFor(m, userId)
     local base = Config.Loadouts[m.settings.loadout] or Config.Loadouts.standard
 
-    -- a custom room with an explicit weapon selection overrides the preset
     local weapons = presetWeapons(m.settings.weapons)
     if #weapons == 0 then
         for i = 1, #base.weapons do
@@ -3301,7 +2893,6 @@ function Match.loadoutFor(m, userId)
     local mp = m.players[userId]
 
     if m.settings.matchType == 'random' and #weapons > 1 then
-        -- one random weapon from the selection, rerolled every round
         weapons = { weapons[((m.round + (userId % 7)) % #weapons) + 1] }
 
     elseif m.settings.matchType == 'gungame' and mp then
@@ -3380,28 +2971,18 @@ local function aliveCount(m, team)
     return n
 end
 
--- ---------------------------------------------------------------------------
--- Avatars
---
--- Resolved server side and handed to the UI as a plain URL. The Discord bot
--- token never leaves Config_Server.lua; the client only ever sees the picture
--- address, and a default one whenever anything is missing or fails.
--- ---------------------------------------------------------------------------
 
-local AvatarCache = {}   -- [userId] = { url = string, at = timestamp }
+local AvatarCache = {}
 
 local function defaultAvatar()
     return Config.Avatars.default or ''
 end
 
---- The bare discord id out of a "discord:123456789" identifier.
 local function discordIdOf(pd)
     if not pd or type(pd.discord) ~= 'string' or pd.discord == '' then return nil end
     return pd.discord:match('(%d+)$')
 end
 
---- Asks Discord for a user's avatar hash once, then caches the built URL.
---- Runs in its own thread: the HTTP call must never hold up a match tick.
 local function fetchDiscordAvatar(userId, discordId)
     local cfg = Config.Avatars.discord
     if not cfg or cfg.botToken == '' then return end
@@ -3416,7 +2997,6 @@ local function fetchDiscordAvatar(userId, discordId)
                     url = ('https://cdn.discordapp.com/avatars/%s/%s.%s?size=%d')
                         :format(discordId, data.avatar, ext, cfg.size or 128)
                 elseif ok and type(data) == 'table' then
-                    -- no custom avatar: Discord's own default for that account
                     local n = tonumber(data.discriminator or 0) or 0
                     url = ('https://cdn.discordapp.com/embed/avatars/%d.png'):format(n % 5)
                 end
@@ -3429,8 +3009,6 @@ local function fetchDiscordAvatar(userId, discordId)
         end, 'GET', '', { Authorization = 'Bot ' .. cfg.botToken })
 end
 
---- The picture for a player. Always returns something usable immediately; a
---- Discord lookup fills the cache in the background for the next push.
 local function avatarFor(userId)
     if not Config.Avatars.enabled then return nil end
 
@@ -3449,7 +3027,6 @@ local function avatarFor(userId)
     end
 
     if source == 'discord' and discordId then
-        -- serve the default now, swap it in once Discord answers
         if not cached then
             AvatarCache[userId] = { url = defaultAvatar(), at = 0 }
             Citizen.CreateThread(function() fetchDiscordAvatar(userId, discordId) end)
@@ -3461,12 +3038,7 @@ local function avatarFor(userId)
     return defaultAvatar()
 end
 
--- ---------------------------------------------------------------------------
--- Team names
--- ---------------------------------------------------------------------------
 
---- Names one side of a match. With 'leader' the side is named after the party
---- leader that queued it, or its highest ranked player when there is no party.
 local function teamNameFor(m, team)
     local cfg = Config.TeamNames or {}
     local fixed = (cfg.fixed and cfg.fixed[team]) or (team == 2 and 'TEAM B' or 'TEAM A')
@@ -3497,22 +3069,14 @@ local function teamNameFor(m, team)
     return (cfg.pattern or "%s'S TEAM"):format(pick.name)
 end
 
--- hoisted: table.sort takes it by reference, and building a fresh closure for
--- every scoreboard was an allocation a second for every live match
 local function byTeamThenScore(a, b)
     if a.team ~= b.team then return a.team < b.team end
     return a.score > b.score
 end
 
---- The scoreboard every client is sent. The second return is the same rows
---- keyed by user id, so a caller that also needs the source or the ping of a
---- particular player can read what was already resolved here rather than
---- asking the engine for it again.
 local function playerListPayload(m)
     local out, byUser = {}, {}
     for userId, mp in pairs(m.players) do
-        -- resolved once: srcOf touches GetPlayerName, and this used to ask it
-        -- three times for the same player on a list rebuilt every second
         local s = srcOf(userId)
         local row = {
             userId = userId, serverId = s,
@@ -3531,8 +3095,6 @@ local function playerListPayload(m)
     return out, byUser
 end
 
---- Creates a match object. Shared by ranked matchmaking and custom games.
--- @param opts { mode, ranked, customId, settings, bucket, players = { {userId, team} } }
 function Match.create(opts)
     local cfg = modeCfg(opts.mode)
     if not cfg then return nil, 'invalid mode' end
@@ -3620,10 +3182,6 @@ function Match.addPlayer(m, userId, team)
     local pd = Players[userId]
     if not pd then return false end
 
-    -- From here until the results are applied, this player's rank, RP and MMR
-    -- are the ones belonging to this match's mode. Everything downstream —
-    -- the pre-match snapshot below, RP.apply, the MMR update, the result
-    -- payload — reads the flat fields and so lands on the right ladder.
     Player.useMode(pd, m.mode)
 
     m.players[userId] = {
@@ -3672,7 +3230,6 @@ function Match.addPlayer(m, userId, team)
     return true
 end
 
---- Puts one player into the match bucket and sends the setup payload.
 function Match.deploy(m, userId)
     local s = srcOf(userId)
     local mp = m.players[userId]
@@ -3724,7 +3281,6 @@ function Match.deploy(m, userId)
     })
 end
 
---- Builds a match from a completed ready check.
 function Match.createFromReady(rc)
     local players = {}
     for i = 1, #rc.list do
@@ -3758,7 +3314,6 @@ function Match.createFromReady(rc)
         end
     end
 
-    -- record opponents for the anti boost analyser
     for a in pairs(m.players) do
         RecentOpp[a] = RecentOpp[a] or {}
         for b in pairs(m.players) do
@@ -3775,12 +3330,8 @@ function Match.createFromReady(rc)
         })
 end
 
--- ---------------------------------------------------------------------------
--- Map vote
--- ---------------------------------------------------------------------------
 
 function Match.startMapVote(m)
-    -- close the accept popup for everyone before anything else happens
     Match.broadcast(m, 'm5rp:cl:matchFound', { done = true })
 
     local pool = mapsForMode(m.mode)
@@ -3866,9 +3417,6 @@ function Match.resolveMapVote(m)
     Match.beginSetup(m)
 end
 
--- ---------------------------------------------------------------------------
--- Setup / rounds
--- ---------------------------------------------------------------------------
 
 function Match.beginSetup(m)
     Match.setState(m, 'STARTING', Config.Match.warmupTime)
@@ -3878,7 +3426,6 @@ function Match.beginSetup(m)
         Match.deploy(m, userId)
     end
 
-    -- persist the match row early so kills can reference it
     m.dbId = DB.insert([[INSERT INTO m5_matches
         (match_uid, season_id, mode, map_id, ranked, custom_id, state, bucket, started_at)
         VALUES (?, ?, ?, ?, ?, ?, 'STARTING', ?, ?)]],
@@ -3967,7 +3514,6 @@ function Match.goLive(m)
     Match.pushHud(m, true)
 end
 
---- Ends the current round and records it.
 function Match.endRound(m, winner, reason)
     if m.state ~= 'LIVE' then return end
 
@@ -3977,7 +3523,6 @@ function Match.endRound(m, winner, reason)
         m.scores[winner] = m.scores[winner] + 1
     end
 
-    -- clutch detection: a single survivor of the winning team who had 2+ enemies alive
     if winner and not m.ffa then
         local survivors = {}
         for _, mp in pairs(m.players) do
@@ -4019,7 +3564,6 @@ function Match.endRound(m, winner, reason)
     Match.pushHud(m, true)
 end
 
---- Determines whether the match is decided.
 function Match.checkMatchOver(m)
     local s = m.settings
     local a, b = m.scores[1], m.scores[2]
@@ -4040,13 +3584,11 @@ function Match.checkMatchOver(m)
 
     local toWin = s.roundsToWin
     if m.overtimeCount > 0 then
-        -- overtime is won by a two round margin
         local need = Config.Match.overtime.winBy
         if a - b >= need and a >= toWin then return true, 1 end
         if b - a >= need and b >= toWin then return true, 2 end
 
         if (a + b) >= s.rounds then
-            -- the extra rounds are used up: either decide it or add another half
             if m.suddenDeath or m.overtimeCount >= Config.Match.overtime.maxOvertimes then
                 if a == b then return true, 0 end
                 return true, a > b and 1 or 2
@@ -4063,7 +3605,7 @@ function Match.checkMatchOver(m)
     if played >= s.rounds then
         if a == b then
             if s.overtime and Config.Match.overtime.enabled then
-                return false, nil, true   -- trigger overtime
+                return false, nil, true
             end
             return true, 0
         end
@@ -4072,9 +3614,6 @@ function Match.checkMatchOver(m)
     return false
 end
 
--- ---------------------------------------------------------------------------
--- HUD
--- ---------------------------------------------------------------------------
 
 function Match.pushHud(m, force)
     if not force and (ms() - m.lastHudPush) < 900 then return end
@@ -4083,8 +3622,6 @@ function Match.pushHud(m, force)
     local timeLeft = 0
     if m.stateEnd then timeLeft = math.max(0, math.floor((m.stateEnd - ms()) / 1000)) end
 
-    -- the scoreboard already resolved a source and a ping for every player;
-    -- the loop below reads them back instead of asking the engine twice
     local board, byUser = playerListPayload(m)
 
     local payload = {
@@ -4116,14 +3653,7 @@ function Match.pushHud(m, force)
     end
 end
 
--- ---------------------------------------------------------------------------
--- Kill / death handling
--- ---------------------------------------------------------------------------
 
---- `killerId` and `victimId` come from the caller, which resolved this kill
---- and is holding both entries. It used to walk every player in the match
---- matching names back to ids on every single kill, to arrive at the two the
---- caller already had.
 local function addKillFeed(m, killerName, victimName, weapon, headshot,
                            killerTeam, victimTeam, killerId, victimId)
     Match.broadcast(m, 'm5rp:cl:killfeed', {
@@ -4150,8 +3680,6 @@ local function combatEvent(m, mp, kind, extra)
     end
 end
 
---- Registers a validated kill. Server authoritative, called only from the
---- combat validation layer (section 13).
 function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
     local victim = m.players[victimId]
     if not victim or not victim.alive then return false end
@@ -4168,7 +3696,6 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
     if killer and not suicide then
         local friendly = (not m.ffa) and killer.team == victim.team
         if friendly and not m.settings.friendlyFire then
-            -- teamkill with FF disabled should never have been validated
             return false
         end
 
@@ -4178,7 +3705,6 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
 
         killer.weapons[weapon] = (killer.weapons[weapon] or 0) + 1
 
-        -- streaks / multikills
         killer.killStreak = killer.killStreak + 1
         if killer.killStreak > killer.bestKillStreak then
             killer.bestKillStreak = killer.killStreak
@@ -4205,16 +3731,13 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
             end
         end
 
-        -- first blood
         if not m.firstBloodTaken then
             m.firstBloodTaken = true
             killer.firstBloods = killer.firstBloods + 1
             combatEvent(m, killer, 'firstBlood')
         end
 
-        -- revenge / nemesis
         if victim.lastKiller == killerId then
-            -- killer killed the same victim again
             killer.nemesis[victimId] = (killer.nemesis[victimId] or 0) + 1
             if Config.CombatEvents.nemesis.enabled
                and killer.nemesis[victimId] == Config.CombatEvents.nemesis.threshold then
@@ -4227,7 +3750,6 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
         end
         victim.lastKiller = killerId
 
-        -- assists: everyone else who damaged the victim recently
         for otherId, info in pairs(victim.damageTaken) do
             if otherId ~= killerId and (ms() - info.ts) <= 8000 then
                 local assister = m.players[otherId]
@@ -4242,7 +3764,6 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
         addKillFeed(m, killer.name, victim.name, weapon, headshot,
                     killer.team, victim.team, killerId, victimId)
 
-        -- gun game: every kill advances the killer to the next weapon
         if m.settings.matchType == 'gungame' then
             local ladder = presetWeapons(m.settings.weapons)
             if #ladder == 0 then ladder = (Config.Loadouts[m.settings.loadout] or Config.Loadouts.standard).weapons end
@@ -4268,7 +3789,6 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
         victim.score = victim.score - 25
     end
 
-    -- persist the kill row (capped)
     if m.dbId and #m.killLog < Config.Database.maxKillRowsPerMatch then
         m.killLog[#m.killLog + 1] = {
             round = m.round, killer = (killer and killerId) or 0, victim = victimId,
@@ -4277,7 +3797,6 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
         }
     end
 
-    -- tell the victim client to die and enter spectator
     local vs = srcOf(victimId)
     if vs then
         TriggerClientEvent('m5rp:cl:die', vs, {
@@ -4292,7 +3811,6 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
         })
     end
 
-    -- clutch candidate tracking (last player alive on a team)
     if not m.ffa then
         for team = 1, 2 do
             local alive = {}
@@ -4310,13 +3828,11 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
     return true
 end
 
---- Round / match termination checks after a death or a score change.
 function Match.evaluateRound(m)
     if m.state ~= 'LIVE' then return end
 
     if m.cfg.type == 'ffa' or m.cfg.type == 'deathmatch' then
         if not m.ffa then
-            -- team deathmatch keeps a team kill score
             local a, b = 0, 0
             for _, mp in pairs(m.players) do
                 if mp.team == 1 then a = a + mp.kills else b = b + mp.kills end
@@ -4328,7 +3844,6 @@ function Match.evaluateRound(m)
         return
     end
 
-    -- elimination modes
     local aliveA = aliveCount(m, 1)
     local aliveB = aliveCount(m, 2)
 
@@ -4343,7 +3858,6 @@ function Match.evaluateRound(m)
     end
 end
 
---- An ace is one player killing the entire enemy team in a single round.
 function Match.checkAce(m, winnerTeam)
     if not Config.CombatEvents.ace.enabled then return end
     local enemyTeam = winnerTeam == 1 and 2 or 1
@@ -4361,9 +3875,6 @@ function Match.checkAce(m, winnerTeam)
     end
 end
 
--- ---------------------------------------------------------------------------
--- Match end / finalise
--- ---------------------------------------------------------------------------
 
 local function mvpScore(mp)
     local w = Config.MVP.weights
@@ -4389,8 +3900,6 @@ local function pickMVP(m, winner)
     return best
 end
 
---- Starts an extra half. The last allowed overtime becomes a single decisive
---- round when sudden death is enabled.
 function Match.beginOvertime(m)
     m.overtimeCount = m.overtimeCount + 1
 
@@ -4455,14 +3964,10 @@ function Match.endMatch(m, winner, reason)
         end
     end
 
-    -- The result is on their screen; there is nothing left to keep them stood
-    -- in the arena for. The overlay stays up while they walk away from it.
     if Config.Match.returnImmediately ~= false then
         Match.release(m, 'END', true)
     end
 
-    -- Everything the system owed has been paid out by now, so a hook here can
-    -- safely add its own rewards on top.
     do
         local players = {}
         for userId, mp in pairs(m.players) do
@@ -4494,12 +3999,10 @@ function Match.endMatch(m, winner, reason)
     })
 end
 
---- Writes every result row, applies RP / MMR / stats / rewards.
 function Match.finalize(m, winner, reason, mvpId)
     local results = {}
     local duration = (m.endedAt or now()) - (m.startedAt or now())
 
-    -- lobby averages used by the RP performance model
     local n, sumKills, sumDamage, sumHS, sumKD = 0, 0, 0, 0, 0
     local teamScore = { [1] = 0, [2] = 0 }
     local teamMMR   = { [1] = { sum = 0, n = 0 }, [2] = { sum = 0, n = 0 } }
@@ -4533,7 +4036,6 @@ function Match.finalize(m, winner, reason, mvpId)
     }
     local balanced = math.abs(avgMMR[1] - avgMMR[2]) <= Config.RankedPoints.weights.balancedThresholdMMR
 
-    -- persist the match summary
     if m.dbId then
         DB.update([[UPDATE m5_matches SET state = 'MATCH_END', team_a_score = ?, team_b_score = ?,
                     winner = ?, rounds_played = ?, overtime = ?, avg_mmr_a = ?, avg_mmr_b = ?,
@@ -4560,12 +4062,8 @@ function Match.finalize(m, winner, reason, mvpId)
         local rpResult, rpBreakdown, newMMR
 
         if pd then
-            -- A player who reconnected mid-match came back on the pool the hub
-            -- opens with, so pin the ladder to this match's mode again before
-            -- anything is credited to it.
             Player.useMode(pd, m.mode)
 
-            -- ---------------- MMR ----------------
             local kd = mp.deaths > 0 and (mp.kills / mp.deaths) or mp.kills
             local perf = clamp(((kd / math.max(0.01, avgKD)) - 1), -1, 1)
             newMMR = MMR.calculate(pd, avgMMR[team], avgMMR[enemyTeam], won, perf)
@@ -4577,7 +4075,6 @@ function Match.finalize(m, winner, reason, mvpId)
                                       pd.uncertainty - Config.MMR.uncertaintyDecay)
             pd.dirtyMMR = true
 
-            -- ---------------- RP ----------------
             if m.ranked and not mp.leftEarly then
                 if Config.Placement.enabled and not pd.placementDone then
                     pd.placementPlayed = pd.placementPlayed + 1
@@ -4624,7 +4121,6 @@ function Match.finalize(m, winner, reason, mvpId)
                 end
             end
 
-            -- ---------------- stats ----------------
             local st = pd.stats
             st.matches   = st.matches + 1
             st.kills     = st.kills + mp.kills
@@ -4671,7 +4167,6 @@ function Match.finalize(m, winner, reason, mvpId)
             pd.dirtyStats  = true
             pd.dirtyPlayer = true
 
-            -- ---------------- rewards / xp ----------------
             Match.grantMatchRewards(m, pd, mp, won, draw, mvpId == userId)
 
             results[userId] = {
@@ -4681,9 +4176,6 @@ function Match.finalize(m, winner, reason, mvpId)
                     placement = rpResult.placement, played = rpResult.played,
                     total = rpResult.total, breakdown = rpBreakdown
                 } or nil,
-                -- Both ends of the move, not just the new one: the promotion
-                -- screen draws the rank left behind next to the one reached,
-                -- and a crest needs its tier and its colour to be drawn.
                 rank = (function()
                     local was, now = Rank.get(mp.rankBefore), Rank.get(pd.rankId)
                     return {
@@ -4726,7 +4218,6 @@ function Match.finalize(m, winner, reason, mvpId)
             end
         end
 
-        -- ---------------- match player row ----------------
         if m.dbId then
             DB.insert([[INSERT INTO m5_match_players
                 (match_id, user_id, name, team, kills, deaths, assists, headshots, damage, score,
@@ -4753,7 +4244,6 @@ function Match.finalize(m, winner, reason, mvpId)
         if pd then Player.save(pd, false) end
     end
 
-    -- anti boost pass
     if Config.AntiBoost.enabled and Config.AntiBoost.analyseOnMatchEnd and m.ranked then
         for userId in pairs(m.players) do
             AntiBoost.analyse(userId, m)
@@ -4763,7 +4253,6 @@ function Match.finalize(m, winner, reason, mvpId)
     return results
 end
 
---- Finishes placement and assigns the initial rank.
 function Match.completePlacement(pd)
     local data = pd.placementData or {}
     local nData = #data
@@ -4819,19 +4308,7 @@ function Match.completePlacement(pd)
     }
 end
 
--- ---------------------------------------------------------------------------
--- Cleanup / abort / leaving
--- ---------------------------------------------------------------------------
 
---- Hands the players back to the world, without taking the match down.
----
---- The result screen has its own time on it (Config.Match.matchEndTime), and
---- the teleport home used to wait for that whole window to pass — a quarter of
---- a minute of standing in an empty arena reading a scoreboard. The two are not
---- the same thing: the world can be handed back the moment the match is
---- decided, and the interface can take its time.
----
---- Idempotent, because the cleanup that follows calls it again.
 function Match.release(m, reason, keepScreens)
     if m.released then return end
     m.released = true
@@ -4860,7 +4337,6 @@ function Match.cleanup(m)
     local wasReleased = m.released
     Match.release(m, 'END', false)
 
-    -- Already home: only the overlay they were reading is left to take down.
     if wasReleased then
         for userId in pairs(m.players) do
             local s = srcOf(userId)
@@ -4889,8 +4365,6 @@ function Match.abort(m, reason)
     Match.cleanup(m)
 end
 
---- Removes a player from a live match (disconnect, AFK kick, admin move).
--- @param reason 'DISCONNECT' | 'AFK' | 'ADMIN' | 'LEAVE'
 function Match.removePlayer(m, userId, reason)
     local mp = m.players[userId]
     if not mp then return end
@@ -4914,12 +4388,9 @@ function Match.removePlayer(m, userId, reason)
     local s = srcOf(userId)
     if s then
         SetPlayerRoutingBucket(s, 0)
-        -- the reason travels with it: the client decides where to put the
-        -- player back, and walking out is not the same as the match ending
         TriggerClientEvent('m5rp:cl:cleanup', s, { matchId = m.id, reason = reason or 'LEAVE' })
     end
 
-    -- Ranked penalties only apply to live ranked matches
     if m.ranked and m.state ~= 'MATCH_END' and m.state ~= 'CLEANUP' then
         if reason == 'DISCONNECT' and Config.Reconnect.enabled
            and mp.reconnects < Config.Reconnect.maxReconnects then
@@ -4943,7 +4414,6 @@ function Match.removePlayer(m, userId, reason)
     Match.checkForfeit(m)
 end
 
---- Ends the match when a team can no longer field enough players.
 function Match.checkForfeit(m)
     if m.state == 'MATCH_END' or m.state == 'CLEANUP' then return end
     if m.ffa then
@@ -4984,7 +4454,6 @@ function Match.checkForfeit(m)
     end
 end
 
---- Restores a player who reconnected inside the window.
 function Match.tryReconnect(userId)
     local info = Reconnects[userId]
     if not info then return false, 'No match to reconnect to.' end
@@ -5018,7 +4487,6 @@ function Match.tryReconnect(userId)
 
     Match.deploy(m, userId)
 
-    -- Rejoin as a spectator until the next round when rounds are elimination based
     if m.state == 'LIVE' and not m.settings.respawn then
         mp.alive = false
         local s = srcOf(userId)
@@ -5037,9 +4505,6 @@ function Match.tryReconnect(userId)
     return true
 end
 
--- ---------------------------------------------------------------------------
--- Surrender
--- ---------------------------------------------------------------------------
 
 function Match.startSurrender(m, userId)
     local cfg = Config.Match.surrender
@@ -5097,22 +4562,8 @@ function Match.surrenderVote(m, userId, agree)
     return true
 end
 
--- ---------------------------------------------------------------------------
--- AFK
--- ---------------------------------------------------------------------------
 
--- ---------------------------------------------------------------------------
--- Coma
--- ---------------------------------------------------------------------------
--- The client notices a coma from the health it can see, which is instant and
--- costs nothing, but it depends on the floor in the config matching the one the
--- framework actually uses. vRP knows the answer for certain, so the server asks
--- it as well: the client ends the round the moment a player goes down, and this
--- catches anything the client's number missed.
 
---- Whether this vRP can answer the question at all. Resolved on first use so a
---- framework without it simply turns the watch off instead of erroring once
---- per player per tick, forever.
 local comaSupported = nil
 
 local function comaWatchOn()
@@ -5130,12 +4581,9 @@ local function comaWatchOn()
     return comaSupported
 end
 
---- Is this player in a coma right now, as far as vRP is concerned?
 local function inComa(userId)
     local ok, res = pcall(function() return vRP.isInComa({ userId }) end)
     if not ok then
-        -- one bad call must not take the match tick with it, and must not put
-        -- the server back here every tick either
         comaSupported = false
         err('vRP.isInComa failed, the coma watch is now off: %s', tostring(res))
         return false
@@ -5143,8 +4591,6 @@ local function inComa(userId)
     return res == true
 end
 
---- Anyone the framework is holding in a coma is out of the round, whatever the
---- engine says about them being alive.
 function Match.checkComa(m)
     if not comaWatchOn() then return end
     if m.state ~= 'LIVE' then return end
@@ -5160,11 +4606,6 @@ function Match.checkComa(m)
             if pd then
                 log('user %d is in a coma — counting it as a death in match %s',
                     userId, tostring(m.id))
-                -- Straight down the ordinary death path, so the kill is
-                -- credited, the feed reads normally and the round ends the way
-                -- it would have. No killer is named: nothing was reported here,
-                -- and Combat.death already resolves one from the damage it
-                -- recorded itself, which is the trustworthy answer anyway.
                 Combat.death(pd, {})
             end
         end
@@ -5177,11 +4618,6 @@ function Match.checkAFK(m)
 
     local t = ms()
 
-    -- Config.AFK.checkInterval is what the server owner asked for; this walked
-    -- every player in every live match on every 250ms tick instead, twenty
-    -- times more often than configured. The thresholds are measured in tens of
-    -- seconds, so the extra passes could never see anything the next one would
-    -- not.
     if (t - (m.lastAfkCheck or 0)) < (Config.AFK.checkInterval or 5000) then return end
     m.lastAfkCheck = t
     for userId, mp in pairs(m.players) do
@@ -5207,9 +4643,6 @@ function Match.checkAFK(m)
     end
 end
 
--- ---------------------------------------------------------------------------
--- Per match tick (driven by the master loop)
--- ---------------------------------------------------------------------------
 
 function Match.tick(m)
     local t = ms()
@@ -5237,7 +4670,6 @@ function Match.tick(m)
         Match.checkComa(m)
         Match.pushHud(m, false)
 
-        -- respawn handling for deathmatch style modes
         if m.settings.respawn then
             for userId, mp in pairs(m.players) do
                 if mp.connected and not mp.alive and mp.deadAt > 0
@@ -5258,13 +4690,11 @@ function Match.tick(m)
             end
         end
 
-        -- surrender vote expiry
         if m.surrender and m.surrender.expires <= t then
             m.surrender = nil
             m.surrenderCooldown = t + Config.Match.surrender.cooldown * 1000
         end
 
-        -- hard match duration limit
         if m.startedAt and (now() - m.startedAt) > Config.Match.maxMatchDuration then
             Match.endMatch(m, m.scores[1] == m.scores[2] and 0 or (m.scores[1] > m.scores[2] and 1 or 2), 'TIME_LIMIT')
             return
@@ -5284,7 +4714,6 @@ function Match.tick(m)
                 end
                 Match.endMatch(m, winner, 'TIME')
             else
-                -- round timer expired: the team with more players alive takes it
                 local aliveA, aliveB = aliveCount(m, 1), aliveCount(m, 2)
                 local winner = 0
                 if aliveA > aliveB then winner = 1
@@ -5317,11 +4746,6 @@ function Match.tick(m)
     end
 end
 
--- ============================================================================
--- 13. COMBAT VALIDATION
--- ============================================================================
--- Every kill, every point of damage and every headshot is decided here.
--- Clients only *report* observations; nothing they send is trusted directly.
 
 local Combat = {}
 
@@ -5330,8 +4754,6 @@ local function matchOfPlayer(pd)
     return Matches[pd.matchId]
 end
 
---- Shared validation for an attacker/victim pair inside a match.
--- Returns match, attackerEntry, victimEntry or nil + reason.
 local function validatePair(attackerPd, victimSrc, weapon)
     if not attackerPd then return nil, 'no attacker' end
 
@@ -5354,26 +4776,19 @@ local function validatePair(attackerPd, victimSrc, weapon)
     if not v.alive then return nil, 'victim already down' end
     if not a.alive and not m.settings.respawn then return nil, 'attacker is dead' end
 
-    -- friendly fire
     if not m.ffa and a.team == v.team and not m.settings.friendlyFire then
         return nil, 'friendly fire disabled'
     end
 
-    -- weapon whitelist
     if weapon and not Security.weaponAllowed(weapon) then
         return nil, 'weapon not allowed: ' .. tostring(weapon)
     end
 
-    -- spawn protection / anti spawn kill
     if v.spawnProtectUntil > ms() then return nil, 'victim spawn protected' end
 
     return m, a, v, victimUserId
 end
 
---- Attacker reports firing a weapon (throttled client side). The report also
---- carries the traced target and whether the trace landed on the head, which is
---- kept purely as corroboration — a hit still only counts once the victim
---- confirms taking damage.
 function Combat.shot(pd, data)
     if not pd then return end
     local weapon = type(data) == 'table' and data.weapon or data
@@ -5394,9 +4809,6 @@ function Combat.shot(pd, data)
     end
 end
 
---- The VICTIM reports the damage it took, together with who caused it. Reading
---- the health delta on the victim's own client is the only place where the
---- number is exact, and it stops an attacker from inflating their own numbers.
 function Combat.damage(victimPd, data)
     if type(data) ~= 'table' then return end
     local amount = tonumber(data.amount) or 0
@@ -5416,7 +4828,6 @@ function Combat.damage(victimPd, data)
         return
     end
 
-    -- Never credit environmental damage
     if data.source and inSet(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
         return
     end
@@ -5431,10 +4842,6 @@ function Combat.damage(victimPd, data)
         weapon = weapon
     }
 
-    -- Corroborated headshot: the victim confirms the hit, the attacker's trace
-    -- says it landed on the head. This covers the case where the engine's bone
-    -- report is unreliable at long range — the kill is still decided here, and
-    -- the distance never reduces its lethality.
     if Config.Headshot.enabled and Config.Headshot.oneShotKill
        and m.settings.headshotOneShot
        and not (Config.Headshot.excludeMelee and Security.isMelee(weapon))
@@ -5457,9 +4864,6 @@ function Combat.damage(victimPd, data)
     end
 end
 
---- Victim reports a head impact. This is what makes a headshot lethal at any
---- distance: the server ignores the game's damage falloff entirely and decides
---- the kill itself once the hit is proven legitimate.
 function Combat.headshot(victimPd, data)
     if not Config.Headshot.enabled or not Config.Headshot.oneShotKill then return end
     if type(data) ~= 'table' then return end
@@ -5476,38 +4880,32 @@ function Combat.headshot(victimPd, data)
 
     local weapon = type(data.weapon) == 'string' and data.weapon:upper() or ''
 
-    -- bone must be a real head bone
     local bone = tonumber(data.bone) or 0
     if bone ~= 0 and not inSet(Config.Headshot.headBones, bone) then
         dbg('headshot rejected: bone %d is not a head bone', bone)
         return
     end
 
-    -- weapon rules
     if inSet(Config.Headshot.excludedWeapons, weapon) then return end
     if Config.Headshot.excludeMelee and Security.isMelee(weapon) then return end
 
-    -- environmental damage can never be a headshot
     if data.source and inSet(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
         dbg('headshot rejected: invalid damage source %s', tostring(data.source))
         return
     end
 
-    -- the pair must be valid (same live match, opposing sides, allowed weapon)
     local m, a, v, victimUserId = validatePair(attackerPd, victimPd.source, weapon)
     if not m then
         if Config.Security.logRejections then dbg('headshot rejected: %s', tostring(a)) end
         return
     end
 
-    -- mode gate
     if m.customId and not Config.Headshot.enabledInCustom then return end
     if m.ranked and not Config.Headshot.enabledInRanked then return end
     if not m.settings.headshotOneShot then return end
 
     if Config.Headshot.requireVictimAlive and not v.alive then return end
 
-    -- the attacker must actually have fired recently with that weapon
     local shot = attackerPd.lastShot
     if not shot or (ms() - shot.ts) > Config.Headshot.shotWindow then
         dbg('headshot rejected: no recent shot from %s', attackerPd.name)
@@ -5518,12 +4916,10 @@ function Combat.headshot(victimPd, data)
         return
     end
 
-    -- duplicate protection
     attackerPd.hsHistory = attackerPd.hsHistory or {}
     local last = attackerPd.hsHistory[victimUserId]
     if last and (ms() - last) < Config.Headshot.duplicateWindow then return end
 
-    -- minimum interval between two validated kills from the same attacker
     if attackerPd.lastKillMs and (ms() - attackerPd.lastKillMs) < Config.Weapons.minKillInterval then
         return
     end
@@ -5531,7 +4927,6 @@ function Combat.headshot(victimPd, data)
     attackerPd.hsHistory[victimUserId] = ms()
     attackerPd.lastKillMs = ms()
 
-    -- distance is recorded but never used to reduce lethality
     local dist = tonumber(data.dist) or 0.0
     if dist > Config.Weapons.maxPlausibleDistance then
         AntiBoost.flag(attackerUserId, 'impossibleHeadshot', 1, {
@@ -5539,12 +4934,9 @@ function Combat.headshot(victimPd, data)
         }, m.dbId)
     end
 
-    -- Config.Headshot.ignoreDistance is the whole point: no falloff, no range
-    -- check, a valid head hit is always lethal.
     Match.registerKill(m, attackerUserId, victimUserId, weapon, true, dist)
 end
 
---- Victim reports their own death (non headshot, explosion, fall, ...).
 function Combat.death(victimPd, data)
     local m = matchOfPlayer(victimPd)
     if not m or m.state ~= 'LIVE' then return end
@@ -5552,8 +4944,6 @@ function Combat.death(victimPd, data)
     local v = m.players[victimPd.userId]
     if not v or not v.alive then return end
 
-    -- HEADSHOT ONLY rooms: nothing but a validated head hit may kill, and those
-    -- come through Combat.headshot rather than here.
     if m.settings.headshotOnly then
         local s = srcOf(victimPd.userId)
         if s then
@@ -5570,7 +4960,6 @@ function Combat.death(victimPd, data)
     local killerUserId = nil
     local weapon = type(data.weapon) == 'string' and data.weapon:upper() or ''
 
-    -- Prefer the reported killer, but only if the server can corroborate it
     local claimedSrc = tonumber(data.killer)
     if claimedSrc then
         local cid = SrcToUser[claimedSrc]
@@ -5582,7 +4971,6 @@ function Combat.death(victimPd, data)
         end
     end
 
-    -- Otherwise fall back to whoever damaged the victim most recently
     if not killerUserId then
         local bestTs = 0
         for otherId, info in pairs(v.damageTaken) do
@@ -5593,7 +4981,6 @@ function Combat.death(victimPd, data)
         end
     end
 
-    -- Environmental deaths have no killer
     if data.source and inSet(Config.Weapons.invalidDamageSources, tostring(data.source):upper()) then
         killerUserId = nil
     end
@@ -5611,7 +4998,6 @@ function Combat.death(victimPd, data)
     Match.registerKill(m, killerUserId, victimPd.userId, weapon, false, tonumber(data.dist) or 0)
 end
 
---- Player left the combat zone and the timer ran out.
 function Combat.outOfBounds(pd)
     local m = matchOfPlayer(pd)
     if not m or m.state ~= 'LIVE' then return end
@@ -5621,9 +5007,6 @@ function Combat.outOfBounds(pd)
     if Config.Match.boundary.action == 'teleport' then
         local s = srcOf(pd.userId)
         if s then
-            -- The teleport resurrects the ped, which strips its weapons, so
-            -- this has to hand the loadout back. Sending nil left a player
-            -- pulled in from out of bounds standing there unarmed.
             TriggerClientEvent('m5rp:cl:round', s, {
                 phase = 'respawn', matchId = m.id,
                 spawn = spawnPointFor(m, mp, 1),
@@ -5636,13 +5019,9 @@ function Combat.outOfBounds(pd)
     Match.registerKill(m, nil, pd.userId, 'OUT_OF_BOUNDS', false, 0)
 end
 
--- ============================================================================
--- 14. CUSTOM GAMES
--- ============================================================================
 
 CustomGames = { rooms = {}, byCode = {} }
 
---- Short, unambiguous room code used by JOIN CODE in the UI.
 local function newRoomCode()
     local cfg = Config.CustomGames.roomCode
     for _ = 1, 40 do
@@ -5750,7 +5129,6 @@ function CustomGames.create(userId, data)
     local mode = Config.Modes[data.mode] and data.mode or d.mode
     local mapId = MapById[data.map] and data.map or d.map
 
-    -- weapon chips picked in the UI (validated against the preset table)
     local weapons = {}
     for _, id in ipairs(type(data.weapons) == 'table' and data.weapons or {}) do
         if PresetById[id] and not inList(weapons, id) then weapons[#weapons + 1] = id end
@@ -5852,7 +5230,6 @@ function CustomGames.join(userId, roomId, password)
         return false, 'The room is full.'
     end
 
-    -- auto balance into the smaller team
     local a, b = 0, 0
     for _, e in pairs(room.players) do
         if e.team == 1 then a = a + 1 else b = b + 1 end
@@ -5873,7 +5250,6 @@ function CustomGames.join(userId, roomId, password)
     return true
 end
 
---- Join using the short room code shown in the UI.
 function CustomGames.joinByCode(userId, code, password)
     code = tostring(code or ''):upper():gsub('%s', '')
     local roomId = CustomGames.byCode[code]
@@ -5928,7 +5304,6 @@ function CustomGames.destroy(room, reason)
     CustomGames.rooms[room.id] = nil
 end
 
---- Host only room management.
 function CustomGames.host(userId, action, data)
     local room = CustomGames.of(userId)
     if not room then return false, 'You are not in a room.' end
@@ -6085,7 +5460,6 @@ function CustomGames.start(room)
     end
     if #players < 2 then return false, 'At least two players are required.' end
 
-    -- team balance
     if room.settings.teamBalance and Config.Modes[room.mode].type ~= 'ffa' then
         table.sort(players, function(a, b)
             return (Players[a.userId].mmr or 0) > (Players[b.userId].mmr or 0)
@@ -6157,9 +5531,6 @@ function CustomGames.tick()
     end
 end
 
--- ============================================================================
--- 15. TRAINING
--- ============================================================================
 
 local Training = { players = {} }
 
@@ -6204,29 +5575,14 @@ function Training.stop(userId)
     return true
 end
 
--- ============================================================================
--- 15b. BOT MATCH  (staff only, never ranked)
--- ============================================================================
---
--- Runs the real match presentation for one player against local AI peds. The
--- server owns the session: rounds, score, timers, the win condition and every
--- transition. The client owns only what a server cannot do — creating peds and
--- giving them combat AI — and reports the two outcomes it alone can observe:
--- a bot went down, or the round timed out on its side.
---
--- Those reports are not provable, which is exactly why nothing is at stake: a
--- bot match writes no RP, no MMR, no stats and no match row, and only staff
--- holding the action's permission can start one.
 
-local BotMatch = { sessions = {} }   -- [userId] = session
+local BotMatch = { sessions = {} }
 
 local function botDifficulty(key)
     local d = Config.BotMatch.bots.difficulties
     return d[key] or d[Config.BotMatch.bots.defaultDifficulty] or d.normal
 end
 
---- The map a bot match runs on: the requested one, the configured default, or
---- the first map that supports 1v1.
 local function botMap(requested)
     local m = requested and MapById[requested]
     if m then return m end
@@ -6241,7 +5597,6 @@ local function botPush(sess, event, payload)
     if s then TriggerClientEvent(event, s, payload) end
 end
 
---- Score line for the HUD and the end screen.
 local function botScoreboard(sess)
     local pd = Players[sess.userId]
     return {
@@ -6260,8 +5615,6 @@ local function botScoreboard(sess)
             name = Config.BotMatch.bots.namePrefix .. ' TEAM', team = 2,
             kills = sess.deaths, deaths = sess.kills, assists = 0,
             headshots = 0, damage = 0, score = sess.deaths * 100,
-            -- no avatar for the bot side: the initial reads better than the
-            -- default Discord logo repeated on every row
             rank = sess.difficulty.label, avatar = nil,
             alive = sess.botsAlive > 0, connected = true, ping = 0
         }
@@ -6269,7 +5622,6 @@ local function botScoreboard(sess)
 end
 
 local function botHud(sess, throttle)
-    -- the live state pushes every tick; one update a second is plenty
     if throttle then
         if sess.lastHud and (ms() - sess.lastHud) < 1000 then return end
         sess.lastHud = ms()
@@ -6294,7 +5646,6 @@ local function botHud(sess, throttle)
     })
 end
 
---- Spawns (or respawns) the bots and puts the player on the opposite side.
 local function botBeginRound(sess)
     sess.round     = sess.round + 1
     sess.alive     = true
@@ -6306,7 +5657,6 @@ local function botBeginRound(sess)
     local mine = (map.teamA and map.teamA[1]) or map.spectator
     local diff = sess.difficulty
 
-    -- player side
     local base = Config.Loadouts[Config.BotMatch.loadout] or Config.Loadouts.duel
     botPush(sess, 'm5rp:cl:round', {
         matchId = sess.id, phase = 'spawn', freeze = true,
@@ -6315,7 +5665,6 @@ local function botBeginRound(sess)
         protection = 0
     })
 
-    -- bot side: the client creates the peds at these points
     local spots = {}
     local pool  = map.teamB or map.teamA or {}
     for i = 1, sess.botCount do
@@ -6357,8 +5706,6 @@ local function botGoLive(sess)
     botHud(sess)
 end
 
---- Ends the current round. `winner` is 1 for the player, 2 for the bots,
---- 0 for a draw.
 local function botEndRound(sess, winner, reason)
     if sess.state == 'ROUND_END' or sess.state == 'MATCH_END' then return end
 
@@ -6387,10 +5734,6 @@ function BotMatch.finish(sess, reason)
     local pd = Players[sess.userId]
 
     botPush(sess, 'm5rp:cl:bots', { matchId = sess.id, clear = true })
-    -- Exactly the shape a real match sends. It used to differ in three ways —
-    -- WIN/LOSS instead of VICTORY/DEFEAT, scores as {[1],[2]} instead of
-    -- {a,b}, and no stats block — so the result screen showed an untranslated
-    -- word, an empty score and five zeroes.
     botPush(sess, 'm5rp:cl:end', {
         matchId  = sess.id,
         winner   = winner,
@@ -6412,10 +5755,6 @@ function BotMatch.finish(sess, reason)
         mvp = nil
     })
 
-    -- The result is on screen; there is nothing left to keep them stood in the
-    -- arena for. Same split as a real match: the world back now, the overlay
-    -- when its time is up. Without this a practice duel held the player for the
-    -- whole of Config.BotMatch.endDelay after it was already decided.
     if Config.Match.returnImmediately ~= false then
         sess.released = true
         local s = srcOf(sess.userId)
@@ -6428,7 +5767,6 @@ function BotMatch.finish(sess, reason)
     end
 end
 
---- Tears the session down and puts the player back in the world.
 function BotMatch.stop(userId, reason)
     local sess = BotMatch.sessions[userId]
     if not sess then return false, 'No bot match is running.' end
@@ -6447,10 +5785,8 @@ function BotMatch.stop(userId, reason)
     if s then
         TriggerClientEvent('m5rp:cl:bots', s, { matchId = sess.id, clear = true })
         if sess.released then
-            -- already home, reading the result: only the overlay is left
             TriggerClientEvent('m5rp:cl:endScreens', s)
         else
-            -- 'left' is the same button as walking out of a real match
             TriggerClientEvent('m5rp:cl:cleanup', s,
                 { matchId = sess.id, reason = (reason == 'left') and 'LEAVE' or 'END' })
         end
@@ -6489,8 +5825,6 @@ function BotMatch.start(pd, opts)
     local map = botMap(opts.map)
     if not map then return false, 'No map is available.' end
 
-    -- Each session needs its own world. Sharing one bucket would drop two
-    -- admins practising at the same time into each other's match.
     local bucket
     for b = Config.BotMatch.bucket, Config.BotMatch.bucket + 63 do
         if not UsedBuckets[b] then bucket = b break end
@@ -6503,8 +5837,6 @@ function BotMatch.start(pd, opts)
         bucket    = bucket,
         map       = map,
         rounds    = rounds,
-        -- best of N: 1->1, 3->2, 5->3, 7->4. Derived from the chosen round
-        -- count rather than the config, which would cap a 7 round pick at 3.
         roundsToWin = math.floor(rounds / 2) + 1,
         botCount  = count,
         botsAlive = 0,
@@ -6569,7 +5901,6 @@ function BotMatch.start(pd, opts)
     }
 end
 
---- The player died. Called from the combat path, which already owns deaths.
 function BotMatch.playerDied(userId)
     local sess = BotMatch.sessions[userId]
     if not sess or sess.state ~= 'LIVE' then return false end
@@ -6585,7 +5916,6 @@ function BotMatch.playerDied(userId)
     return true
 end
 
---- A bot went down. Only the starting client can observe this.
 function BotMatch.botDown(userId, headshot)
     local sess = BotMatch.sessions[userId]
     if not sess or sess.state ~= 'LIVE' then return false end
@@ -6594,9 +5924,6 @@ function BotMatch.botDown(userId, headshot)
     sess.botsAlive = sess.botsAlive - 1
     sess.kills     = sess.kills + 1
     if headshot then sess.headshots = sess.headshots + 1 end
-    -- The server cannot measure damage to a ped that lives on one client, so
-    -- this counts the health pool actually destroyed rather than inventing a
-    -- number. It is a practice session; nothing is recorded from it.
     sess.damage = (sess.damage or 0)
                 + (sess.difficulty.health or 0) + (sess.difficulty.armor or 0)
 
@@ -6614,7 +5941,6 @@ function BotMatch.botDown(userId, headshot)
     return true
 end
 
---- Drives every running session. Called from the master loop.
 function BotMatch.tick()
     for userId, sess in pairs(BotMatch.sessions) do
         local s = srcOf(userId)
@@ -6626,7 +5952,7 @@ function BotMatch.tick()
             elseif sess.state == 'COUNTDOWN' then
                 botGoLive(sess)
             elseif sess.state == 'LIVE' then
-                botEndRound(sess, 0, 'TIME')          -- nobody closed it out
+                botEndRound(sess, 0, 'TIME')
             elseif sess.state == 'ROUND_END' then
                 local done = sess.scores[1] >= sess.roundsToWin
                           or sess.scores[2] >= sess.roundsToWin
@@ -6641,22 +5967,9 @@ function BotMatch.tick()
     end
 end
 
--- ============================================================================
--- 15c. STORE — cards and titles
--- ============================================================================
---
--- Cosmetics only: a card is the banner behind the lobby slot, a title is a
--- word beside the name. Neither touches gameplay.
---
--- Prices, ownership and the balance live here. The client sends nothing but
--- "buy this id" / "equip this id" — it never sends a price, never sends a
--- balance, and cannot equip something it does not own.
 
-Store = { cache = {} }   -- [userId] = { coins, <kind> = id, owned = { kind = {id=true} } }
+Store = { cache = {} }
 
--- Every kind the store sells, in one place. Adding another is a line here plus
--- a list in the config and a column on m5_player_store — nothing below this
--- knows the difference between a card and a frame.
 local STORE_KINDS = {
     { kind = 'card',   list = 'cards',   column = 'card',   fallback = 'default' },
     { kind = 'title',  list = 'titles',  column = 'title',  fallback = 'none' },
@@ -6665,8 +5978,8 @@ local STORE_KINDS = {
     { kind = 'avatar', list = 'avatars', column = 'avatar', fallback = 'none' }
 }
 
-local StoreById = {}          -- [kind][id] = def
-local StoreKind = {}          -- [kind] = the entry above
+local StoreById = {}
+local StoreKind = {}
 for _, k in ipairs(STORE_KINDS) do
     StoreKind[k.kind] = k
     StoreById[k.kind] = {}
@@ -6685,7 +5998,6 @@ local function storeList(kind)
     return k and (Config.Store[k.list] or {}) or {}
 end
 
---- Anything priced at 0, and anything flagged default, belongs to everyone.
 local function isFree(def)
     return def and (def.default == true or (tonumber(def.price) or 0) <= 0)
 end
@@ -6710,7 +6022,6 @@ function Store.load(userId)
         if owned[k] then owned[k][tostring(rows[i].item_id)] = true end
     end
 
-    -- free items are never written to the table; they are simply always owned
     for _, k in ipairs(STORE_KINDS) do
         for _, def in ipairs(storeList(k.kind)) do
             if isFree(def) then owned[k.kind][def.id] = true end
@@ -6730,8 +6041,6 @@ function Store.forget(userId)
     Store.cache[userId] = nil
 end
 
---- The payload the Store page renders from. Prices come from here, never from
---- the client, and `owned` is what decides whether BUY or EQUIP is shown.
 function Store.payload(userId)
     local d = Store.load(userId)
 
@@ -6749,7 +6058,6 @@ function Store.payload(userId)
                 image = def.image or '',
                 color = def.color,
                 color2 = def.color2,
-                -- how it is drawn; the interface builds the rest from these
                 anim = def.anim, speed = def.speed,
                 style = def.style, width = def.width, art = def.art,
                 glow = def.glow, animated = def.animated == true,
@@ -6766,14 +6074,12 @@ function Store.payload(userId)
         coins    = d.coins
     }
     for _, k in ipairs(STORE_KINDS) do
-        out[k.list]     = pack(k.kind)   -- cards, titles, effects, frames
+        out[k.list]     = pack(k.kind)
         out['equipped' .. k.kind] = d[k.kind]
     end
     return out
 end
 
---- Writes the wallet and the equipped pair. Small and rare, so it goes
---- straight through rather than waiting for the batch flush.
 local function storeSave(userId)
     local d = Store.cache[userId]
     if not d then return end
@@ -6792,7 +6098,6 @@ local function storeSave(userId)
         args)
 end
 
---- Adds (or removes, with a negative amount) coins. Returns the new balance.
 function Store.addCoins(userId, amount)
     local d = Store.load(userId)
     local max = Config.Store.currency.max or 10000000
@@ -6835,7 +6140,6 @@ function Store.equip(userId, kind, id)
     local d = Store.load(userId)
     if not d.owned[kind][id] then return false, 'You do not own that.' end
 
-    -- clicking what is already worn changes nothing, so it writes nothing
     if d[kind] == id then return true, { kind = kind, id = id } end
 
     d[kind] = id
@@ -6843,7 +6147,6 @@ function Store.equip(userId, kind, id)
     return true, { kind = kind, id = id }
 end
 
---- What other players see: the equipped cosmetics, resolved for display.
 function Store.cosmetics(userId)
     local d = Store.cache[userId]
     if not d then return nil end
@@ -6854,9 +6157,6 @@ function Store.cosmetics(userId)
     local frame  = storeDef('frame',  d.frame)
     local avatar = storeDef('avatar', d.avatar)
 
-    -- A frame and an avatar decoration are the same recipe worn in two
-    -- places, so they are packed the same way and the interface only has to
-    -- learn it once.
     local function worn(def)
         if not def or def.id == 'none' then return nil end
         return {
@@ -6876,24 +6176,16 @@ function Store.cosmetics(userId)
         cardImage = card and card.image or '',
         title     = (title and title.id ~= 'none') and title.name or nil,
         titleColor= title and title.color or nil,
-        -- The interface draws both itself, so it gets the recipe rather than
-        -- an id it would have to know the meaning of. A frame nobody has
-        -- written CSS for still works: it is only numbers and colours.
         effect       = (effect and effect.id ~= 'none') and (effect.anim or effect.id) or nil,
         effectColor  = effect and effect.color or nil,
         effectColor2 = effect and effect.color2 or nil,
         effectSpeed  = effect and effect.speed or nil,
 
-        -- the border round the card, and the decoration round the portrait:
-        -- two separate slots, bought and worn on their own
         frame        = worn(frame),
         avatar       = worn(avatar)
     }
 end
 
--- ============================================================================
--- 16. REWARDS / XP / MISSIONS / ACHIEVEMENTS
--- ============================================================================
 
 Rewards = {}
 
@@ -6902,7 +6194,6 @@ local function xpForLevel(level)
     return math.floor(L.baseXP * (L.growth ^ (level - 1)))
 end
 
---- Grants a single reward payload. Everything happens server side.
 function Rewards.grant(pd, reward, seasonId, rewardKey)
     if not pd or type(reward) ~= 'table' then return false end
     local key = rewardKey or ('%s_%s'):format(reward.type, tostring(reward.value))
@@ -6921,8 +6212,6 @@ function Rewards.grant(pd, reward, seasonId, rewardKey)
         applied = vRP.giveInventoryItem({ pd.userId, reward.value, reward.amount or 1, true })
     elseif reward.type == 'group' then
         applied = vRP.addUserGroup({ pd.userId, reward.value })
-        -- a new group can carry permissions, so what was remembered about this
-        -- player is no longer the truth
         forgetPerms(pd.userId)
     elseif reward.type == 'title' then
         if not inList(pd.titles, reward.value) then
@@ -6941,7 +6230,6 @@ function Rewards.grant(pd, reward, seasonId, rewardKey)
         pd.dirtyPlayer = true
         applied = true
     elseif reward.type == 'effect' or reward.type == 'vehicle' then
-        -- stored for the player to claim from the rewards tab
         applied = true
     end
 
@@ -6979,7 +6267,6 @@ function Rewards.addXP(pd, amount)
     end
 end
 
---- Called from Match.finalize for every participant.
 function Match.grantMatchRewards(m, pd, mp, won, draw, isMVP)
     if not Config.Rewards.enabled then return end
     local R = Config.Rewards.perMatch
@@ -7009,9 +6296,6 @@ function Match.grantMatchRewards(m, pd, mp, won, draw, isMVP)
     Achievements.check(pd)
 end
 
--- ---------------------------------------------------------------------------
--- Missions
--- ---------------------------------------------------------------------------
 
 Missions = {}
 
@@ -7096,9 +6380,6 @@ function Missions.progress(pd, deltas)
     end
 end
 
--- ---------------------------------------------------------------------------
--- Achievements
--- ---------------------------------------------------------------------------
 
 Achievements = {}
 
@@ -7139,9 +6420,6 @@ function Achievements.list(userId)
     return out
 end
 
--- ============================================================================
--- 17. ANTI BOOSTING
--- ============================================================================
 
 AntiBoost = {}
 
@@ -7159,7 +6437,6 @@ function AntiBoost.flag(userId, kind, severity, details, matchId, targetId)
         })
 end
 
---- Runs the detector suite over the player's recent history.
 function AntiBoost.analyse(userId, m)
     if not Config.AntiBoost.enabled then return end
     local D = Config.AntiBoost.detectors
@@ -7175,7 +6452,6 @@ function AntiBoost.analyse(userId, m)
     local matchIds = {}
     for i = 1, #rows do matchIds[#matchIds + 1] = rows[i].match_id end
 
-    -- ---- repeated opponents ------------------------------------------------
     if D.repeatedOpponent.enabled and #matchIds > 0 then
         local placeholders = string.rep('?,', #matchIds - 1) .. '?'
         local params = {}
@@ -7194,7 +6470,6 @@ function AntiBoost.analyse(userId, m)
         end
     end
 
-    -- ---- repeated victim ---------------------------------------------------
     if D.repeatedVictim.enabled then
         local vic = DB.query([[SELECT victim, COUNT(*) AS n FROM m5_match_kills
                                WHERE killer = ? GROUP BY victim ORDER BY n DESC LIMIT 3]], { userId }) or {}
@@ -7207,7 +6482,6 @@ function AntiBoost.analyse(userId, m)
         end
     end
 
-    -- ---- short matches -----------------------------------------------------
     if D.shortMatches.enabled then
         local short = 0
         for i = 1, #rows do
@@ -7221,7 +6495,6 @@ function AntiBoost.analyse(userId, m)
         end
     end
 
-    -- ---- intentional losses ------------------------------------------------
     if D.intentionalLoss.enabled then
         local bad = 0
         for i = 1, #rows do
@@ -7237,7 +6510,6 @@ function AntiBoost.analyse(userId, m)
         end
     end
 
-    -- ---- win trading -------------------------------------------------------
     if D.winTrading.enabled then
         local alternating, last = 0, nil
         for i = 1, #rows do
@@ -7253,7 +6525,6 @@ function AntiBoost.analyse(userId, m)
         end
     end
 
-    -- ---- alternate accounts ------------------------------------------------
     if D.altAccount.enabled then
         local pd = Players[userId]
         if pd and pd.ipHash ~= '' and D.altAccount.matchOnIP then
@@ -7267,7 +6538,6 @@ function AntiBoost.analyse(userId, m)
         end
     end
 
-    -- ---- abnormal RP gain --------------------------------------------------
     if D.abnormalRP.enabled then
         local gained = DB.scalar([[SELECT SUM(mp.rp_change) FROM m5_match_players mp
                                    JOIN m5_matches mt ON mt.id = mp.match_id
@@ -7279,7 +6549,6 @@ function AntiBoost.analyse(userId, m)
         end
     end
 
-    -- ---- impossible headshot ratio ----------------------------------------
     if D.impossibleHeadshot.enabled then
         local kills, hs = 0, 0
         for i = 1, #rows do
@@ -7306,11 +6575,8 @@ function AntiBoost.suspicious(limit)
         { Config.AntiBoost.reviewThreshold, limit or 50 }) or {}
 end
 
--- ============================================================================
--- 18. LEADERBOARDS / PROFILES / HISTORY
--- ============================================================================
 
-local Board = { cache = {} }   -- [key] = { at = ms, data = {} }
+local Board = { cache = {} }
 
 local function cached(key, ttl, builder)
     local c = Board.cache[key]
@@ -7351,8 +6617,6 @@ local function decorateRow(row, showMMR)
     }
 end
 
---- The RP ladder for one pool. With per-mode ranks there is no single global
---- ladder any more, so the caller always names the pool it wants.
 function Board.global(page, showMMR, pool)
     local size   = Config.Database.pageSize
     local offset = math.max(0, (page or 1) - 1) * size
@@ -7379,14 +6643,11 @@ function Board.global(page, showMMR, pool)
     end)
 end
 
---- Period boards are built from RP gained inside the window.
 function Board.period(kind, page, showMMR)
     local since = kind == 'daily' and sqlDate(now() - 86400) or sqlDate(now() - 604800)
     local size   = Config.Database.pageSize
     local offset = math.max(0, (page or 1) - 1) * size
 
-    -- the badge next to a name is the player's rank on the default ladder;
-    -- without the mode predicate a player with three ranks appears three times
     return cached(('period_%s_%d'):format(kind, page or 1),
         Config.Database.leaderboardCacheTime, function()
         local rows = DB.query([[SELECT mp.user_id, p.name, p.level, r.rank_id, r.rp,
@@ -7415,9 +6676,6 @@ function Board.period(kind, page, showMMR)
     end)
 end
 
---- Per mode ladder. RP stays a single season ladder, but the board can be
---- narrowed to one mode: points are the RP earned inside that mode and the
---- kill/death columns only count matches of that mode.
 function Board.byMode(mode, page, showMMR)
     local size   = Config.Database.pageSize
     local offset = math.max(0, (page or 1) - 1) * size
@@ -7454,7 +6712,6 @@ function Board.byMode(mode, page, showMMR)
     end)
 end
 
---- The "YOUR STATISTICS" card next to the per mode board.
 function Board.modeStats(userId, mode)
     local row = DB.single([[SELECT SUM(mp.kills) AS kills, SUM(mp.deaths) AS deaths,
                                    SUM(mp.rp_change) AS points, COUNT(*) AS matches,
@@ -7505,7 +6762,6 @@ function Board.season(seasonId, page)
     return out
 end
 
---- "Friends" board = the players you recently played with.
 function Board.recent(userId, showMMR)
     local rows = DB.query([[SELECT DISTINCT mp2.user_id, p.name, p.level, r.rank_id, r.rp,
                                    s.wins, s.losses, s.matches, s.kills, s.deaths,
@@ -7527,12 +6783,6 @@ function Board.recent(userId, showMMR)
     return out
 end
 
---- Where the player sits on their ladder.
----
---- Two queries, one of them a COUNT over every ranked row of the season, and it
---- rode along with every boot payload. Cached like the rest of the board: a
---- position that is a few seconds old is the same number to a player watching
---- it, and it is cleared the moment anything actually moves a ladder.
 function Board.myPosition(userId, pool)
     pool = pool or (Players[userId] and Players[userId].pool) or defaultPool()
     return cached(('pos_%d_%s'):format(userId, tostring(pool)),
@@ -7547,9 +6797,6 @@ function Board.myPosition(userId, pool)
         end)
 end
 
--- ---------------------------------------------------------------------------
--- Profile
--- ---------------------------------------------------------------------------
 
 local function buildProfile(userId, showMMR, pool)
     local seasonId = Season.id()
@@ -7667,9 +6914,6 @@ function Board.profile(userId, showMMR)
         end)
 end
 
--- ---------------------------------------------------------------------------
--- Match history
--- ---------------------------------------------------------------------------
 
 function Board.history(userId, page)
     local size   = Config.Database.historyPageSize
@@ -7753,7 +6997,6 @@ function Board.matchDetail(matchId)
     }
 end
 
---- Live matches list (admin dashboard / spectator picker).
 function Board.liveMatches()
     local out = {}
     for id, m in pairs(Matches) do
@@ -7769,9 +7012,6 @@ function Board.liveMatches()
     return out
 end
 
--- ============================================================================
--- 19. ADMIN
--- ============================================================================
 
 local Admin = {}
 
@@ -7782,22 +7022,12 @@ function Admin.level(userId)
     return nil
 end
 
---- Single gate for every admin action.
--- superAdmin unlocks everything; the generic admin permission does too unless
--- Config.Permissions.adminGrantsAll is turned off; otherwise the action's own
--- permission is required.
---- True when the caller holds a permission that unlocks every action on its
---- own, so the per-action question never has to be asked.
 local function grantsEverything(userId)
     if hasPerm(userId, Config.Permissions.superAdmin) then return true end
     return Config.Permissions.adminGrantsAll
        and hasPerm(userId, Config.Permissions.admin)
 end
 
--- Left exactly as it was, question for question: with the answers remembered
--- these are table reads now, so there is nothing here worth restructuring and
--- changing the order would change who passes on an action that is not in the
--- table.
 function Admin.can(userId, action)
     if hasPerm(userId, Config.Permissions.superAdmin) then return true end
 
@@ -7812,12 +7042,7 @@ function Admin.can(userId, action)
     return hasPerm(userId, def.permission)
 end
 
---- The set of actions a given staff member may perform. Sent to the panel so
---- it only renders controls the caller can actually use.
 function Admin.allowed(userId)
-    -- Resolved once for the whole list. Asking it inside the loop meant the
-    -- super and admin permissions were re-checked for every action in the
-    -- table, which is where most of the cost of building a panel came from.
     local all = grantsEverything(userId)
 
     local out = {}
@@ -7835,7 +7060,6 @@ function Admin.allowed(userId)
     return out
 end
 
---- Writes one audit row and mirrors it to Discord.
 function Admin.audit(adminPd, action, target, data)
     data = data or {}
     local def = Config.AdminActions[action] or {}
@@ -7870,7 +7094,6 @@ function Admin.audit(adminPd, action, target, data)
     Logger.send('adminActions', def.label or action, nil, nil, fields)
 end
 
---- Validates a reason when the action demands one.
 local function checkReason(action, reason)
     local def = Config.AdminActions[action]
     if not def or not def.reason then return true, safeName(reason or '', Config.AdminLimits.reasonMaxLen) end
@@ -7942,7 +7165,6 @@ function Admin.dashboard(userId)
         maps        = maps,
         modes       = modes,
         frozen      = Config.Global.rankedFrozen,
-        -- only the labels the panel needs, and only for staff who reached here
         botMatch    = {
             enabled = Config.BotMatch.enabled,
             maxBots = Config.BotMatch.maxBots,
@@ -7955,7 +7177,6 @@ function Admin.dashboard(userId)
                         isDefault = key == Config.BotMatch.bots.defaultDifficulty
                     }
                 end
-                -- easiest first, so a custom set of presets still reads in order
                 table.sort(out, function(a, b) return a.accuracy < b.accuracy end)
                 return out
             end)()
@@ -7968,10 +7189,6 @@ function Admin.dashboard(userId)
     }
 end
 
---- Resolves a target from a user id or an online player name.
---- Admin targets are resolved by user id only. Name matching is deliberately
---- not supported: two players can share a display name, and a partial match
---- could silently point a ban or an RP wipe at the wrong account.
 local function resolveTarget(value)
     local id = tonumber(value)
     if not id then return nil end
@@ -7984,13 +7201,6 @@ local function resolveTarget(value)
     return nil
 end
 
---- Saves immediately and pushes a fresh payload to the player, so an admin
---- edit shows up on their screen at once instead of after a reconnect.
----
---- `ladder` says whether the change moved the player on a leaderboard. RP, rank
---- and stat edits do; coins and cosmetics do not. Only a change that did clears
---- the leaderboard cache — wiping it for a bought card threw away every cached
---- board and made the next player to open one pay for the rebuild.
 function Player.pushUpdate(userId, ladder)
     local pd = Players[userId]
     if not pd then return false end
@@ -8004,14 +7214,6 @@ function Player.pushUpdate(userId, ladder)
     return true
 end
 
---- The small update behind a cosmetic change: the wallet and what the player is
---- wearing, and nothing else.
----
---- Equipping a card used to send a whole boot payload, which reads the profile,
---- the leaderboard position, the missions and the ban table, and asks vRP about
---- a long list of permissions — all to change two fields the client already had
---- room for. Browsing the store is exactly the moment a player clicks many
---- times in a row, so that was the worst place for it.
 function Player.pushCosmetics(userId)
     local s = srcOf(userId)
     if not s then return false end
@@ -8024,10 +7226,6 @@ function Player.pushCosmetics(userId)
     return true
 end
 
---- Reads the rank row straight back and compares it with what is in memory.
---- Used after a staff grant: a change that did not reach the database has to be
---- visible right then, not discovered by the player after the next restart.
---- Returns nil when everything matches, or a description of the mismatch.
 function Player.verifyRank(userId)
     local pd = Players[userId]
     if not pd then return nil end
@@ -8054,8 +7252,6 @@ function Player.verifyRank(userId)
         return ('saved value does not match: database has rank %d / %d RP'):format(storedRank, storedRP)
     end
 
-    -- The row can carry the right rank and still display as Unranked if this
-    -- flag does not survive the round trip, so it is checked the same way.
     if toBool(row.placement_done) ~= (pd.placementDone and true or false) then
         err('VERIFY FAILED: user %d placement_done stored as %s (%s) but memory has %s',
             userId, tostring(row.placement_done), type(row.placement_done),
@@ -8066,7 +7262,6 @@ function Player.verifyRank(userId)
     return nil
 end
 
---- Loads a player row into the cache for offline edits.
 local function withPlayer(userId, fn)
     local pd = Players[userId]
     local temporary = false
@@ -8078,18 +7273,14 @@ local function withPlayer(userId, fn)
     local result = fn(pd)
 
     if temporary then
-        -- offline: write straight through and drop the cache entry again
         Player.save(pd, true)
     else
-        -- online: persist now and refresh the player's interface
         Player.pushUpdate(userId)
     end
 
-    -- Confirm the change actually reached the database. Staff actions are rare,
-    -- so one extra read is cheap next to a grant that quietly does nothing.
     if type(result) == 'table' then
         local wasCached = Players[userId] ~= nil
-        if not wasCached then Players[userId] = pd end   -- verify reads the cache
+        if not wasCached then Players[userId] = pd end
         result.verifyError = Player.verifyRank(userId)
         if not wasCached then Players[userId] = nil end
     end
@@ -8110,7 +7301,6 @@ function Admin.handle(adminPd, action, data)
     local okReason, reason, reasonErr = checkReason(action, data.reason)
     if not okReason then return false, reasonErr end
 
-    -- Resolves the target and returns a compact identity for the audit row.
     local function target()
         local id = resolveTarget(data.target)
         if not id then return nil end
@@ -8119,7 +7309,6 @@ function Admin.handle(adminPd, action, data)
             or (DB.scalar('SELECT name FROM m5_players WHERE user_id = ?', { id }) or ('User ' .. id)) }
     end
 
-    -- ================================================== monitoring
     if action == 'dashboard' then
         return true, Admin.dashboard(adminPd.userId)
 
@@ -8171,7 +7360,6 @@ function Admin.handle(adminPd, action, data)
         adminPd.spectatingMatch = nil
         return true, { ok = true }
 
-    -- ================================================== match control
     elseif action == 'endMatch' then
         local m = Matches[data.matchId]
         if not m then return false, 'Match not found.' end
@@ -8232,8 +7420,6 @@ function Admin.handle(adminPd, action, data)
         return true, { frozen = Config.Global.rankedFrozen }
 
     elseif action == 'startBotMatch' then
-        -- always for the caller: the session lives on their client, so it
-        -- cannot be started on somebody else's behalf
         local ok, res = BotMatch.start(adminPd, {
             difficulty = data.difficulty, bots = data.bots,
             rounds = data.rounds, map = data.map
@@ -8248,7 +7434,6 @@ function Admin.handle(adminPd, action, data)
         Admin.audit(adminPd, action, nil, { reason = reason })
         return true, { ok = true }
 
-    -- ================================================== points
     elseif action == 'addRP' or action == 'removeRP' then
         local id, who = target()
         if not id then return false, 'No player with that ID.' end
@@ -8263,7 +7448,6 @@ function Admin.handle(adminPd, action, data)
         return true, withPlayer(id, function(pd)
             local inPlacement = not pd.placementDone
             local result = RP.apply(pd, delta, action == 'addRP' and 'ADMIN_GRANT' or 'ADMIN_DEDUCT')
-            -- a player still in placement keeps no visible rank
             if inPlacement then pd.rankId, pd.division = 0, 0 end
             pd.dirtyRank = true
 
@@ -8281,8 +7465,6 @@ function Admin.handle(adminPd, action, data)
         local value = tonumber(data.value)
         if not id or not value then return false, 'Invalid target or value.' end
 
-        -- a grant now names the ladder it lands on; without one it goes to the
-        -- ladder the hub opens with, which is what an admin sees on the card
         local pool = Player.poolOf(Config.Modes[data.mode] and data.mode or nil)
 
         return true, withPlayer(id, function(pd)
@@ -8317,7 +7499,6 @@ function Admin.handle(adminPd, action, data)
             pd.rp = rank.rpRequired
 
             if rank.id == 0 then
-                -- rank 0 means "send them back to placement"
                 pd.placementDone   = false
                 pd.placementPlayed = 0
                 pd.placementData   = {}
@@ -8331,8 +7512,6 @@ function Admin.handle(adminPd, action, data)
                 { before = before, after = pd.rp, reason = reason,
                   details = { rank = rank.name, pool = pool } })
             notifyUser(id, 'info', 'Your rank was set to %s — %s', 'RANKED', rank.name, reason)
-            -- always logged: a grant that does not stick is the first thing to
-            -- check in the console, and `m5rankinfo <userId>` shows the rest
             log('rank set: user %d -> %s (id %d, rp %d) by %s, season %d',
                 id, rank.name, rank.id, pd.rp, adminPd.name, Season.id())
             hook('onRankChange', {
@@ -8365,8 +7544,6 @@ function Admin.handle(adminPd, action, data)
             '%s%d coins — %s', 'STORE',
             delta > 0 and '+' or '', math.abs(delta), reason)
 
-        -- push the new balance so the store updates without a reconnect.
-        -- Coins move nobody on a leaderboard, so this is the small update.
         local s2 = srcOf(id)
         if s2 then
             TriggerClientEvent('m5rp:cl:data', s2, { what = 'store', store = Store.payload(id) })
@@ -8409,7 +7586,6 @@ function Admin.handle(adminPd, action, data)
         notifyUser(id, 'warning', 'Your season stats were reset — %s', 'RANKED', reason)
         return true, { ok = true }
 
-    -- ================================================== punishments
     elseif action == 'ban' then
         local id, who = target()
         if not id then return false, 'No player with that ID.' end
@@ -8453,7 +7629,6 @@ function Admin.handle(adminPd, action, data)
         Admin.audit(adminPd, action, nil, { details = { flag = data.flagId } })
         return true, { ok = true }
 
-    -- ================================================== system
     elseif action == 'newSeason' then
         Seasons.rollover(adminPd.name)
         Admin.audit(adminPd, action, nil, { reason = reason })
@@ -8463,8 +7638,6 @@ function Admin.handle(adminPd, action, data)
         local cfg = Config.Modes[data.mode]
         if not cfg then return false, 'Unknown mode.' end
         cfg.enabled = data.value == true
-        -- the mode lists handed out on boot are built once, so they have to be
-        -- rebuilt after this
         BootStatic.forget()
         Admin.audit(adminPd, action, nil, { details = { mode = data.mode, enabled = cfg.enabled } })
         return true, { ok = true }
@@ -8473,9 +7646,6 @@ function Admin.handle(adminPd, action, data)
     return false, 'Unknown admin action.'
 end
 
--- ---------------------------------------------------------------------------
--- Season rollover
--- ---------------------------------------------------------------------------
 
 Seasons = {}
 
@@ -8492,11 +7662,7 @@ function Seasons.rollover(byAdmin)
     log('season rollover starting (season #%s)', tostring(old.number))
     Player.saveAll()
 
-    -- archive
     if Config.Seasons.archiveLeaderboard then
-        -- Only the default ladder is archived into m5_season_players: that
-        -- table is keyed by (season, user) and holds one final placement, and
-        -- widening it would rewrite every history screen built on it.
         local rows = DB.query([[SELECT r.user_id, r.rp, r.rank_id, r.highest_rank_id, p.name,
                                        s.wins, s.losses, s.kills, s.deaths
                                 FROM m5_player_ranks r
@@ -8518,7 +7684,6 @@ function Seasons.rollover(byAdmin)
                   r.wins or 0, r.losses or 0,
                   deaths > 0 and round(kills / deaths, 2) or kills })
 
-            -- season rewards
             if Config.Seasons.distributeRewards and Config.Rewards.enabled then
                 local tier = Rank.get(tonumber(r.highest_rank_id) or 0).tier
                 local pack = Config.Rewards.season[tier]
@@ -8536,13 +7701,10 @@ function Seasons.rollover(byAdmin)
 
     DB.update('UPDATE m5_seasons SET active = 0, finalized = 1 WHERE id = ?', { old.id })
 
-    -- reset
     local R = Config.Seasons.reset
     local newId = Season.create()
 
     if R.mode ~= 'none' then
-        -- every ladder rolls over on its own terms: a soft reset applies to
-        -- each one separately, so a Gold 1v1 and a Silver 2v2 both carry
         local rows = DB.query('SELECT user_id, mode, rp, highest_rank_id FROM m5_player_ranks WHERE season_id = ?',
             { old.id }) or {}
         for i = 1, #rows do
@@ -8577,7 +7739,6 @@ function Seasons.rollover(byAdmin)
         end
     end
 
-    -- reload every online player against the new season
     for userId, pd in pairs(Players) do
         local s = pd.source
         Players[userId] = nil
@@ -8595,11 +7756,7 @@ function Seasons.rollover(byAdmin)
     log('season rollover complete')
 end
 
--- ============================================================================
--- 20. NET EVENTS
--- ============================================================================
 
---- One ladder, in the same shape the hub already draws the header from.
 local function poolSummary(e)
     local done = e.placementDone
     return {
@@ -8620,7 +7777,6 @@ end
 local function poolsForClient(pd)
     Player.syncPool(pd)
     local out = {}
-    -- always include the ladder the hub opens on, even for a brand new player
     out[defaultPool()] = poolSummary(Player.poolData(pd, defaultPool()))
     for name, e in pairs(pd.pools) do out[name] = poolSummary(e) end
     return out
@@ -8634,17 +7790,6 @@ local function modePoolMap()
     return out
 end
 
--- ---------------------------------------------------------------------------
--- The half of the boot payload that is the same for everyone
--- ---------------------------------------------------------------------------
--- Modes, maps, loadouts, weapon presets and match types are read straight out
--- of the config and are identical for every player and every send. Rebuilding
--- them per payload meant twenty-five map tables and a sort on every boot, every
--- admin edit and every store click. They are built once and handed out as they
--- are; nothing on the client writes to them.
---
--- The only runtime change is the admin panel toggling a mode on or off, which
--- calls BootStatic.forget().
 local BootStatic = { cache = nil }
 
 function BootStatic.forget() BootStatic.cache = nil end
@@ -8710,8 +7855,6 @@ function BootStatic.get()
     return BootStatic.cache
 end
 
---- Everything the client and the NUI need on open. Sensitive server config
---- (webhooks, formulas, thresholds) is never part of this payload.
 function Server_BootPayload(pd)
     Perf.boots = Perf.boots + 1
     local showMMR = Admin.canSeeMMR(pd.userId)
@@ -8755,10 +7898,6 @@ function Server_BootPayload(pd)
         },
         stats   = Board.profile(pd.userId, showMMR),
 
-        -- Per-mode ranks. `pools` is every ladder this player has, `modePool`
-        -- maps a mode to its ladder, and `pool` is the one the header opens
-        -- on. The hub switches header and progress purely from these — no
-        -- round trip when the player flips between mode tabs.
         pools    = poolsForClient(pd),
         modePool = st.modePool,
         pool     = defaultPool(),
@@ -8816,9 +7955,6 @@ function Server_BootPayload(pd)
     }
 end
 
---- Resolves the calling player, applying the rate limit for the given bucket.
---- Nearly every inbound event passes through here, so it is also where they are
---- counted: a bucket running hot in the report is a client talking too much.
 local function caller(bucket)
     Perf.event(bucket)
     local src = source
@@ -8840,8 +7976,6 @@ RegisterNetEvent('m5rp:sv:queue', function(action, mode, autoFill)
     if not pd then return end
 
     if action == 'join' then
-        -- the switch is a request, not a grant: the server decides whether it
-        -- is offered at all, so a client asking for it changes nothing here
         local ok, reason = Matchmaker.join(pd.userId, tostring(mode or ''), autoFill == true)
         if not ok then notify(src, 'error', reason, 'QUEUE') end
     elseif action == 'leave' then
@@ -8938,7 +8072,6 @@ RegisterNetEvent('m5rp:sv:combat', function(kind, data)
         Combat.headshot(pd, data)
     elseif kind == 'death' then
         if not Security.allow(pd, 'kill') then return end
-        -- a bot match keeps its own score and never touches the ranked path
         if BotMatch.sessions[pd.userId] then
             BotMatch.playerDied(pd.userId)
         else
@@ -8950,10 +8083,6 @@ RegisterNetEvent('m5rp:sv:combat', function(kind, data)
     end
 end)
 
---- The only thing a bot match takes from the client: a bot going down, which
---- the server cannot observe because the peds are local to that client. The
---- session is looked up by the caller's own id, so nobody can report into
---- anyone else's match, and the result is worth nothing anyway.
 RegisterNetEvent('m5rp:sv:bot', function(action, data)
     local pd = caller('kill')
     if not pd then return end
@@ -8962,8 +8091,6 @@ RegisterNetEvent('m5rp:sv:bot', function(action, data)
     end
 end)
 
---- Store. The client sends an id and nothing else: the price, the balance and
---- whether the item is owned are all resolved here.
 RegisterNetEvent('m5rp:sv:store', function(action, kind, id)
     local pd, src = caller('default')
     if not pd then return end
@@ -8987,20 +8114,14 @@ RegisterNetEvent('m5rp:sv:store', function(action, kind, id)
         return
     end
 
-    -- always answer with the authoritative state, successful or not
     TriggerClientEvent('m5rp:cl:data', src, {
         what = 'store', store = Store.payload(pd.userId) })
     if ok then
-        -- the wallet and the worn set are the only things a purchase or an
-        -- equip changes, so that is all that is sent
         Player.pushCosmetics(pd.userId)
-        -- a card or a title is on show to the whole party, so push the roster
-        -- again rather than making everyone else wait for the next change
         if action == 'equip' then PartyMgr.sync(PartyMgr.get(pd.userId)) end
     end
 end)
 
---- Activity heartbeat used by the AFK detector.
 RegisterNetEvent('m5rp:sv:activity', function()
     local src = source
     local pd  = pdOf(src)
@@ -9011,13 +8132,6 @@ RegisterNetEvent('m5rp:sv:activity', function()
     if mp then mp.lastActivity = ms() end
 end)
 
---- A player asking for the loadout they should be holding.
----
---- The client asks when it finds the ped holding none of it, which happens
---- when something outside the match strips the ped a moment after a spawn.
---- Nothing here is taken from the client: it names no weapon and gets back
---- exactly what the match would have given it on a respawn, and only while
---- the round is live and it is alive to hold it.
 RegisterNetEvent('m5rp:sv:rearm', function()
     local src = source
     local pd  = pdOf(src)
@@ -9117,13 +8231,10 @@ RegisterNetEvent('m5rp:sv:admin', function(action, data)
     if not pd then return end
     local ok, result = Admin.handle(pd, tostring(action or ''), data)
     if ok then
-        -- A change that did not reach the database must be reported now, not
-        -- discovered by the player after the next restart.
         if type(result) == 'table' and result.verifyError then
             notify(src, 'error', 'NOT SAVED — %s. Check the server console.',
                 'ADMIN', result.verifyError)
         end
-        -- Admin.audit already wrote the row and the webhook
         TriggerClientEvent('m5rp:cl:data', src, { what = 'admin', action = action, result = result })
     else
         notify(src, 'error', result or 'Action failed.', 'ADMIN')
@@ -9133,7 +8244,6 @@ end)
 RegisterNetEvent('m5rp:sv:settings', function(settings)
     local pd = caller('settings')
     if not pd or type(settings) ~= 'table' then return end
-    -- only store known keys, values are clamped client side and re-checked here
     local clean = {}
     for k, v in pairs(settings) do
         if type(k) == 'string' and #k <= 32
@@ -9166,7 +8276,6 @@ RegisterNetEvent('m5rp:sv:action', function(action, data)
         if not ok then notify(src, 'error', reason, 'RECONNECT') end
 
     elseif action == 'leaveMatch' then
-        -- the same button ends a bot match, so there is one way out
         if BotMatch.sessions[pd.userId] then
             BotMatch.stop(pd.userId, 'left')
         else
@@ -9253,9 +8362,6 @@ RegisterNetEvent('m5rp:sv:action', function(action, data)
     end
 end)
 
--- ============================================================================
--- 21. COMMANDS
--- ============================================================================
 
 local function cmdPlayer(src)
     local pd = pdOf(src)
@@ -9272,7 +8378,6 @@ local function registerCommand(entry, handler)
     if not entry or not entry.enabled then return end
     RegisterCommand(entry.name, function(src, args, raw)
         if src == 0 then
-            -- console
             if entry.permission then
                 print('[M5RP] this command must be used in game')
                 return
@@ -9322,7 +8427,6 @@ registerCommand(Config.Commands.pvpadmin, function(pd, src)
 end)
 
 registerCommand(Config.Commands.rankban, function(pd, src, args)
-    -- /rankban <userId|name> <minutes> <reason...>
     if #args < 3 then
         notify(src, 'warning', 'Usage: /%s <userId> <minutes> <reason>', 'RANK BAN', Config.Commands.rankban.name)
         return
@@ -9369,7 +8473,6 @@ registerCommand(Config.Commands.setrp, function(pd, src, args)
         ok and ('RP set to %d (%s).'):format(result.rp, result.rank) or tostring(result), 'SET RP')
 end)
 
--- Compensate or deduct RP straight from chat.
 registerCommand(Config.Commands.givepvprp, function(pd, src, args)
     if #args < 3 then
         notify(src, 'warning', 'Usage: /givepvprp <userId> <amount> <reason>', 'RP')
@@ -9392,16 +8495,10 @@ registerCommand(Config.Commands.pvpstatus, function(pd, src)
         :format(live, queued, count(CustomGames.rooms), count(Players), count(UsedBuckets)))
 end)
 
--- ---------------------------------------------------------------------------
--- Perf report
--- ---------------------------------------------------------------------------
 
---- Prints where the resource's time went since the counters were last reset.
---- Everything is given as a rate as well as a total, because "4000 queries"
---- means nothing without knowing whether that was a minute or a day.
 local function perfReport(printer)
     local p       = Perf
-    local elapsed = math.max(1, ms() - p.startedAt) / 1000     -- seconds
+    local elapsed = math.max(1, ms() - p.startedAt) / 1000
     local mins    = elapsed / 60
     local perMin  = function(n) return n / math.max(0.0001, mins) end
 
@@ -9411,7 +8508,6 @@ local function perfReport(printer)
         :format(count(Players), count(Matches), Matchmaker.searchingCount(),
                 count(CustomGames.rooms)))
 
-    -- the loop
     local l = p.loop
     printer(('loop              %d ticks (%.0f/min), %d busy, %d idle')
         :format(l.ticks, perMin(l.ticks), l.busy, l.ticks - l.busy))
@@ -9425,7 +8521,6 @@ local function perfReport(printer)
     printer('  note            the clock here has 1 ms steps, so the total is '
             .. 'sound and a single tick is not')
 
-    -- the database
     local d   = p.db
     local avg = d.calls > 0 and (d.wall / d.calls) or 0
     printer(('database          %d calls (%.0f/min), %d ms waiting, %.1f ms avg')
@@ -9438,7 +8533,6 @@ local function perfReport(printer)
         printer(('  slowest one     %d ms (%s)'):format(d.worst, d.worstKind))
     end
 
-    -- reads against writes: the line that separates a slow query from a slow commit
     local rAvg = d.reads.n  > 0 and (d.reads.wall  / d.reads.n)  or 0
     local wAvg = d.writes.n > 0 and (d.writes.wall / d.writes.n) or 0
     printer(('  reads           %d, %.1f ms avg'):format(d.reads.n, rAvg))
@@ -9452,7 +8546,6 @@ local function perfReport(printer)
         and 'transactions available — a flush is one round trip'
         or  'NO transaction support in this oxmysql — every row is its own trip'))
 
-    -- the number that says whose problem the database time is
     if d.baseline then
         local verdict
         if d.baseline >= 20 then
@@ -9471,14 +8564,11 @@ local function perfReport(printer)
         end
     end
 
-    -- the framework
     printer(('vrp permissions   %d real asks (%.0f/min), %d ms — the rest came from cache')
         :format(p.vrp.calls, perMin(p.vrp.calls), p.vrp.wall))
 
-    -- payload building
     printer(('boot payloads     %d (%.1f/min)'):format(p.boots, perMin(p.boots)))
 
-    -- inbound events
     local ev, total = {}, 0
     for bucket, n in pairs(p.net) do
         ev[#ev + 1] = { bucket = bucket, n = n }
@@ -9491,7 +8581,6 @@ local function perfReport(printer)
             :format(ev[i].bucket, ev[i].n, perMin(ev[i].n)))
     end
 
-    -- what is being held in memory
     local perms = 0
     for _ in pairs(PermCache) do perms = perms + 1 end
     local boards = 0
@@ -9501,7 +8590,6 @@ local function perfReport(printer)
     printer('---- end ----')
 end
 
---- Server console: m5perf [reset]
 RegisterCommand('m5perf', function(src, args)
     if src ~= 0 then return end
     if args and args[1] == 'reset' then
@@ -9512,7 +8600,6 @@ RegisterCommand('m5perf', function(src, args)
     perfReport(function(line) print('[M5RP] ' .. line) end)
 end, true)
 
---- Staff, in game: prints to their console and drops a short line on screen.
 registerCommand(Config.Commands.pvpperf, function(pd, src, args)
     if args and args[1] == 'reset' then
         Perf.reset()
@@ -9529,11 +8616,8 @@ registerCommand(Config.Commands.pvpperf, function(pd, src, args)
     notify(src, 'info', 'Perf report printed to your chat.', 'PERF')
 end)
 
---- Server console only: prints what a player's rank looks like in memory next
---- to what is actually stored, so "the grant did not stick" can be answered
---- with evidence instead of a guess. Usage: m5rankinfo <userId>
 RegisterCommand('m5rankinfo', function(src, args)
-    if src ~= 0 then return end            -- console only, never a chat command
+    if src ~= 0 then return end
 
     local userId = tonumber(args and args[1])
     if not userId then
@@ -9565,8 +8649,6 @@ RegisterCommand('m5rankinfo', function(src, args)
     if #rows > 0 then
         for i = 1, #rows do
             local row = rows[i]
-            -- the Lua type matters: oxmysql hands TINYINT(1) back as a boolean
-            -- on current versions and as a number on older ones
             print(('[M5RP] database[%s]: rp=%s rank_id=%s (%s) placement_done=%s (lua type: %s -> %s)')
                 :format(tostring(row.mode), tostring(row.rp), tostring(row.rank_id),
                         Rank.get(tonumber(row.rank_id) or 0).name, tostring(row.placement_done),
@@ -9582,8 +8664,6 @@ RegisterCommand('m5rankinfo', function(src, args)
               'Config.Database.autoCreateTables on, or run the ALTERs by hand.')
     end
 
-    -- rows written before the season was known are the classic cause of a
-    -- grant that reappears as Unranked on the next join
     local orphan = DB.single('SELECT * FROM m5_player_ranks WHERE user_id = ? AND season_id = 0',
         { userId })
     if orphan then
@@ -9595,17 +8675,11 @@ RegisterCommand('m5rankinfo', function(src, args)
     print('[M5RP] --------------------------------')
 end, true)
 
--- ============================================================================
--- 22. LIFECYCLE & MASTER LOOP
--- ============================================================================
 
---- vRP fires this once the user is fully loaded and spawned.
 AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
     if not first_spawn then return end
     local src = source
     Citizen.CreateThread(function()
-        -- Never load a profile before the schema and the active season are
-        -- known, or its per-season rows would be stamped with season 0.
         if not waitForBoot() then
             err('player %s spawned but the resource never finished booting', tostring(user_id))
             return
@@ -9616,7 +8690,6 @@ AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
         Bans.load(user_id)
         Missions.ensure(pd)
 
-        -- offer a reconnect if the player dropped out of a live match
         local info = Reconnects[user_id]
         if info and info.expires > now() and Matches[info.matchId] then
             TriggerClientEvent('m5rp:cl:notify', src, {
@@ -9660,7 +8733,6 @@ AddEventHandler('vRP:playerLeave', function(user_id, source)
     Player.save(pd, true)
 end)
 
--- Safety net: a raw drop that vRP did not report yet.
 AddEventHandler('playerDropped', function()
     local src = source
     local userId = SrcToUser[src]
@@ -9672,32 +8744,22 @@ AddEventHandler('playerDropped', function()
     end
 end)
 
--- ---------------------------------------------------------------------------
--- Master loop: one thread drives every periodic subsystem.
--- ---------------------------------------------------------------------------
 
 local TICK = Config.Match.tickInterval or 250
 
 Citizen.CreateThread(function()
-    -- boot sequence
     Citizen.Wait(1500)
 
     DB.init()
     pcall(DB.measureBaseline)
     Season.load()
 
-    -- From here on a profile can be loaded safely: the tables exist and
-    -- Season.id() returns the real season instead of 0.
     Boot.ready = true
 
     registerVrpMenu()
 
-    -- pick up players who were already connected (resource restart)
     for _, playerSrc in ipairs(GetPlayers()) do
         local src = tonumber(playerSrc)
-        -- A player who is still connecting has no identifiers yet. Handing that
-        -- to vRP fails inside the framework, so skip them here and let
-        -- vRP:playerSpawn pick them up instead.
         if src and GetPlayerName(src) and GetNumPlayerIdentifiers(src) > 0 then
             local ok, userId = pcall(function() return vRP.getUserId({ src }) end)
             if ok and userId then
@@ -9713,10 +8775,6 @@ Citizen.CreateThread(function()
     log('M5 Ranked PvP is ready (%d ranks, %d modes, %d maps)',
         #Config.Ranks, count(Config.Modes), #Config.Maps)
 
-    -- A mode offered in the queue with no map behind it finds a match, gets as
-    -- far as the map vote, and aborts — which reads to the players as the
-    -- matchmaker being broken. It is worth a line at boot rather than a
-    -- cancelled match later, and it costs one pass over the config once.
     for i = 1, #Config.RankedQueueModes do
         local key = Config.RankedQueueModes[i]
         local cfg = Config.Modes[key]
@@ -9731,34 +8789,18 @@ Citizen.CreateThread(function()
     local acc = { mm = 0, flush = 0, hook = 0, season = 0, rooms = 0, afk = 0,
                   retain = 0 }
 
-    -- How long the loop sleeps when there is nothing to drive. The match state
-    -- machines need the full rate, but with no match running, no bot session
-    -- and nobody searching, the only work left is housekeeping measured in tens
-    -- of seconds — and it was still waking four times a second on an empty
-    -- server. The idle wait is capped so no accumulator overshoots the interval
-    -- it is counting toward.
     local IDLE = math.min(1000, Config.Matchmaking.tickInterval or 2000)
 
     while true do
-        -- anything that needs the fast rate? Each cause is recorded, so a
-        -- report showing a busy loop on an empty server says which of the three
-        -- was true instead of leaving it to be guessed at.
         local hasMatch = next(Matches) ~= nil
         local hasBots  = next(BotMatch.sessions) ~= nil
         local hasQueue = Matchmaker.waiting()
         local busy     = hasMatch or hasBots or hasQueue
 
-        -- written out rather than `busy and TICK or IDLE`: that idiom answers
-        -- IDLE if TICK is ever nil, which would quietly halve the rate a live
-        -- match runs at instead of failing loudly
         local dt = IDLE
         if busy then dt = TICK end
         Citizen.Wait(dt)
 
-        -- CPU spent in this tick, which is what resmon is showing you.
-        -- os.clock and not the game timer on purpose: a tick that waits on the
-        -- database costs the server no CPU, and reading it as if it did would
-        -- send anyone looking at this report after the wrong thing.
         local cpu0, dbCpu0 = os.clock(), Perf.db.cpu
         Perf.loop.ticks = Perf.loop.ticks + 1
         if busy then
@@ -9768,7 +8810,6 @@ Citizen.CreateThread(function()
             if hasQueue then Perf.loop.causeQueue = Perf.loop.causeQueue + 1 end
         end
 
-        -- ---- match state machines --------------------------------------
         for _, m in pairs(Matches) do
             local ok, e = pcall(Match.tick, m)
             if not ok then
@@ -9777,31 +8818,25 @@ Citizen.CreateThread(function()
             end
         end
 
-        -- ---- bot matches (staff practice sessions) ----------------------
         if next(BotMatch.sessions) then
             local ok, e = pcall(BotMatch.tick)
             if not ok then err('bot match tick failed: %s', tostring(e)) end
         end
 
-        -- ---- matchmaking -----------------------------------------------
         acc.mm = acc.mm + dt
         if acc.mm >= Config.Matchmaking.tickInterval then
             acc.mm = 0
-            -- an empty queue has nothing to pair, and the pass walks every mode
-            -- to find that out
             if Matchmaker.waiting() then
                 local ok, e = pcall(Matchmaker.tick)
                 if not ok then err('matchmaking tick failed: %s', tostring(e)) end
             end
         end
 
-        -- ---- custom room housekeeping ----------------------------------
         acc.rooms = acc.rooms + dt
         if acc.rooms >= 15000 then
             acc.rooms = 0
             pcall(CustomGames.tick)
 
-            -- expired reconnect windows
             for userId, info in pairs(Reconnects) do
                 if info.expires <= now() then
                     Reconnects[userId] = nil
@@ -9812,7 +8847,6 @@ Citizen.CreateThread(function()
                 end
             end
 
-            -- expired avoid entries
             for userId, list in pairs(Avoid) do
                 for other, expiry in pairs(list) do
                     if expiry <= now() then list[other] = nil end
@@ -9820,11 +8854,6 @@ Citizen.CreateThread(function()
             end
         end
 
-        -- ---- audit log retention ---------------------------------------
-        -- Once an hour. It used to ride on the fifteen second housekeeping
-        -- pass, so a server sitting empty all night still asked the database to
-        -- find rows older than ninety days four times a minute, forever. A
-        -- retention sweep is not a thing that can be late.
         acc.retain = acc.retain + dt
         if acc.retain >= 3600000 then
             acc.retain = 0
@@ -9835,7 +8864,6 @@ Citizen.CreateThread(function()
             end
         end
 
-        -- ---- batched database flush ------------------------------------
         acc.flush = acc.flush + dt
         if acc.flush >= Config.Database.flushInterval then
             acc.flush = 0
@@ -9843,14 +8871,12 @@ Citizen.CreateThread(function()
             if not ok then err('flush failed: %s', tostring(e)) end
         end
 
-        -- ---- discord webhooks ------------------------------------------
         acc.hook = acc.hook + dt
         if acc.hook >= Config.Webhooks.batchInterval then
             acc.hook = 0
             pcall(Logger.flush)
         end
 
-        -- ---- season rollover -------------------------------------------
         acc.season = acc.season + dt
         if acc.season >= Config.Seasons.checkInterval then
             acc.season = 0
@@ -9860,9 +8886,6 @@ Citizen.CreateThread(function()
             end
         end
 
-        -- the loop's own CPU: what this tick burned, less whatever was burned
-        -- inside a database call it made, because that time belongs to the
-        -- whole server rather than to this resource
         local spent = (os.clock() - cpu0) - (Perf.db.cpu - dbCpu0)
         if spent < 0 then spent = 0 end
         Perf.loop.cpu = Perf.loop.cpu + spent
@@ -9870,21 +8893,10 @@ Citizen.CreateThread(function()
     end
 end)
 
--- ---------------------------------------------------------------------------
--- Shutdown
--- ---------------------------------------------------------------------------
 
---- Shutdown is best effort and must never be the only place a change is
---- written. A stopping resource is torn down as soon as its handlers return,
---- so an awaited query here can fail to resume and everything after it is
---- skipped. That is why staff actions and match results save the moment they
---- happen; this handler only catches whatever the interval flush has not
---- reached yet. The two markers below make it obvious in the console whether
---- the save actually completed.
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= RES then return end
 
-    -- players first: their profiles are what matters if the runtime is cut off
     local pending = count(Players)
     log('resource stopping — saving %d profiles', pending)
     Player.saveAll()
@@ -9917,9 +8929,6 @@ AddEventHandler('onResourceStop', function(resource)
     Logger.flush()
 end)
 
--- ---------------------------------------------------------------------------
--- Exports — for other resources. Read only, nothing here changes state.
--- ---------------------------------------------------------------------------
 
 exports('isInMatch', function(userId)
     local pd = Players[tonumber(userId) or -1]
@@ -9954,7 +8963,6 @@ exports('getPlayerStats', function(userId)
     return pd and pd.stats or nil
 end)
 
--- Keep the winner reference for custom game bookkeeping.
 local _endMatch = Match.endMatch
 Match.endMatch = function(m, winner, reason)
     m.lastWinner = winner
