@@ -43,15 +43,23 @@ function Perf.event(bucket)
     Perf.net[k] = (Perf.net[k] or 0) + 1
 end
 
+local function consoleAllows(kind)
+    local c = Config.Console
+    if not c then return kind == 'errors' end
+    return c[kind] ~= false
+end
+
 local function log(fmt, ...)
+    if not consoleAllows('info') then return end
     print(('[M5RP] ' .. fmt):format(...))
 end
 
 local function dbg(fmt, ...)
-    if Config.Debug then log('[debug] ' .. fmt, ...) end
+    if Config.Debug then print(('[M5RP][debug] ' .. fmt):format(...)) end
 end
 
 local function err(fmt, ...)
+    if not consoleAllows('errors') then return end
     print(('^1[M5RP][error] ' .. fmt .. '^7'):format(...))
 end
 

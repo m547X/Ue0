@@ -100,13 +100,13 @@ M5.Server = {
     onMatchJoin = function(data)
         -- مثال: اخصم رسوم دخول، أو اكتب لوق خاص فيك
         -- vRP.tryPayment({ data.userId, 500 })
-        print(('[M5RP] %s entered match %s'):format(data.name, data.matchId))
+        -- print(('%s entered match %s'):format(data.name, data.matchId))
     end,
 
     --- لاعب خرج من قيم، لأي سبب كان.
     --- data = { userId, source, name, matchId, reason }
     onMatchLeave = function(data)
-        print(('[M5RP] %s left match %s (%s)'):format(data.name, data.matchId, data.reason))
+        -- print(('%s left match %s (%s)'):format(data.name, data.matchId, data.reason))
     end,
 
     --- القيم خلصت وكل الجوائز انصرفت من السكربت قبل هذي اللحظة.

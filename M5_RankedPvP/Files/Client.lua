@@ -146,7 +146,10 @@ local function hook(name, data)
     local fn = M5 and M5.Client and M5.Client[name]
     if type(fn) == 'function' then
         local ok, e = pcall(fn, data)
-        if not ok then print(('[M5RP] Export.lua M5.Client.%s failed: %s'):format(name, tostring(e))) end
+        if not ok and not (Config.Console and Config.Console.errors == false) then
+            print(('^1[M5RP][error] Export.lua M5.Client.%s failed: %s^7')
+                :format(name, tostring(e)))
+        end
     end
     TriggerEvent('m5rp:' .. name, data)
 end
