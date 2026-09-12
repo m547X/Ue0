@@ -853,7 +853,10 @@ function currentModeLabel() {
 
 function renderQueue(q) {
   if (q) S.lastQueue = q;          // kept so a language redraw can replay it
-  const searching = !!(q && q.state === 'SEARCHING');
+  // A player inside a match is not searching, whatever the last queue message
+  // said. The server clears it now, but the interface should not be able to
+  // show a live search over a match it is already in either way.
+  const searching = !!(q && q.state === 'SEARCHING') && !S.matchInfo;
   S.queue.searching = searching;
 
   const start = $('btn-start');

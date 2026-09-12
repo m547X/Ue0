@@ -3228,6 +3228,13 @@ function Match.addPlayer(m, userId, team)
     pd.matchId = m.id
     pd.team    = team or 1
 
+    -- The search is over the moment they are in a match. Nothing said so
+    -- before, so the dock kept counting and the button kept offering to cancel
+    -- a search that had already found this match — and cancelling it from in
+    -- here is how a player ends up looking at a stale one.
+    local s = srcOf(userId)
+    if s then TriggerClientEvent('m5rp:cl:queue', s, { state = 'IDLE' }) end
+
     hook('onMatchJoin', {
         userId = userId, source = srcOf(userId), name = pd.name,
         matchId = m.id, mode = m.mode, ranked = m.ranked,
@@ -3396,6 +3403,20 @@ function Match.vote(m, userId, mapId)
     local tally = {}
     for _, id in pairs(m.mapVotes) do tally[id] = (tally[id] or 0) + 1 end
     Match.broadcast(m, 'm5rp:cl:mapVote', { matchId = m.id, votes = tally, update = true })
+
+    -- Everyone has had their say, so the timer is counting down to nothing.
+    -- Waiting it out was twenty seconds of two players looking at a decided
+    -- vote.
+    local waiting, voted = 0, 0
+    for id, mp in pairs(m.players) do
+        if mp.connected then
+            waiting = waiting + 1
+            if m.mapVotes[id] then voted = voted + 1 end
+        end
+    end
+    if waiting > 0 and voted >= waiting then
+        Match.resolveMapVote(m)
+    end
     return true
 end
 
@@ -4424,6 +4445,19 @@ end
 
 function Match.checkForfeit(m)
     if m.state == 'MATCH_END' or m.state == 'CLEANUP' then return end
+
+    -- Nobody left at all. Waiting for a timer here is waiting for nothing: the
+    -- match would sit in memory forever with the loop running at full rate for
+    -- an empty arena, which is exactly what a stale match looked like.
+    local anyone = false
+    for _, mp in pairs(m.players) do
+        if mp.connected then anyone = true break end
+    end
+    if not anyone then
+        Match.abort(m, 'EVERYONE_LEFT')
+        return
+    end
+
     if m.ffa then
         local remaining = 0
         for _, mp in pairs(m.players) do if mp.connected then remaining = remaining + 1 end end
@@ -4445,6 +4479,14 @@ function Match.checkForfeit(m)
 
     for team = 1, 2 do
         if connected[team] < Config.Match.minPlayersToContinue then
+            -- A side with nobody on it is only worth waiting for if somebody is
+            -- coming back. Otherwise there is no opponent and no reason to hold
+            -- the player who stayed — in a 1v1 that is the whole match.
+            if connected[team] == 0 and not Match.awaitingReconnect(m, team) then
+                Match.endMatch(m, team == 1 and 2 or 1, 'FORFEIT')
+                return
+            end
+
             if not m.forfeitTimer[team] then
                 m.forfeitTimer[team] = ms() + (Config.Match.abandonForfeitDelay * 1000)
                 Match.broadcast(m, 'm5rp:cl:notify', {
@@ -4460,6 +4502,19 @@ function Match.checkForfeit(m)
             m.forfeitTimer[team] = nil
         end
     end
+end
+
+--- Is anyone from this team still inside their reconnect window?
+function Match.awaitingReconnect(m, team)
+    for userId, mp in pairs(m.players) do
+        if mp.team == team and not mp.connected then
+            local info = Reconnects[userId]
+            if info and info.matchId == m.id and info.expires > now() then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 function Match.tryReconnect(userId)
@@ -4577,26 +4632,32 @@ local comaSupported = nil
 local function comaWatchOn()
     local cfg = Config.ComaWatch
     if not cfg or cfg.enabled == false then return false end
-
-    if comaSupported == nil then
-        comaSupported = type(vRP) == 'table' and type(vRP.isInComa) == 'function'
-        if not comaSupported then
-            log('vRP.isInComa is not available in this framework build — the '
-             .. 'coma watch is off, and the client still ends a round from the '
-             .. 'health floor in Config.Coma')
-        end
-    end
-    return comaSupported
+    if comaSupported == false then return false end
+    return type(vRP) == 'table'
 end
 
 local function inComa(userId)
+    -- refuses on its own, not only through comaWatchOn, so that calling it
+    -- from anywhere can never reach a framework that has already said no
+    if comaSupported == false then return false end
+
     local ok, res = pcall(function() return vRP.isInComa({ userId }) end)
+
     if not ok then
         comaSupported = false
         err('vRP.isInComa failed, the coma watch is now off: %s', tostring(res))
         return false
     end
-    return res == true
+
+    if type(res) ~= 'boolean' then
+        comaSupported = false
+        log('this vRP has no isInComa, so the coma watch is off. The client '
+         .. 'still ends a round from the health floor in Config.Coma, which is '
+         .. 'the part that was doing the work anyway.')
+        return false
+    end
+
+    return res
 end
 
 function Match.checkComa(m)
@@ -4609,12 +4670,18 @@ function Match.checkComa(m)
     m.lastComaCheck = t
 
     for userId, mp in pairs(m.players) do
-        if mp.connected and mp.alive and inComa(userId) then
-            local pd = Players[userId]
-            if pd then
-                log('user %d is in a coma — counting it as a death in match %s',
-                    userId, tostring(m.id))
-                Combat.death(pd, {})
+        if mp.connected and mp.alive then
+            local down = inComa(userId)
+            -- the first call is also the probe: a vRP without isInComa turns
+            -- the watch off, and there is no point asking about the rest
+            if comaSupported == false then return end
+            if down then
+                local pd = Players[userId]
+                if pd then
+                    log('user %d is in a coma — counting it as a death in match %s',
+                        userId, tostring(m.id))
+                    Combat.death(pd, {})
+                end
             end
         end
     end
@@ -4654,6 +4721,19 @@ end
 
 function Match.tick(m)
     local t = ms()
+
+    -- Before anything else: is there still a match here? The forfeit timer is
+    -- set when somebody leaves and has to be looked at again for it to ever
+    -- fire — it was only ever checked by the leaving itself, so a match whose
+    -- last opponent walked out sat here forever, at the full tick rate, with
+    -- nobody in it. Checked from the top so it covers the map vote and the
+    -- countdown as well, not only a live round.
+    if m.state ~= 'MATCH_END' and m.state ~= 'CLEANUP' then
+        Match.checkForfeit(m)
+        if not Matches[m.id] or m.state == 'MATCH_END' or m.state == 'CLEANUP' then
+            return
+        end
+    end
 
     if m.state == 'MAP_VOTE' then
         if m.stateEnd and t >= m.stateEnd then
