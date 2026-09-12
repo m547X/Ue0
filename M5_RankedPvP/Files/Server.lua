@@ -2916,8 +2916,18 @@ local function spawnPointFor(m, mp, index)
     if #list == 0 then
         return { x = map.center.x, y = map.center.y, z = map.center.z, h = 0.0 }
     end
-    local v = list[((index - 1) % #list) + 1]
-    return { x = v.x, y = v.y, z = v.z, h = v.w }
+    local n   = #list
+    local v   = list[((index - 1) % n) + 1]
+    local x, y, h = v.x, v.y, v.w
+    local lap = (index - 1) // n
+    if lap > 0 then
+        local rad  = math.rad(h)
+        local side = (lap % 2 == 0) and 1.0 or -1.0
+        local step = math.ceil(lap / 2) * (Config.Match.spawnSpread or 1.8)
+        x = x + math.cos(rad) * step * side
+        y = y + math.sin(rad) * step * side
+    end
+    return { x = x, y = y, z = v.z, h = h }
 end
 
 function Match.get(matchId) return Matches[matchId] end
@@ -8548,6 +8558,11 @@ local function perfReport(printer)
     printer(('  in matches      %d seats, %d still connected%s')
         :format(seats, present,
                 ghosts > 0 and (', %d marked connected but gone'):format(ghosts) or ''))
+    if ghosts > 0 then
+        printer('  >>              a seat held by somebody who has gone keeps the '
+             .. 'match alive, and one live match holds the whole loop at the fast '
+             .. 'tick rate. This is what high usage on an empty server looks like.')
+    end
 
     local l = p.loop
     printer(('loop              %d ticks (%.0f/min), %d busy, %d idle')
@@ -8557,8 +8572,17 @@ local function perfReport(printer)
     printer(('loop cpu          %.1f ms total, %.3f ms avg, %.0f ms worst tick')
         :format(l.cpu * 1000, l.ticks > 0 and (l.cpu * 1000 / l.ticks) or 0,
                 l.worst * 1000))
+    local share = (l.cpu / elapsed) * 100
     printer(('loop share        %.2f%% of wall clock (database waits excluded)')
-        :format((l.cpu / elapsed) * 100))
+        :format(share))
+    printer(('  verdict         %s'):format(
+           share < 1 and 'this resource is not what is loading the server'
+        or share < 5 and 'noticeable, but not a problem on its own'
+        or               'high — the loop is doing real work on every tick'))
+    printer(('  tick rate       %d ms while busy, %d ms idle — %d of %d ticks were busy')
+        :format(Config.Match.tickInterval or 250,
+                math.min(1000, Config.Matchmaking.tickInterval or 2000),
+                l.busy, l.ticks))
     printer('  note            the clock here has 1 ms steps, so the total is '
             .. 'sound and a single tick is not')
 

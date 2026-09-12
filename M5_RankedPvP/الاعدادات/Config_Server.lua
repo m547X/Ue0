@@ -898,7 +898,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena1.png',
         center    = vector3(5367.149, -1110.734, 355.209),
         radius    = 155.0,
-        modes     = { '2v2', '3v3', '4v4', '5v5' },
+        modes     = { '2v2', '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(5365.400, -1054.133, 355.209, 171.379),
@@ -919,7 +919,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena2.png',
         center    = vector3(4053.109, 0.296, 195.994),
         radius    = 160.0,
-        modes     = { '2v2', '3v3', '4v4', '5v5' },
+        modes     = { '2v2', '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(3989.586, -6.934, 195.994, 276.539)
@@ -936,7 +936,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena3.png',
         center    = vector3(-147.057, -4347.000, 191.805),
         radius    = 165.0,
-        modes     = { '2v2', '3v3', '4v4', '5v5' },
+        modes     = { '2v2', '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(-211.899, -4348.358, 191.501, 267.509)
@@ -953,7 +953,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena4.png',
         center    = vector3(4400.804, 2800.000, 548.195),
         radius    = 150.0,
-        modes     = { '2v2', '3v3', '4v4', '5v5' },
+        modes     = { '2v2', '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(4384.621, 2830.983, 549.169, 208.419)
@@ -970,7 +970,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena5.png',
         center    = vector3(4014.105, 1311.000, 678.667),
         radius    = 150.0,
-        modes     = { '3v3', '4v4', '5v5' },
+        modes     = { '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(3985.851, 1344.412, 679.641, 229.956)
@@ -987,7 +987,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Arena6.png',
         center    = vector3(4278.000, 1483.000, 678.663),
         radius    = 150.0,
-        modes     = { '3v3', '4v4', '5v5' },
+        modes     = { '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(4301.730, 1449.314, 679.641, 33.482)
@@ -1021,7 +1021,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Dust.png',
         center    = vector3(-3180.145, -348.759, 556.591),
         radius    = 150.0,
-        modes     = { '3v3', '4v4', '5v5' },
+        modes     = { '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(-3181.165, -365.372, 556.530, 4.052)
@@ -1038,7 +1038,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Helizone1.png',
         center    = vector3(1830.628, -3152.800, 399.520),
         radius    = 165.0,
-        modes     = { '3v3', '4v4', '5v5' },
+        modes     = { '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(1862.077, -3193.385, 397.720, 32.101)
@@ -1055,7 +1055,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Helizone2.png',
         center    = vector3(-2559.248, -1404.797, 419.369),
         radius    = 150.0,
-        modes     = { '3v3', '4v4', '5v5' },
+        modes     = { '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(-2607.187, -1380.811, 420.467, 236.369)
@@ -1089,7 +1089,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon1.png',
         center    = vector3(-2446.467, -1810.070, 100.366),
         radius    = 150.0,
-        modes     = { '2v2', '3v3', '4v4', '5v5' },
+        modes     = { '2v2', '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(-2397.956, -1843.997, 100.366, 2.390)
@@ -1106,7 +1106,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon2.png',
         center    = vector3(-230.341, -3398.187, 558.460),
         radius    = 155.0,
-        modes     = { '2v2', '3v3', '4v4', '5v5' },
+        modes     = { '2v2', '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(-276.366, -3359.641, 558.460, 181.054)
@@ -1123,7 +1123,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/Neon3.png',
         center    = vector3(-2179.281, -2369.165, 500.729),
         radius    = 155.0,
-        modes     = { '3v3', '4v4', '5v5' },
+        modes     = { '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(-2129.834, -2404.000, 500.729, 6.108)
@@ -1157,7 +1157,7 @@ Config.Maps             = {
         image     = 'https://r2.fivemanage.com/6v9KGi8lP3pI5FTEnO2P4/SkatePark.png',
         center    = vector3(-2595.843, -2218.091, 1271.626),
         radius    = 160.0,
-        modes     = { '3v3', '4v4', '5v5' },
+        modes     = { '3v3', '4v4', '5v5', 'tdm', 'snd' },
         weapons   = nil,
         teamA     = {
             vector4(-2614.650, -2278.546, 1267.654, 321.623)
@@ -1436,6 +1436,12 @@ Config.Match            = {
     -- خلّه false إذا تبي اللاعب يقعد بالساحة لين تخلص شاشة النتيجة (السلوك
     -- القديم: ينتظر matchEndTime كامل قبل ما يترجّع).
     returnImmediately    = true,
+
+    -- المسافة بالمتر بين اللاعبين إذا عدد اللاعبين أكثر من نقاط النزول
+    -- بالماب. مثال: ماب فيه نقطة وحدة لكل فريق وطور 5v5 — بدل ما الخمسة
+    -- ينزلون فوق بعض بنفس النقطة، ينفرشون صف على يمين وشمال النقطة بهذي
+    -- المسافة. مهم جداً بأطوار الرسبن مثل TDM عشان ما يصير قنص نزول.
+    spawnSpread          = 1.8,
 
     spawnProtection      = 3, -- ثواني حماية بعد النزول
     antiSpawnKill        = true,
