@@ -26,6 +26,10 @@ function err() end
 function dbg() end
 
 Matches, Players, Reconnects = {}, {}, {}
+-- who the server can actually still see. checkForfeit trusts this over the
+-- `connected` flag, because the flag is bookkeeping and bookkeeping drifts.
+local ONLINE = {}
+function srcOf(userId) return ONLINE[userId] end
 Config = {
   Match = { minPlayersToContinue = 1, abandonForfeitDelay = 60 },
   ComaWatch = { enabled = true, interval = 2000 }
@@ -58,15 +62,28 @@ local function match(teams, state)
   local m = { id = 'm1', state = state or 'LIVE', ffa = false,
               forfeitTimer = {}, players = {} }
   local n = 0
+  ONLINE = {}
   for team, count in pairs(teams) do
     for _ = 1, count do
       n = n + 1
       m.players[n] = { team = team, connected = true }
+      ONLINE[n] = 100 + n            -- everybody is on the server to begin with
     end
   end
   Matches[m.id] = m
   ENDED, ABORTED, BROADCASTS = {}, {}, {}
   return m
+end
+
+--- the player leaves the way the code expects: flag cleared and gone
+local function leaves(m, id)
+  m.players[id].connected = false
+  ONLINE[id] = nil
+end
+
+--- and the way that caused the stuck match: gone, but still marked connected
+local function vanishes(m, id)
+  ONLINE[id] = nil
 end
 
 -- ==========================================================================
@@ -77,7 +94,7 @@ Match.checkForfeit(m)
 check('both sides present: nothing happens', #ENDED, 0)
 
 -- the opponent leaves a 1v1
-m.players[2].connected = false
+leaves(m, 2)
 Match.checkForfeit(m)
 check('the opponent leaves: the match ends at once', #ENDED, 1)
 check('  and the player who stayed wins',            ENDED[1] and ENDED[1].winner, 1)
@@ -85,7 +102,7 @@ check('  recorded as a forfeit',                     ENDED[1] and ENDED[1].reaso
 
 -- the other way round, so the winner is not simply always team 1
 m = match({ [1] = 1, [2] = 1 })
-m.players[1].connected = false
+leaves(m, 1)
 Match.checkForfeit(m)
 check('whichever side empties, the other wins', ENDED[1] and ENDED[1].winner, 2)
 
@@ -93,7 +110,7 @@ check('whichever side empties, the other wins', ENDED[1] and ENDED[1].winner, 2)
 -- 2. unless somebody is coming back
 -- ==========================================================================
 m = match({ [1] = 1, [2] = 1 })
-m.players[2].connected = false
+leaves(m, 2)
 Reconnects[2] = { matchId = 'm1', expires = now() + 120 }
 Match.checkForfeit(m)
 check('a pending reconnect holds the match open', #ENDED, 0)
@@ -110,8 +127,8 @@ Reconnects[2] = nil
 -- ==========================================================================
 m = match({ [1] = 3, [2] = 3 })
 Config.Match.minPlayersToContinue = 2
-m.players[4].connected = false
-m.players[5].connected = false          -- team 2 is down to one, not empty
+leaves(m, 4)
+leaves(m, 5)                            -- team 2 is down to one, not empty
 Match.checkForfeit(m)
 check('short handed but not empty: a timer, not an end', #ENDED, 0)
 check('  and the players are told',                      #BROADCASTS, 1)
@@ -128,10 +145,11 @@ Config.Match.minPlayersToContinue = 1
 -- and a team that fills back up clears its timer
 m = match({ [1] = 3, [2] = 3 })
 Config.Match.minPlayersToContinue = 2
-m.players[4].connected = false
-m.players[5].connected = false
+leaves(m, 4)
+leaves(m, 5)
 Match.checkForfeit(m)
 m.players[4].connected = true           -- somebody reconnected
+ONLINE[4] = 104
 Match.checkForfeit(m)
 check('a team that fills back up is not on a timer', m.forfeitTimer[2], nil)
 CLOCK = CLOCK + 61000
@@ -143,8 +161,8 @@ Config.Match.minPlayersToContinue = 1
 -- 4. nobody left at all: the match goes, rather than sitting in memory
 -- ==========================================================================
 m = match({ [1] = 1, [2] = 1 })
-m.players[1].connected = false
-m.players[2].connected = false
+leaves(m, 1)
+leaves(m, 2)
 Match.checkForfeit(m)
 check('an empty match is aborted',      #ABORTED, 1)
 check('  and taken out of the table',   Matches['m1'], nil)
@@ -153,18 +171,46 @@ check('  without being counted as a win', #ENDED, 0)
 -- a free for all with one player left standing
 m = match({ [1] = 1, [2] = 1, [3] = 1 })
 m.ffa = true
-m.players[2].connected = false
+leaves(m, 2)
 Match.checkForfeit(m)
 check('a free for all with two left runs on', #ENDED, 0)
-m.players[3].connected = false
+leaves(m, 3)
 Match.checkForfeit(m)
 check('  and ends when one is left',          #ENDED, 1)
 
 -- a match already over is never ended twice
 m = match({ [1] = 1, [2] = 1 }, 'MATCH_END')
-m.players[2].connected = false
+leaves(m, 2)
 Match.checkForfeit(m)
 check('a finished match is left alone', #ENDED, 0)
+
+-- ==========================================================================
+-- 5. the stuck match: gone, but the seat still says connected
+-- ==========================================================================
+-- This is what "0 players, 1 matches" with two people in it actually was. A
+-- drop that did not reach the match left the seat marked as taken, and the
+-- match then waited forever on somebody who had closed the game.
+m = match({ [1] = 1, [2] = 1 })
+vanishes(m, 2)
+check('a seat marked connected but gone is not believed', m.players[2].connected, true)
+Match.checkForfeit(m)
+check('  the flag is corrected',       m.players[2].connected, false)
+check('  and the match ends',          #ENDED, 1)
+check('  for the player who stayed',   ENDED[1] and ENDED[1].winner, 1)
+
+-- both of them vanish that way
+m = match({ [1] = 1, [2] = 1 })
+vanishes(m, 1)
+vanishes(m, 2)
+Match.checkForfeit(m)
+check('both vanish: the match is dropped', #ABORTED, 1)
+check('  and nothing is left behind',      Matches['m1'], nil)
+
+-- a player who is genuinely there is never mistaken for a ghost
+m = match({ [1] = 1, [2] = 1 })
+Match.checkForfeit(m)
+check('everyone present: nobody is corrected', m.players[1].connected, true)
+check('  and the match runs on',               #ENDED, 0)
 
 print()
 print(fails == 0 and ('ALL PASS (%d checks)'):format(checks)

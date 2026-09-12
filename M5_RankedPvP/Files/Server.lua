@@ -1,7 +1,6 @@
 
 local RES = "M5_RankedPvP"
 
-
 local function now()  return os.time() end
 local function ms()   return GetGameTimer() end
 
@@ -62,7 +61,6 @@ local function err(fmt, ...)
     if not consoleAllows('errors') then return end
     print(('^1[M5RP][error] ' .. fmt .. '^7'):format(...))
 end
-
 
 local function hook(name, data)
     local fn = M5 and M5.Server and M5.Server[name]
@@ -169,7 +167,6 @@ local function sqlDate(ts)
     return os.date('%Y-%m-%d %H:%M:%S', ts or now())
 end
 
-
 local Proxy  = module('vrp', 'lib/Proxy')
 local Tunnel = module('vrp', 'lib/Tunnel')
 
@@ -236,7 +233,6 @@ local function registerVrpMenu()
 
     log('vRP menu entry registered ("%s")', cfg.name)
 end
-
 
 local Boot = { ready = false }
 
@@ -850,7 +846,6 @@ function DB.init()
     log('database schema verified (%d tables)', #SCHEMA)
 end
 
-
 local Season = {
     current = nil,
     endsAt  = 0
@@ -911,7 +906,6 @@ end
 function Season.id()
     return Season.current and Season.current.id or 0
 end
-
 
 local RankById   = {}
 local RankedList = {}
@@ -995,7 +989,6 @@ local function rankTableForClient()
     return out
 end
 
-
 local MMR = {}
 
 function MMR.kFactor(pd)
@@ -1024,7 +1017,6 @@ function MMR.calculate(pd, teamMMR, enemyMMR, won, performance)
                          Config.MMR.min, Config.MMR.max)
     return newMMR
 end
-
 
 local RP = {}
 
@@ -1186,7 +1178,6 @@ function Rank.radiantSlotFree(userId, rp)
     return tonumber(higher) < slots
 end
 
-
 local Players   = {}
 local SrcToUser = {}
 local UserToSrc = {}
@@ -1228,7 +1219,6 @@ local function emptyStats()
 end
 
 local Player = {}
-
 
 local POOL_RANK_FIELDS = {
     'rp', 'rankId', 'division', 'highestRankId', 'highestRP',
@@ -1635,7 +1625,6 @@ function Player.refreshFavourites(pd)
     pd.stats.fav_map    = bestM
 end
 
-
 local Security = {}
 
 function Security.allow(pd, bucketName)
@@ -1689,7 +1678,6 @@ end
 function Security.validSource(source, pd)
     return pd ~= nil and pd.source == source
 end
-
 
 local Logger = { queue = {} }
 
@@ -1747,8 +1735,6 @@ function Logger.flush()
     end
 end
 
-
-
 local function _L(str)
     if type(str) ~= 'string' then return str end
     local lang = (Locale and Locale[Locale.default]) or nil
@@ -1771,7 +1757,6 @@ local function notifyUser(userId, kind, message, title, ...)
     local s = srcOf(userId)
     if s then notify(s, kind, message, title, ...) end
 end
-
 
 local Bans = { cache = {} }
 
@@ -1870,7 +1855,6 @@ function Bans.remove(userId, banId, adminName)
     return q
 end
 
-
 local Penalty = { cooldowns = {} }
 
 function Penalty.cooldownLeft(userId)
@@ -1957,7 +1941,6 @@ function Penalty.apply(userId, kind, matchId, preLive)
 
     return { rp = rpLoss, cooldown = cooldown, offence = offence, result = result }
 end
-
 
 local Store
 
@@ -2188,7 +2171,6 @@ function PartyMgr.allReady(party)
     end
     return true
 end
-
 
 local Queue        = {}
 local ReadyChecks  = {}
@@ -2836,7 +2818,6 @@ function Matchmaker.tick()
     end
 end
 
-
 local Matches       = {}
 local UsedBuckets   = {}
 local Reconnects    = {}
@@ -2979,7 +2960,6 @@ local function aliveCount(m, team)
     return n
 end
 
-
 local AvatarCache = {}
 
 local function defaultAvatar()
@@ -3045,7 +3025,6 @@ local function avatarFor(userId)
     AvatarCache[userId] = { url = defaultAvatar(), at = now() }
     return defaultAvatar()
 end
-
 
 local function teamNameFor(m, team)
     local cfg = Config.TeamNames or {}
@@ -3228,10 +3207,6 @@ function Match.addPlayer(m, userId, team)
     pd.matchId = m.id
     pd.team    = team or 1
 
-    -- The search is over the moment they are in a match. Nothing said so
-    -- before, so the dock kept counting and the button kept offering to cancel
-    -- a search that had already found this match — and cancelling it from in
-    -- here is how a player ends up looking at a stale one.
     local s = srcOf(userId)
     if s then TriggerClientEvent('m5rp:cl:queue', s, { state = 'IDLE' }) end
 
@@ -3345,7 +3320,6 @@ function Match.createFromReady(rc)
         })
 end
 
-
 function Match.startMapVote(m)
     Match.broadcast(m, 'm5rp:cl:matchFound', { done = true })
 
@@ -3404,9 +3378,6 @@ function Match.vote(m, userId, mapId)
     for _, id in pairs(m.mapVotes) do tally[id] = (tally[id] or 0) + 1 end
     Match.broadcast(m, 'm5rp:cl:mapVote', { matchId = m.id, votes = tally, update = true })
 
-    -- Everyone has had their say, so the timer is counting down to nothing.
-    -- Waiting it out was twenty seconds of two players looking at a decided
-    -- vote.
     local waiting, voted = 0, 0
     for id, mp in pairs(m.players) do
         if mp.connected then
@@ -3445,7 +3416,6 @@ function Match.resolveMapVote(m)
     Match.broadcast(m, 'm5rp:cl:mapVote', { matchId = m.id, result = m.map.id, close = true })
     Match.beginSetup(m)
 end
-
 
 function Match.beginSetup(m)
     Match.setState(m, 'STARTING', Config.Match.warmupTime)
@@ -3643,7 +3613,6 @@ function Match.checkMatchOver(m)
     return false
 end
 
-
 function Match.pushHud(m, force)
     if not force and (ms() - m.lastHudPush) < 900 then return end
     m.lastHudPush = ms()
@@ -3681,7 +3650,6 @@ function Match.pushHud(m, force)
         end
     end
 end
-
 
 local function addKillFeed(m, killerName, victimName, weapon, headshot,
                            killerTeam, victimTeam, killerId, victimId)
@@ -3903,7 +3871,6 @@ function Match.checkAce(m, winnerTeam)
         end
     end
 end
-
 
 local function mvpScore(mp)
     local w = Config.MVP.weights
@@ -4337,7 +4304,6 @@ function Match.completePlacement(pd)
     }
 end
 
-
 function Match.release(m, reason, keepScreens)
     if m.released then return end
     m.released = true
@@ -4446,9 +4412,14 @@ end
 function Match.checkForfeit(m)
     if m.state == 'MATCH_END' or m.state == 'CLEANUP' then return end
 
-    -- Nobody left at all. Waiting for a timer here is waiting for nothing: the
-    -- match would sit in memory forever with the loop running at full rate for
-    -- an empty arena, which is exactly what a stale match looked like.
+    for userId, mp in pairs(m.players) do
+        if mp.connected and not srcOf(userId) then
+            mp.connected = false
+            mp.alive     = false
+            mp.leftEarly = true
+        end
+    end
+
     local anyone = false
     for _, mp in pairs(m.players) do
         if mp.connected then anyone = true break end
@@ -4479,9 +4450,7 @@ function Match.checkForfeit(m)
 
     for team = 1, 2 do
         if connected[team] < Config.Match.minPlayersToContinue then
-            -- A side with nobody on it is only worth waiting for if somebody is
-            -- coming back. Otherwise there is no opponent and no reason to hold
-            -- the player who stayed — in a 1v1 that is the whole match.
+
             if connected[team] == 0 and not Match.awaitingReconnect(m, team) then
                 Match.endMatch(m, team == 1 and 2 or 1, 'FORFEIT')
                 return
@@ -4504,7 +4473,6 @@ function Match.checkForfeit(m)
     end
 end
 
---- Is anyone from this team still inside their reconnect window?
 function Match.awaitingReconnect(m, team)
     for userId, mp in pairs(m.players) do
         if mp.team == team and not mp.connected then
@@ -4568,7 +4536,6 @@ function Match.tryReconnect(userId)
     return true
 end
 
-
 function Match.startSurrender(m, userId)
     local cfg = Config.Match.surrender
     if not cfg.enabled then return false, 'Surrender is disabled.' end
@@ -4625,8 +4592,6 @@ function Match.surrenderVote(m, userId, agree)
     return true
 end
 
-
-
 local comaSupported = nil
 
 local function comaWatchOn()
@@ -4637,8 +4602,7 @@ local function comaWatchOn()
 end
 
 local function inComa(userId)
-    -- refuses on its own, not only through comaWatchOn, so that calling it
-    -- from anywhere can never reach a framework that has already said no
+
     if comaSupported == false then return false end
 
     local ok, res = pcall(function() return vRP.isInComa({ userId }) end)
@@ -4672,8 +4636,7 @@ function Match.checkComa(m)
     for userId, mp in pairs(m.players) do
         if mp.connected and mp.alive then
             local down = inComa(userId)
-            -- the first call is also the probe: a vRP without isInComa turns
-            -- the watch off, and there is no point asking about the rest
+
             if comaSupported == false then return end
             if down then
                 local pd = Players[userId]
@@ -4718,16 +4681,9 @@ function Match.checkAFK(m)
     end
 end
 
-
 function Match.tick(m)
     local t = ms()
 
-    -- Before anything else: is there still a match here? The forfeit timer is
-    -- set when somebody leaves and has to be looked at again for it to ever
-    -- fire — it was only ever checked by the leaving itself, so a match whose
-    -- last opponent walked out sat here forever, at the full tick rate, with
-    -- nobody in it. Checked from the top so it covers the map vote and the
-    -- countdown as well, not only a live round.
     if m.state ~= 'MATCH_END' and m.state ~= 'CLEANUP' then
         Match.checkForfeit(m)
         if not Matches[m.id] or m.state == 'MATCH_END' or m.state == 'CLEANUP' then
@@ -4833,7 +4789,6 @@ function Match.tick(m)
         return
     end
 end
-
 
 local Combat = {}
 
@@ -5106,7 +5061,6 @@ function Combat.outOfBounds(pd)
 
     Match.registerKill(m, nil, pd.userId, 'OUT_OF_BOUNDS', false, 0)
 end
-
 
 CustomGames = { rooms = {}, byCode = {} }
 
@@ -5619,7 +5573,6 @@ function CustomGames.tick()
     end
 end
 
-
 local Training = { players = {} }
 
 function Training.start(userId, kind)
@@ -5662,7 +5615,6 @@ function Training.stop(userId)
     end
     return true
 end
-
 
 local BotMatch = { sessions = {} }
 
@@ -6055,7 +6007,6 @@ function BotMatch.tick()
     end
 end
 
-
 Store = { cache = {} }
 
 local STORE_KINDS = {
@@ -6274,7 +6225,6 @@ function Store.cosmetics(userId)
     }
 end
 
-
 Rewards = {}
 
 local function xpForLevel(level)
@@ -6384,7 +6334,6 @@ function Match.grantMatchRewards(m, pd, mp, won, draw, isMVP)
     Achievements.check(pd)
 end
 
-
 Missions = {}
 
 local function dailyPeriod() return os.date('!%Y%m%d') end
@@ -6468,7 +6417,6 @@ function Missions.progress(pd, deltas)
     end
 end
 
-
 Achievements = {}
 
 function Achievements.check(pd)
@@ -6507,7 +6455,6 @@ function Achievements.list(userId)
     end
     return out
 end
-
 
 AntiBoost = {}
 
@@ -6662,7 +6609,6 @@ function AntiBoost.suspicious(limit)
                       ORDER BY score DESC LIMIT ?]],
         { Config.AntiBoost.reviewThreshold, limit or 50 }) or {}
 end
-
 
 local Board = { cache = {} }
 
@@ -6885,7 +6831,6 @@ function Board.myPosition(userId, pool)
         end)
 end
 
-
 local function buildProfile(userId, showMMR, pool)
     local seasonId = Season.id()
     local pd = Players[userId]
@@ -7002,7 +6947,6 @@ function Board.profile(userId, showMMR)
         end)
 end
 
-
 function Board.history(userId, page)
     local size   = Config.Database.historyPageSize
     local offset = math.max(0, (page or 1) - 1) * size
@@ -7099,7 +7043,6 @@ function Board.liveMatches()
     table.sort(out, function(a, b) return a.players > b.players end)
     return out
 end
-
 
 local Admin = {}
 
@@ -7734,7 +7677,6 @@ function Admin.handle(adminPd, action, data)
     return false, 'Unknown admin action.'
 end
 
-
 Seasons = {}
 
 function Seasons.rollover(byAdmin)
@@ -7843,7 +7785,6 @@ function Seasons.rollover(byAdmin)
             byAdmin and (' by **' .. byAdmin .. '**') or ''))
     log('season rollover complete')
 end
-
 
 local function poolSummary(e)
     local done = e.placementDone
@@ -8450,7 +8391,6 @@ RegisterNetEvent('m5rp:sv:action', function(action, data)
     end
 end)
 
-
 local function cmdPlayer(src)
     local pd = pdOf(src)
     if not pd then
@@ -8583,7 +8523,6 @@ registerCommand(Config.Commands.pvpstatus, function(pd, src)
         :format(live, queued, count(CustomGames.rooms), count(Players), count(UsedBuckets)))
 end)
 
-
 local function perfReport(printer)
     local p       = Perf
     local elapsed = math.max(1, ms() - p.startedAt) / 1000
@@ -8592,9 +8531,23 @@ local function perfReport(printer)
 
     printer('---- M5 Ranked PvP — perf ----')
     printer(('window            %.1f min'):format(mins))
-    printer(('online            %d players, %d matches, %d searching, %d rooms')
+
+    local seats, present, ghosts = 0, 0, 0
+    for _, m in pairs(Matches) do
+        for userId, mp in pairs(m.players) do
+            seats = seats + 1
+            if mp.connected then
+                if srcOf(userId) then present = present + 1
+                else ghosts = ghosts + 1 end
+            end
+        end
+    end
+    printer(('online            %d profiles, %d matches, %d searching, %d rooms')
         :format(count(Players), count(Matches), Matchmaker.searchingCount(),
                 count(CustomGames.rooms)))
+    printer(('  in matches      %d seats, %d still connected%s')
+        :format(seats, present,
+                ghosts > 0 and (', %d marked connected but gone'):format(ghosts) or ''))
 
     local l = p.loop
     printer(('loop              %d ticks (%.0f/min), %d busy, %d idle')
@@ -8763,7 +8716,6 @@ RegisterCommand('m5rankinfo', function(src, args)
     print('[M5RP] --------------------------------')
 end, true)
 
-
 AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
     if not first_spawn then return end
     local src = source
@@ -8791,7 +8743,18 @@ end)
 
 AddEventHandler('vRP:playerLeave', function(user_id, source)
     local pd = Players[user_id]
-    if not pd then return end
+
+    if not pd then
+        UserToSrc[user_id] = nil
+        if source then SrcToUser[source] = nil end
+        for _, m in pairs(Matches) do
+            local mp = m.players[user_id]
+            if mp and mp.connected then
+                Match.removePlayer(m, user_id, 'DISCONNECT')
+            end
+        end
+        return
+    end
 
     Matchmaker.leave(user_id, true)
 
@@ -8826,12 +8789,11 @@ AddEventHandler('playerDropped', function()
     local userId = SrcToUser[src]
     if not userId then return end
     SrcToUser[src] = nil
-    local pd = Players[userId]
-    if pd and pd.source == src then
-        TriggerEvent('vRP:playerLeave', userId, src)
-    end
-end)
 
+    local pd = Players[userId]
+    if pd and pd.source ~= src then return end
+    TriggerEvent('vRP:playerLeave', userId, src)
+end)
 
 local TICK = Config.Match.tickInterval or 250
 
@@ -8981,7 +8943,6 @@ Citizen.CreateThread(function()
     end
 end)
 
-
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= RES then return end
 
@@ -9016,7 +8977,6 @@ AddEventHandler('onResourceStop', function(resource)
 
     Logger.flush()
 end)
-
 
 exports('isInMatch', function(userId)
     local pd = Players[tonumber(userId) or -1]
