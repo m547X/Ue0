@@ -1013,8 +1013,10 @@ AddEventHandler('M5_iCreator:uploadResult', function(model, url, err)
 end)
 -- الخط مسجَّل مرة واحدة في أعلى الملف، ولا داعي لإعادة تسجيله هنا.
 -- _drawHud = false يخفي كل النصوص قبل التقاط الصورة حتى لا تظهر فيها.
-local _drawHud   = true
-local _hudPrompt = ''
+local _drawHud    = true
+local _hudName    = ''
+local _hudPrompt  = ''
+local _hudPrompt2 = ''
 local function DrawCenterText(txt, y, r, g, b)
     SetTextFont(fontId)
     SetTextScale(0.32, 0.32)
@@ -1035,8 +1037,16 @@ local function DrawProgressHUD(label, current, total)
             label, current, total)
     end
     DrawCenterText(_hudCache.text, 0.96)
+    -- في الطور اليدوي: اسم السيارة في سطر مستقل حتى لا يختلط العربي
+    -- بالإنجليزي، ثم سطر أوامر السيارة وسطر أوامر الكاميرا.
     if _hudPrompt ~= '' then
-        DrawCenterText(_hudPrompt, 0.92, 255, 220, 120)
+        DrawCenterText(_hudPrompt, 0.925, 255, 220, 120)
+    end
+    if _hudPrompt2 ~= '' then
+        DrawCenterText(_hudPrompt2, 0.892, 150, 200, 255)
+    end
+    if _hudName ~= '' then
+        DrawCenterText(_hudName, 0.855, 255, 255, 255)
     end
 end
 -- إخفاء النصوص، انتظار فريمين، ثم تنفيذ الالتقاط، ثم إرجاعها.
@@ -1048,12 +1058,79 @@ local function WithHiddenHUD(fn)
     _drawHud = true
 end
 -- ─── التحكم اليدوي ───────────────────────────────────────────
--- Enter = صوّر | Space = تخطَّ | الأسهم = تدوير | Backspace = إنهاء
+-- Enter = صوّر | Space = تخطَّ | الأسهم = تدوير السيارة | Backspace = إنهاء
+-- WASD = تحريك الكاميرا | الماوس = النظر | العجلة = زوم | Q/E = فوق/تحت
+-- Shift = أسرع | R = إرجاع الكاميرا لوضع المكان الأصلي
 local KEY_ACCEPT  = 201   -- Enter
 local KEY_ACCEPT2 = 176   -- Enter (بديل)
 local KEY_SKIP    = 22    -- Space
 local KEY_LEFT    = 174   -- سهم يسار
 local KEY_RIGHT   = 175   -- سهم يمين
+local MCAM = {
+    FORWARD = 32, BACKWARD = 33, LEFT = 34, RIGHT = 35,
+    UP      = 44, DOWN     = 38,          -- Q / E
+    FAST    = 21,                          -- Shift
+    LOOK_LR = 1,  LOOK_UD  = 2,
+    ZOOM_IN = 14, ZOOM_OUT = 15,           -- عجلة الماوس
+    RESET   = 45,                          -- R
+}
+-- حالة الكاميرا في الطور اليدوي: تبقى للسيارات التالية في نفس الجلسة،
+-- ولا تُحفظ في إعدادات المكان (استخدم محرر الكاميرا لذلك).
+local _mcPos, _mcRot, _mcFov = nil, nil, nil
+local function ManualCameraReset(spot)
+    local c = spot and spot.camera
+    if not c then return end
+    _mcPos = vector3(c.pos.x, c.pos.y, c.pos.z)
+    _mcRot = vector3(c.rot.x, 0.0, c.rot.z)
+    _mcFov = c.fov or 50.0
+end
+local function CamVectors(rot)
+    local pitch = math.rad(rot.x)
+    local head  = math.rad(rot.z)
+    local sinH, cosH = math.sin(head), math.cos(head)
+    local cosP, sinP = math.cos(pitch), math.sin(pitch)
+    return vector3(-sinH * cosP, cosH * cosP, sinP), vector3(cosH, sinH, 0.0)
+end
+-- تُستدعى كل فريم أثناء انتظار قرار اللاعب (الأزرار معطّلة وقتها).
+local function ManualCameraUpdate(cam, spot)
+    if not cam or not _mcPos then return end
+    local ed = Config.CameraEditor or {}
+    if IsDisabledControlJustPressed(0, MCAM.RESET) then
+        ManualCameraReset(spot)
+    end
+    local mX = GetDisabledControlNormal(0, MCAM.LOOK_LR)
+    local mY = GetDisabledControlNormal(0, MCAM.LOOK_UD)
+    if mX ~= 0.0 or mY ~= 0.0 then
+        local rotSpeed = (ed.rotateSpeed or 4.0) * 8.0
+        _mcRot = vector3(
+            math.max(-89.9, math.min(89.9, _mcRot.x - mY * rotSpeed)),
+            0.0,
+            _mcRot.z - mX * rotSpeed
+        )
+    end
+    local speed = IsDisabledControlPressed(0, MCAM.FAST)
+        and (ed.fastMoveSpeed or 1.20)
+        or  (ed.moveSpeed or 0.25)
+    local forward, right = CamVectors(_mcRot)
+    local delta = vector3(0.0, 0.0, 0.0)
+    if IsDisabledControlPressed(0, MCAM.FORWARD)  then delta = delta + forward * speed end
+    if IsDisabledControlPressed(0, MCAM.BACKWARD) then delta = delta - forward * speed end
+    if IsDisabledControlPressed(0, MCAM.LEFT)     then delta = delta - right   * speed end
+    if IsDisabledControlPressed(0, MCAM.RIGHT)    then delta = delta + right   * speed end
+    if IsDisabledControlPressed(0, MCAM.UP)       then delta = delta + vector3(0.0, 0.0, speed) end
+    if IsDisabledControlPressed(0, MCAM.DOWN)     then delta = delta - vector3(0.0, 0.0, speed) end
+    if delta.x ~= 0.0 or delta.y ~= 0.0 or delta.z ~= 0.0 then
+        _mcPos = _mcPos + delta
+    end
+    if IsDisabledControlJustPressed(0, MCAM.ZOOM_IN) then
+        _mcFov = math.max(ed.fovMin or 5.0, _mcFov - (ed.fovStep or 2.0))
+    elseif IsDisabledControlJustPressed(0, MCAM.ZOOM_OUT) then
+        _mcFov = math.min(ed.fovMax or 100.0, _mcFov + (ed.fovStep or 2.0))
+    end
+    SetCamCoord(cam, _mcPos.x, _mcPos.y, _mcPos.z)
+    SetCamRot(cam, _mcRot.x, 0.0, _mcRot.z, 2)
+    SetCamFov(cam, _mcFov)
+end
 -- الافتراضي من الكونفق، ويُحفظ اختيار اللاعب في KVP فيبقى بعد إعادة التشغيل.
 local _manualMode = Config.ManualCapture == true
 do
@@ -1068,29 +1145,39 @@ function SetManualMode(on)
     return _manualMode
 end
 -- يرجع true للتصوير، false للتخطي أو إنهاء الجلسة.
-function WaitForManualDecision(v, index, total, veh)
-    local label = ('%s  (%s)'):format(tostring(v.name or v.model), tostring(v.model))
-    _hudPrompt = label .. '   |   [Enter] Capture   [Space] Skip   [Arrows] Rotate'
+-- نعطّل أزرار اللعبة أثناء الانتظار حتى يتحرك الماوس بالكاميرا
+-- بدل أن يفتح قوائم اللعبة، لذلك نستخدم نسخ Disabled من الدوال.
+function WaitForManualDecision(v, index, total, veh, cam, spot)
+    _hudName    = ('%s  (%s)'):format(tostring(v.name or v.model), tostring(v.model))
+    _hudPrompt  = '[Enter] Capture    [Space] Skip    [Arrows] Rotate vehicle'
+    _hudPrompt2 = '[WASD] Move   [Mouse] Look   [Scroll] Zoom   [Q/E] Up/Down   [Shift] Fast   [R] Reset cam'
     local result = nil
     while _screenshotActive and result == nil do
-        if IsControlJustPressed(0, KEY_ACCEPT) or IsControlJustPressed(0, KEY_ACCEPT2) then
+        DisableAllControlActions(0)
+        ManualCameraUpdate(cam, spot)
+        if IsDisabledControlJustPressed(0, KEY_ACCEPT)
+            or IsDisabledControlJustPressed(0, KEY_ACCEPT2) then
             result = true
-        elseif IsControlJustPressed(0, KEY_SKIP) then
+        elseif IsDisabledControlJustPressed(0, KEY_SKIP) then
             result = false
             log('Skipped: ' .. tostring(v.model), '^3')
+        elseif IsCancelPressed(true) then
+            _screenshotActive = false
+            result = false
+            log('Session stopped by user (Backspace).', '^3')
         elseif veh and DoesEntityExist(veh) then
-            if IsControlPressed(0, KEY_LEFT) then
+            if IsDisabledControlPressed(0, KEY_LEFT) then
                 SetEntityHeading(veh, GetEntityHeading(veh) - 1.2)
-            elseif IsControlPressed(0, KEY_RIGHT) then
+            elseif IsDisabledControlPressed(0, KEY_RIGHT) then
                 SetEntityHeading(veh, GetEntityHeading(veh) + 1.2)
             end
         end
         Wait(0)
     end
-    _hudPrompt = ''
+    _hudName, _hudPrompt, _hudPrompt2 = '', '', ''
     return result == true
 end
-local function RunScreenshotLoop(spot, vc)
+local function RunScreenshotLoop(spot, vc, cam)
     local vehicles = GlobalState.VehiclesFromDB
     if not vehicles or #vehicles == 0 then
         log('VehiclesFromDB is empty! Check the config.', '^1') ; return nil
@@ -1101,6 +1188,8 @@ local function RunScreenshotLoop(spot, vc)
         _screenshotNum = 1 ; SetResourceKvpInt('screenshotnum', 1)
     end
     log(string.format('Screenshot loop: %d vehicles, starting from #%d', #vehicles, _screenshotNum))
+    -- نبدأ من كاميرا المكان، وأي تعديل يدوي يبقى لبقية الجلسة.
+    ManualCameraReset(spot)
     local lastVeh = nil
     -- خيط دوران واحد للجلسة كلها بدل خيط جديد مع كل سيارة.
     local rotTarget = nil
@@ -1157,7 +1246,7 @@ local function RunScreenshotLoop(spot, vc)
                 local shoot
                 if _manualMode then
                     -- التحكم اليدوي: ننتظر قرار اللاعب لكل سيارة.
-                    shoot = WaitForManualDecision(v, i, #vehicles, veh)
+                    shoot = WaitForManualDecision(v, i, #vehicles, veh, cam, spot)
                 else
                     -- انتظار قابل للقطع: لا نرفع الصورة إذا أُلغيت الجلسة أثناءه.
                     shoot = WaitOrStop(Config.ScreenshotDelay,
@@ -1268,7 +1357,7 @@ AddEventHandler('M5_iCreator:startScreenshot', function(spot)
         end)
     end
     Wait(2000)
-    local lastVeh = RunScreenshotLoop(spot, vc)
+    local lastVeh = RunScreenshotLoop(spot, vc, cam)
     lightsOn = false ; _screenshotActive = false
     if lastVeh and DoesEntityExist(lastVeh) then DeleteEntity(lastVeh) end
     RenderScriptCams(false,false,0,true,true) ; DestroyCam(cam,false) ; ClearFocus()
