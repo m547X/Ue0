@@ -2167,3 +2167,302 @@ Citizen.CreateThread(function()
     if not State.booted then TriggerServerEvent('m5rp:sv:boot') end
 end)
 
+
+local WB = {
+    rows    = {},
+    season  = nil,
+    peds    = {},
+    spawned = false,
+    sent    = false
+}
+
+local function wbOn()
+    local c = Config.WorldBoard
+    return c ~= nil and c.enabled ~= false
+end
+
+local function wbScreens()
+    if not wbOn() then return nil end
+    local s = Config.WorldBoard.screens
+    if not s or s.enabled == false or not s.spots or #s.spots == 0 then return nil end
+    return s
+end
+
+local function wbPodium()
+    if not wbOn() then return nil end
+    local p = Config.WorldBoard.podium
+    if not p or p.enabled == false or not p.spots or #p.spots == 0 then return nil end
+    return p
+end
+
+local function wbText(text, x, y, scale, r, g, b, a, align, wrapTo)
+    SetTextFont(4)
+    SetTextScale(0.0, scale)
+    SetTextColour(r, g, b, a)
+    SetTextCentre(align == 'centre')
+    SetTextRightJustify(align == 'right')
+    if align == 'right' then SetTextWrap(0.0, wrapTo or x) end
+    BeginTextCommandDisplayText('STRING')
+    AddTextComponentSubstringPlayerName(text)
+    EndTextCommandDisplayText(x, y)
+end
+
+local function wbColour(hex)
+    if type(hex) ~= 'string' then return 220, 220, 225 end
+    local h = hex:gsub('#', '')
+    if #h ~= 6 then return 220, 220, 225 end
+    local n = tonumber(h, 16)
+    if not n then return 220, 220, 225 end
+    return (n >> 16) & 255, (n >> 8) & 255, n & 255
+end
+
+local function drawScreen(spot, cfg, dist)
+    local scale = (tonumber(cfg.scale) or 1.0) * (1.0 - (dist / (cfg.distance * 2.4)))
+    if scale < 0.22 then scale = 0.22 end
+
+    local rows  = math.min(tonumber(cfg.rows) or 10, #WB.rows)
+    local alpha = math.floor(tonumber(cfg.opacity) or 190)
+
+    local lineH = 0.022 * scale
+    local width = 0.150 * scale
+    local head  = 0.040 * scale
+    local total = head + (lineH * rows) + (0.012 * scale)
+
+    SetDrawOrigin(spot.pos.x, spot.pos.y, spot.pos.z, 0)
+
+    DrawRect(0.0, 0.0, width, total, 8, 10, 14, alpha)
+    DrawRect(0.0, -(total / 2) + (head / 2), width, head, 150, 28, 42, math.min(255, alpha + 45))
+    DrawRect(0.0, -(total / 2) + head, width, 0.0016 * scale, 210, 45, 60, 255)
+
+    local title = spot.title or 'LEADERBOARD'
+    wbText(title, 0.0, -(total / 2) + (head / 2) - (0.011 * scale),
+           0.44 * scale, 245, 245, 250, 255, 'centre')
+
+    if WB.season then
+        wbText(WB.season, 0.0, -(total / 2) + (head / 2) + (0.003 * scale),
+               0.26 * scale, 205, 175, 180, 210, 'centre')
+    end
+
+    local y = -(total / 2) + head + (0.006 * scale)
+    local left  = -(width / 2) + (0.010 * scale)
+    local right =  (width / 2) - (0.010 * scale)
+
+    for i = 1, rows do
+        local row = WB.rows[i]
+        local r, g, b = wbColour(row.color)
+
+        if i <= 3 then
+            DrawRect(0.0, y + (lineH / 2) - (0.002 * scale), width - (0.008 * scale),
+                     lineH, r, g, b, 34)
+        end
+
+        wbText(tostring(row.position), left, y, 0.31 * scale, r, g, b, 255)
+        wbText(row.name, left + (0.020 * scale), y, 0.31 * scale, 235, 235, 240, 255)
+        wbText(tostring(row.rp) .. ' RP', right, y, 0.31 * scale, r, g, b, 255, 'right')
+
+        y = y + lineH
+    end
+
+    ClearDrawOrigin()
+end
+
+local function wbDespawn()
+    for i = 1, #WB.peds do
+        local p = WB.peds[i]
+        if p and DoesEntityExist(p) then
+            SetEntityAsMissionEntity(p, true, true)
+            DeleteEntity(p)
+        end
+    end
+    WB.peds = {}
+    WB.spawned = false
+end
+
+local function wbSpawn(cfg)
+    wbDespawn()
+
+    local count = math.min(#cfg.spots, #WB.rows)
+    for i = 1, count do
+        local spot = cfg.spots[i]
+        local row  = WB.rows[i]
+
+        local model = row.ped
+        if not model or model == 0 or not IsModelInCdimage(model) or not IsModelAPed(model) then
+            model = GetHashKey(cfg.fallback or 'a_m_y_skater_01')
+        end
+
+        if IsModelInCdimage(model) and IsModelAPed(model) then
+            RequestModel(model)
+            local waited = 0
+            while not HasModelLoaded(model) and waited < 3000 do
+                Citizen.Wait(50)
+                waited = waited + 50
+            end
+
+            if HasModelLoaded(model) then
+                local ped = CreatePed(4, model, spot.pos.x, spot.pos.y, spot.pos.z - 1.0,
+                                      spot.h or 0.0, false, false)
+                SetModelAsNoLongerNeeded(model)
+
+                if DoesEntityExist(ped) then
+                    SetEntityInvincible(ped, true)
+                    SetBlockingOfNonTemporaryEvents(ped, true)
+                    SetPedCanRagdoll(ped, false)
+                    SetPedCanBeTargetted(ped, false)
+                    SetPedCanBeDraggedOut(ped, false)
+                    SetPedDiesWhenInjured(ped, false)
+                    SetPedFleeAttributes(ped, 0, false)
+                    SetPedCombatAttributes(ped, 46, false)
+                    SetEntityNoCollisionEntity(ped, playerPed(), false)
+                    FreezeEntityPosition(ped, true)
+                    SetEntityCanBeDamaged(ped, false)
+                    SetPedConfigFlag(ped, 185, true)
+
+                    if spot.anim and spot.anim.dict and spot.anim.name then
+                        RequestAnimDict(spot.anim.dict)
+                        local w = 0
+                        while not HasAnimDictLoaded(spot.anim.dict) and w < 2000 do
+                            Citizen.Wait(50); w = w + 50
+                        end
+                        if HasAnimDictLoaded(spot.anim.dict) then
+                            TaskPlayAnim(ped, spot.anim.dict, spot.anim.name,
+                                         8.0, -8.0, -1, 1, 0, false, false, false)
+                            RemoveAnimDict(spot.anim.dict)
+                        end
+                    end
+
+                    WB.peds[#WB.peds + 1] = ped
+                end
+            end
+        end
+    end
+
+    WB.spawned = #WB.peds > 0
+end
+
+RegisterNetEvent('m5rp:cl:worldBoard', function(payload)
+    if not payload then return end
+    WB.rows   = payload.rows or {}
+    WB.season = payload.season
+    if WB.spawned then
+        local cfg = wbPodium()
+        if cfg then wbSpawn(cfg) else wbDespawn() end
+    end
+end)
+
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    wbDespawn()
+end)
+
+local WB_FAR  = 2000
+local WB_NEAR = 400
+
+function wbTick(me, podiumAcc)
+    local sleep = WB_FAR
+    if #WB.rows == 0 then return sleep, podiumAcc end
+
+    local screens = wbScreens()
+    if screens then
+        for i = 1, #screens.spots do
+            local spot = screens.spots[i]
+            if spot.enabled ~= false and spot.pos then
+                local d = #(me - spot.pos)
+                if d <= screens.distance then
+                    if World3dToScreen2d(spot.pos.x, spot.pos.y, spot.pos.z) then
+                        sleep = 0
+                        drawScreen(spot, screens, d)
+                    elseif sleep > WB_NEAR then
+                        sleep = WB_NEAR
+                    end
+                elseif d <= screens.distance * 2.5 and sleep > WB_NEAR then
+                    sleep = WB_NEAR
+                end
+            end
+        end
+    end
+
+    local podium = wbPodium()
+    if not podium then
+        if WB.spawned then wbDespawn() end
+        return sleep, podiumAcc
+    end
+
+    podiumAcc = podiumAcc + (sleep == 0 and 16 or sleep)
+    if podiumAcc >= 900 then
+        podiumAcc = 0
+        local near = false
+        for i = 1, #podium.spots do
+            local spot = podium.spots[i]
+            if spot.pos and #(me - spot.pos) <= podium.distance then near = true break end
+        end
+        if near and not WB.spawned then
+            wbSpawn(podium)
+        elseif not near and WB.spawned then
+            wbDespawn()
+        end
+    end
+
+    if WB.spawned and podium.showNames ~= false then
+        for i = 1, #WB.peds do
+            local p   = WB.peds[i]
+            local row = WB.rows[i]
+            if row and DoesEntityExist(p) then
+                local pos = GetEntityCoords(p)
+                if #(me - pos) <= 14.0
+                   and World3dToScreen2d(pos.x, pos.y, pos.z + 1.05) then
+                    sleep = 0
+                    local r, g, b = wbColour(row.color)
+                    SetDrawOrigin(pos.x, pos.y, pos.z + 1.05, 0)
+                    DrawRect(0.0, 0.0, 0.058, 0.026, 8, 10, 14, 170)
+                    wbText(('#%d  %s'):format(row.position, row.name),
+                           0.0, -0.010, 0.32, 240, 240, 245, 255, 'centre')
+                    wbText(('%s \194\183 %d RP'):format(row.rank or '', row.rp or 0),
+                           0.0, 0.001, 0.24, r, g, b, 235, 'centre')
+                    ClearDrawOrigin()
+                end
+            end
+        end
+    end
+
+    return sleep, podiumAcc
+end
+
+Citizen.CreateThread(function()
+    if not wbOn() then return end
+    Citizen.Wait(4000)
+
+    local podiumAcc = 0
+
+    while true do
+        local sleep = WB_FAR
+
+        if not WB.sent then
+            local ped = playerPed()
+            if ped and ped ~= 0 and not IsPedInjured(ped) then
+                WB.sent = true
+                TriggerServerEvent('m5rp:sv:worldBoard', GetEntityModel(ped))
+            end
+        end
+
+        sleep, podiumAcc = wbTick(GetEntityCoords(playerPed()), podiumAcc)
+        Citizen.Wait(sleep)
+    end
+end)
+
+if Config.ClientCommands.coords and Config.ClientCommands.coords.enabled then
+    RegisterCommand(Config.ClientCommands.coords.name, function()
+        local ped = playerPed()
+        local c   = GetEntityCoords(ped)
+        local h   = GetEntityHeading(ped)
+
+        print('')
+        print('[M5RP] ---- ' .. Config.ClientCommands.coords.name .. ' ----')
+        print(('  screen : pos = vector3(%.2f, %.2f, %.2f)')
+            :format(c.x, c.y, c.z + 1.35))
+        print(('  podium : { pos = vector3(%.2f, %.2f, %.2f), h = %.1f, anim = nil },')
+            :format(c.x, c.y, c.z, h))
+        print('[M5RP] the screen line floats at eye height; the podium line stands on the ground')
+        print('')
+    end, false)
+end

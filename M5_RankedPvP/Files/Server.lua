@@ -778,6 +778,20 @@ local function migrateRankPools()
         end
     end
 
+    local hasPed = tonumber(DB.scalar(
+        [[SELECT COUNT(*) FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_players'
+            AND COLUMN_NAME = 'ped_model']], { db }) or 0) or 0
+    if hasPed == 0 then
+        local there = tonumber(DB.scalar(
+            [[SELECT COUNT(*) FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_players']], { db }) or 0) or 0
+        if there > 0 then
+            log('^3adding m5_players.ped_model (for the podium on the world board)')
+            DB.query('ALTER TABLE `m5_players` ADD COLUMN `ped_model` BIGINT NOT NULL DEFAULT 0')
+        end
+    end
+
     for _, t in ipairs({ 'm5_player_ranks', 'm5_player_mmr' }) do
         local exists = tonumber(DB.scalar(
             [[SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -1404,6 +1418,7 @@ function Player.load(userId, source)
         commendations = tonumber(row.commendations) or 0,
         reports   = tonumber(row.reports) or 0,
         playtime  = tonumber(row.playtime) or 0,
+        pedModel  = tonumber(row.ped_model) or 0,
 
         pools     = pools,
         pool      = startPool,
@@ -7260,6 +7275,78 @@ function Board.liveMatches()
     return out
 end
 
+WorldBoard = { rows = {}, builtAt = 0, pool = nil }
+
+function WorldBoard.on()
+    local c = Config.WorldBoard
+    return c ~= nil and c.enabled ~= false
+end
+
+function WorldBoard.build()
+    if not WorldBoard.on() then return {} end
+
+    local c    = Config.WorldBoard
+    local pool = c.mode or defaultPool()
+    local top  = math.max(1, math.min(tonumber(c.top) or 10, 25))
+
+    local rows = DB.query([[SELECT r.user_id, r.rp, r.rank_id, p.name, p.level, p.ped_model,
+                                   s.wins, s.losses, s.kills, s.deaths
+                            FROM m5_player_ranks r
+                            LEFT JOIN m5_players p ON p.user_id = r.user_id
+                            LEFT JOIN m5_player_stats s ON s.user_id = r.user_id AND s.season_id = r.season_id
+                            WHERE r.season_id = ? AND r.mode = ? AND r.placement_done = 1
+                            ORDER BY r.rp DESC, s.wins DESC
+                            LIMIT ?]], { Season.id(), pool, top }) or {}
+
+    local out = {}
+    for i = 1, #rows do
+        local row  = rows[i]
+        local rank = Rank.get(tonumber(row.rank_id) or 0)
+        local k, d = tonumber(row.kills) or 0, tonumber(row.deaths) or 0
+        out[#out + 1] = {
+            position = i,
+            userId   = tonumber(row.user_id),
+            name     = row.name or 'Unknown',
+            rp       = tonumber(row.rp) or 0,
+            rank     = rank.name,
+            color    = rank.color,
+            tier     = rank.tier,
+            level    = tonumber(row.level) or 1,
+            wins     = tonumber(row.wins) or 0,
+            losses   = tonumber(row.losses) or 0,
+            kd       = d > 0 and round(k / d, 2) or k,
+            ped      = tonumber(row.ped_model) or nil
+        }
+    end
+
+    WorldBoard.rows    = out
+    WorldBoard.builtAt = ms()
+    WorldBoard.pool    = pool
+    return out
+end
+
+function WorldBoard.payload()
+    return { pool = WorldBoard.pool, rows = WorldBoard.rows,
+             season = Season.current and Season.current.name or nil }
+end
+
+function WorldBoard.push(src)
+    if not WorldBoard.on() then return end
+    if src then
+        TriggerClientEvent('m5rp:cl:worldBoard', src, WorldBoard.payload())
+    else
+        TriggerClientEvent('m5rp:cl:worldBoard', -1, WorldBoard.payload())
+    end
+end
+
+function WorldBoard.refresh(force)
+    if not WorldBoard.on() then return end
+    local every = (tonumber(Config.WorldBoard.refresh) or 300) * 1000
+    if not force and (ms() - WorldBoard.builtAt) < every then return end
+    WorldBoard.build()
+    WorldBoard.push()
+end
+
 local Admin = {}
 
 function Admin.level(userId)
@@ -8216,6 +8303,26 @@ RegisterNetEvent('m5rp:sv:boot', function()
     TriggerClientEvent('m5rp:cl:boot', src, Server_BootPayload(pd))
 end)
 
+RegisterNetEvent('m5rp:sv:worldBoard', function(pedModel)
+    local src = source
+    local userId = SrcToUser[src]
+    if not userId then return end
+
+    local hash = tonumber(pedModel)
+    if hash and hash ~= 0 then
+        local pd = Players[userId]
+        if pd and pd.pedModel ~= hash then
+            pd.pedModel = hash
+            DB.update('UPDATE m5_players SET ped_model = ? WHERE user_id = ?', { hash, userId })
+        end
+    end
+
+    if WorldBoard.on() then
+        if #WorldBoard.rows == 0 then WorldBoard.build() end
+        WorldBoard.push(src)
+    end
+end)
+
 RegisterNetEvent('m5rp:sv:queue', function(action, mode, autoFill)
     local pd, src = caller('queue')
     if not pd then return end
@@ -9074,7 +9181,7 @@ Citizen.CreateThread(function()
     end
 
     local acc = { mm = 0, flush = 0, hook = 0, season = 0, rooms = 0, afk = 0,
-                  retain = 0 }
+                  retain = 0, board = 0 }
 
     local IDLE = math.min(1000, Config.Matchmaking.tickInterval or 2000)
 
@@ -9162,6 +9269,18 @@ Citizen.CreateThread(function()
         if acc.hook >= Config.Webhooks.batchInterval then
             acc.hook = 0
             pcall(Logger.flush)
+        end
+
+        if WorldBoard.on() then
+            acc.board = acc.board + dt
+            local every = (tonumber(Config.WorldBoard.refresh) or 300) * 1000
+            if acc.board >= every then
+                acc.board = 0
+                if next(Players) ~= nil then
+                    local ok, e = pcall(WorldBoard.refresh, true)
+                    if not ok then err('world board refresh failed: %s', tostring(e)) end
+                end
+            end
         end
 
         acc.season = acc.season + dt

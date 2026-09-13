@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS `m5_players` (
   `commendations` INT UNSIGNED   NOT NULL DEFAULT 0,
   `reports`      INT UNSIGNED    NOT NULL DEFAULT 0,
   `playtime`     INT UNSIGNED    NOT NULL DEFAULT 0,
+  `ped_model`    BIGINT          NOT NULL DEFAULT 0,
   `created_at`   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `last_seen`    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`),
