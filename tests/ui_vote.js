@@ -182,11 +182,58 @@ const BOOT = {
   check('  and is labelled a room invite', /ROOM INVITE/i.test(text), true);
   check('  with something to press', await page.locator('.toast button').count() >= 2, true);
 
+  check('  and a clock saying how long you have',
+        await page.locator('.invite-clock').last().innerText(), '30S');
+
   await page.evaluate(() => window.__send({ action: 'party', data: {
     invite: { kind: 'party', from: 'FRIEND', timeout: 30 } } }));
   await page.waitForTimeout(120);
   text = await page.locator('.toast').last().innerText();
   check('a party invite is labelled a party invite', /PARTY INVITE/i.test(text), true);
+
+  /* The card used to sit for a fixed 12 seconds against a 30 second invite, so
+     the invite outlived the only way to accept it. It now lives as long as the
+     server says the invite does. */
+  const life = await page.locator('.toast').last()
+    .locator('.tbar').evaluate((n) => getComputedStyle(n).animationDuration);
+  check('  and the card lasts as long as the invite does', life, '30s');
+
+  // accepting, and declining, each send the right thing
+  await page.evaluate(() => { window.__posted = []; });
+  await page.locator('.toast').last().locator('.btn').first().click();
+  await page.waitForTimeout(100);
+  check('accept sends accept',
+        await page.evaluate(() => window.__posted.find((p) => p.name === 'party')),
+        { name: 'party', body: { action: 'accept' } });
+  check('  and the card goes with it',
+        await page.locator('.invite-row').count(), 1);   // the room one is still up
+
+  await page.evaluate(() => { window.__posted = []; });
+  await page.locator('.toast').last().locator('.btn').nth(1).click();
+  await page.waitForTimeout(100);
+  check('decline sends decline',
+        await page.evaluate(() => window.__posted.find((p) => p.name === 'party')),
+        { name: 'party', body: { action: 'decline' } });
+
+  // enter accepts the one on screen, so an invite that just opened the menu
+  // can be taken without reaching for the mouse
+  await page.evaluate(() => {
+    window.__posted = [];
+    window.__send({ action: 'party', data: {
+      invite: { kind: 'party', from: 'FRIEND', timeout: 30 } } });
+  });
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(100);
+  check('enter accepts the invite on screen',
+        await page.evaluate(() => window.__posted.find((p) => p.name === 'party')),
+        { name: 'party', body: { action: 'accept' } });
+  check('  and answering it twice is not possible',
+        await page.evaluate(() => {
+          window.__posted = [];
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          return window.__posted.length;
+        }), 0);
 
   // ======================================================================
   // 5. the lobby: leaving, and a kick you can see

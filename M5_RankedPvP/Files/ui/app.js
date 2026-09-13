@@ -51,7 +51,7 @@ const S = {
   mode: '1v1',
   queue: { searching: false, elapsed: 0 },
   lastQueue: null,
-  found: null, foundTimer: null,
+  found: null, foundTimer: null, invite: null,
   mapvote: null, mapvoteTimer: null,
 
   party: null,
@@ -1109,20 +1109,52 @@ function renderParty(d) {
   if (d.invite) {
     /* Two kinds arrive down the same pipe: a party invite puts you in their
        lobby, a room invite puts you in their custom game. Saying which one it
-       is matters, because accepting the wrong one is a different screen. */
-    const room = d.invite.kind === 'room';
-    const where = room ? (d.invite.roomName || tn('their room')) : tn('their party');
+       is matters, because accepting the wrong one is a different screen.
+
+       The card lives as long as the server says the invite does. It used to
+       sit for a fixed twelve seconds against a thirty second invite, so for
+       the last eighteen the invite was still live with nothing on screen to
+       accept it with. */
+    const inv = d.invite;
+    const room = inv.kind === 'room';
+    const where = room ? (inv.roomName || tn('their room')) : tn('their party');
+    const secs = Math.max(5, Number(inv.timeout) || 30);
+
     const card = toast('info',
-      `${d.invite.from} ${tn('invited you to')} ${where}`,
-      room ? tn('ROOM INVITE') : tn('PARTY INVITE'), 12000);
-    const row = el('div');
-    row.style.cssText = 'display:flex;gap:6px;margin-top:8px';
-    const a = el('button', 'btn', 'ACCEPT'); a.style.cssText = 'padding:6px 14px;font-size:10px';
-    const r = el('button', 'btn ghost', 'DECLINE'); r.style.cssText = 'padding:6px 14px;font-size:10px';
-    a.onclick = () => { post('party', { action: 'accept' }); card.remove(); };
-    r.onclick = () => { post('party', { action: 'decline' }); card.remove(); };
-    row.appendChild(a); row.appendChild(r);
+      `${inv.from} ${tn('invited you to')} ${where}`,
+      room ? tn('ROOM INVITE') : tn('PARTY INVITE'), secs * 1000);
+
+    const row = el('div', 'invite-row');
+    const a = el('button', 'btn sm', tx('ACCEPT'));
+    const r = el('button', 'btn ghost sm', tx('DECLINE'));
+    const clock = el('span', 'invite-clock', `${secs}${tx('S')}`);
+
+    let left = secs;
+    const tick = setInterval(() => {
+      left -= 1;
+      if (left <= 0 || !card.parentNode) { clearInterval(tick); return; }
+      clock.textContent = `${left}${tx('S')}`;
+      clock.classList.toggle('urgent', left <= 5);
+    }, 1000);
+
+    const answer = (action) => {
+      clearInterval(tick);
+      S.invite = null;
+      post('party', { action: action });
+      card.remove();
+    };
+    a.onclick = () => answer('accept');
+    r.onclick = () => answer('decline');
+
+    row.appendChild(a); row.appendChild(r); row.appendChild(clock);
     card.appendChild(row);
+
+    /* Enter accepts, so an invite that has just opened the menu can be taken
+       without reaching for the mouse. It stops being the live one once the
+       card is gone, whether it was answered or simply ran out. */
+    const mine = { accept: () => answer('accept') };
+    S.invite = mine;
+    setTimeout(() => { if (S.invite === mine) S.invite = null; }, secs * 1000);
     return;
   }
 
@@ -3502,7 +3534,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     if (!$('modal-prompt').classList.contains('hidden')) return;   // handled by the dialog
     if (!$('modal-invite').classList.contains('hidden')) { sendInvite(); return; }
-    if (S.found) $('btn-accept').click();
+    /* A found match outranks an invite: it expires in seconds and costs
+       you the queue. */
+    if (S.found) { $('btn-accept').click(); return; }
+    if (S.invite) S.invite.accept();
   }
 }, true);
 
