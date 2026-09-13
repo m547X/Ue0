@@ -113,7 +113,8 @@ Config.SkipCapturedVehicles = false
 -- ui يفتح الواجهة، start يبدأ التصوير، reset يعيد عداد التصوير،
 -- getcoords يطبع الإحداثيات، getperms يحدّث صلاحية اللاعب،
 -- export يرسل جدول الجراج إلى الويب هوك (يعمل من كونسول السيرفر أيضاً)،
--- reload يعيد قراءة ملف الجراج / قاعدة البيانات.
+-- reload يعيد قراءة ملف الجراج / قاعدة البيانات،
+-- check يطبع تشخيصاً كاملاً لقراءة ملف الجراج في كونسول السيرفر.
 Config.Commands = {
     ui           = 'vshot',
     start        = 'startscreenshot',
@@ -122,6 +123,7 @@ Config.Commands = {
     getperms     = 'getperms',
     export       = 'exportgarage',
     reload       = 'reloadvehicles',
+    check        = 'garagecheck',
 }
 
 -- ─── Camera Editor Settings ──────────────────────────────────

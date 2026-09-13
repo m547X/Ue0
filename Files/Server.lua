@@ -486,12 +486,16 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
             -- وقائمة cfg.garages (الإحداثيات) كذلك لأنها بدون ["key"] =.
             local VEH_PAT  = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*"(.-)"%s*,%s*(%-?[%d%.]+)%s*,%s*"(.-)"%s*}'
             local VEH_PAT2 = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*"(.-)"%s*,%s*(%-?[%d%.]+)%s*}'
-            local HEAD_PAT = '^%s*%[%s*"([^"]+)"%s*%]%s*=%s*{%s*$'
+            -- يقبل السطر المنتهي بـ ["اسم الجراج"] = { سواء كان في بداية السطر
+            -- أو بعد اسم جدول مثل  Garages["vip"] = {
+            local HEAD_PAT = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*$'
 
             local garageRaw      = nil   -- محتوى ملف الجراج كما هو
             local garageEntries  = {}    -- كل السيارات بالترتيب
             local garageModels   = {}    -- model -> أول ظهور للسيارة
             local garageNames    = {}    -- أسماء الجراجات الموجودة
+            local garageSource   = nil   -- المسار الذي نجحت القراءة منه
+            local garageTried    = {}    -- المسارات التي تم تجريبها
 
             local function imageFromDesc(desc)
                 if not desc or desc == '' then return '' end
@@ -513,23 +517,86 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 if listHas(GF.skipGarages, name) then return false end
                 return true
             end
-            local function ReadGarageFile()
-                local path = GF.path
-                if not path or path == '' then
-                    warn('ServerConfig.GarageFile.path is empty.')
-                    return nil
+            -- القراءة عبر LoadResourceFile، ومع الفشل نحاول فتح الملف مباشرة
+            -- من مجلد الريسورس على القرص (يفيد إذا كان الريسورس متوقفاً).
+            local function fileFrom(resource, path)
+                local raw = LoadResourceFile(resource, path)
+                if raw and raw ~= '' then
+                    return raw, ('%s/%s'):format(resource, path)
                 end
+                local base = GetResourcePath and GetResourcePath(resource) or nil
+                if base and base ~= '' and base ~= 'null' then
+                    local full = (base .. '/' .. path):gsub('\\', '/')
+                    local f = io.open(full, 'rb')
+                    if f then
+                        local content = f:read('*a')
+                        f:close()
+                        if content and content ~= '' then return content, full end
+                    end
+                end
+                return nil
+            end
+            -- المسار المكتوب في الكونفق أولاً، ثم أسماء ومجلدات شائعة
+            -- لأن أسماء الملفات في ويندوز غير حساسة لحالة الأحرف وفي لينكس حساسة.
+            local function candidatePaths()
+                local list, seen = {}, {}
+                local function add(p)
+                    if not p or p == '' then return end
+                    p = p:gsub('\\', '/'):gsub('^/+', '')
+                    if p == '' or seen[p] then return end
+                    seen[p] = true
+                    list[#list + 1] = p
+                end
+                local path = tostring(GF.path or '')
+                add(path)
+                add(path:lower())
+                local base = path:match('([^/\\]+)$') or path
+                add(base)
+                add(base:lower())
+                for _, dir in ipairs({ '', 'cfg/', 'config/', 'Config/', 'configs/', 'Configs/',
+                                       'server/', 'Server/', 'shared/', 'Shared/',
+                                       'Files/', 'files/', 'data/', 'Data/' }) do
+                    for _, name in ipairs({ base, base:lower(), 'Garages.lua', 'garages.lua',
+                                            'Garage.lua', 'garage.lua',
+                                            'Vehicles.lua', 'vehicles.lua' }) do
+                        add(dir .. name)
+                    end
+                end
+                return list
+            end
+            local function ReadGarageFile()
+                garageTried, garageSource = {}, nil
                 local resource = GF.resource
                 if not resource or resource == '' then
                     resource = GetCurrentResourceName()
                 end
-                local raw = LoadResourceFile(resource, path)
-                if not raw or raw == '' then
-                    warn(('Could not read "%s" from resource "%s". Check ServerConfig.GarageFile.')
-                        :format(path, resource))
+                -- لو كتب المستخدم اسم المجلد بين أقواس مثل [Danger_Main] نزيلها.
+                resource = tostring(resource):gsub('^%[(.+)%]$', '%1')
+                if not GF.path or GF.path == '' then
+                    warn('ServerConfig.GarageFile.path is empty.')
                     return nil
                 end
-                return raw
+                for _, path in ipairs(candidatePaths()) do
+                    garageTried[#garageTried + 1] = path
+                    local raw, from = fileFrom(resource, path)
+                    if raw then
+                        garageSource = from
+                        if path ~= tostring(GF.path) then
+                            warn(('Garage file found at "%s" instead of "%s" - update ServerConfig.GarageFile.path.')
+                                :format(path, tostring(GF.path)))
+                        end
+                        return raw
+                    end
+                end
+                local state = GetResourceState and GetResourceState(resource) or 'unknown'
+                local folder = GetResourcePath and GetResourcePath(resource) or '?'
+                warn(('Could not read the garage file from resource "%s" (state: %s).')
+                    :format(resource, tostring(state)))
+                warn(('Resource folder on disk: %s'):format(tostring(folder)))
+                warn(('Tried %d paths: %s'):format(#garageTried, table.concat(garageTried, ', ')))
+                warn('Fix ServerConfig.GarageFile.resource / .path then run /' ..
+                    tostring((Config.Commands and Config.Commands.check) or 'garagecheck'))
+                return nil
             end
             local function ParseGarageFile()
                 garageEntries, garageModels, garageNames = {}, {}, {}
@@ -537,7 +604,9 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 if not garageRaw then return false end
                 local current = nil
                 for line in garageRaw:gmatch('[^\r\n]+') do
-                    local head = line:match(HEAD_PAT)
+                    -- نحذف التعليق في نهاية السطر قبل فحص ترويسة الجراج فقط.
+                    local headLine = line:gsub('%-%-[^\r\n]*$', ''):gsub('%s+$', '')
+                    local head = headLine:match(HEAD_PAT)
                     if head then
                         current = head
                         garageNames[#garageNames + 1] = head
@@ -547,7 +616,10 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                             model, name, price = line:match(VEH_PAT2)
                             desc = nil
                         end
-                        if model and current then
+                        -- لو لم نتعرف على ترويسة الجراج نضع اسماً افتراضياً
+                        -- بدل تجاهل السيارات، حتى يعمل مع ملفات بترتيب مختلف.
+                        current = current or GF.defaultGarage or GARAGE.garageName or 'garage'
+                        if model then
                             local entry = {
                                 model  = model,
                                 name   = (name and name ~= '') and name or model,
@@ -560,12 +632,17 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                         end
                     end
                 end
+                local uniq = 0
+                for _ in pairs(garageModels) do uniq = uniq + 1 end
                 log(('Garage file parsed: %d garages | %d vehicle lines | %d unique models.')
-                    :format(#garageNames, #garageEntries, (function()
-                        local c = 0
-                        for _ in pairs(garageModels) do c = c + 1 end
-                        return c
-                    end)()))
+                    :format(#garageNames, #garageEntries, uniq))
+                if #garageEntries == 0 then
+                    warn(('The garage file was read (%s) but no vehicle line matched.')
+                        :format(tostring(garageSource)))
+                    warn('Expected lines like: ["model"] = { "name", 0, "<img src=\'\' .../>" },')
+                    warn('Run /' .. tostring((Config.Commands and Config.Commands.check) or 'garagecheck')
+                        .. ' to print the first lines of the file.')
+                end
                 return true
             end
             -- السيارات المطلوب تصويرها: بدون تكرار، والتي لا صورة لها فقط.
@@ -590,6 +667,45 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                     end
                 end
                 return list
+            end
+            -- تشخيص كامل يُطبع دائماً (لا يعتمد على Config.Debug).
+            local function GarageDiagnostics(say)
+                say(('^5[M5_iCreator]^0 VehicleSource = %s'):format(tostring(SOURCE)))
+                say(('^5[M5_iCreator]^0 resource = "%s" | path = "%s"')
+                    :format(tostring(GF.resource), tostring(GF.path)))
+                local resource = GF.resource
+                if not resource or resource == '' then resource = GetCurrentResourceName() end
+                resource = tostring(resource):gsub('^%[(.+)%]$', '%1')
+                say(('^5[M5_iCreator]^0 resource state = %s | folder = %s'):format(
+                    tostring(GetResourceState and GetResourceState(resource) or '?'),
+                    tostring(GetResourcePath and GetResourcePath(resource) or '?')))
+                if not ParseGarageFile() then
+                    say('^1[M5_iCreator]^0 The file could not be read - see the paths listed above.')
+                    return
+                end
+                say(('^2[M5_iCreator]^0 Read from: %s (%d bytes)')
+                    :format(tostring(garageSource), #(garageRaw or '')))
+                local uniq = 0
+                for _ in pairs(garageModels) do uniq = uniq + 1 end
+                say(('^2[M5_iCreator]^0 %d garages | %d vehicle lines | %d unique models')
+                    :format(#garageNames, #garageEntries, uniq))
+                for i = 1, math.min(8, #garageNames) do
+                    say('   garage: ' .. tostring(garageNames[i]))
+                end
+                local pending = GarageVehicleList()
+                say(('^2[M5_iCreator]^0 %d vehicles without an image (to be captured)'):format(#pending))
+                for i = 1, math.min(8, #pending) do
+                    say(('   %d) %s | %s | %s'):format(i, pending[i].model, pending[i].name, pending[i].garage))
+                end
+                if #garageEntries == 0 then
+                    say('^1[M5_iCreator]^0 No vehicle line matched. First 15 lines of the file:')
+                    local n = 0
+                    for line in (garageRaw or ''):gmatch('[^\r\n]+') do
+                        n = n + 1
+                        if n > 15 then break end
+                        say('   | ' .. line:sub(1, 160))
+                    end
+                end
             end
 
             -- ─── تحميل قائمة السيارات حسب المصدر ──────────────────────
@@ -627,6 +743,11 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 end
                 GlobalState.VehiclesFromDB = list
                 GlobalState.VehicleSource  = SOURCE
+                if SOURCE == 'garage' then
+                    -- تُطبع دائماً حتى يعرف المالك أن السحب تم بنجاح.
+                    print(('^2[M5_iCreator]^0 Garage source: %d vehicles without an image (from %s)')
+                        :format(#list, tostring(garageSource or GF.path)))
+                end
                 return list
             end
 
@@ -1061,6 +1182,28 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                         print(msg)
                     else
                         TriggerClientEvent('chat:addMessage', source, { args = { msg } })
+                    end
+                end)
+            end
+            if Config.Commands and Config.Commands.check then
+                RegisterCommand(Config.Commands.check, function(source)
+                    if source ~= 0 and not hasPermission(source) then
+                        TriggerClientEvent('chat:addMessage', source, {
+                            args = { '^1[M5_iCreator]^0 Access denied.' }
+                        })
+                        return
+                    end
+                    -- النتيجة تُطبع في كونسول السيرفر دائماً، ومختصرها للاعب.
+                    local lines = {}
+                    GarageDiagnostics(function(msg)
+                        print(msg)
+                        lines[#lines + 1] = msg
+                    end)
+                    if source ~= 0 then
+                        TriggerClientEvent('chat:addMessage', source, {
+                            args = { '^2[M5_iCreator]^0 Garage check printed in the server console (' ..
+                                #lines .. ' lines).' }
+                        })
                     end
                 end)
             end
