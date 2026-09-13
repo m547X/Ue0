@@ -484,8 +484,9 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
             -- سطر الجراج :  ["Sonic-garage"] = {
             -- سطر _config لا يطابق أياً منهما لأن مفتاحه بدون أقواس مربعة،
             -- وقائمة cfg.garages (الإحداثيات) كذلك لأنها بدون ["key"] =.
-            local VEH_PAT  = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*"(.-)"%s*,%s*(%-?[%d%.]+)%s*,%s*"(.-)"%s*}'
-            local VEH_PAT2 = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*"(.-)"%s*,%s*(%-?[%d%.]+)%s*}'
+            -- ,?  في النهاية لأن بعض السكربتات تكتب:  "...", },  بفاصلة بعد الوصف.
+            local VEH_PAT  = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*"(.-)"%s*,%s*(%-?[%d%.]+)%s*,%s*"(.-)"%s*,?%s*}'
+            local VEH_PAT2 = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*"(.-)"%s*,%s*(%-?[%d%.]+)%s*,?%s*}'
             -- يقبل السطر المنتهي بـ ["اسم الجراج"] = { سواء كان في بداية السطر
             -- أو بعد اسم جدول مثل  Garages["vip"] = {
             local HEAD_PAT = '%[%s*"([^"]+)"%s*%]%s*=%s*{%s*$'
@@ -497,6 +498,11 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
             local garageSource   = nil   -- المسار الذي نجحت القراءة منه
             local garageTried    = {}    -- المسارات التي تم تجريبها
 
+            -- تحويل نص عادي إلى نمط Lua حرفي (للبحث عن الوصف داخل السطر).
+            local function litPat(s)
+                local out = tostring(s or ''):gsub('[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%1')
+                return out
+            end
             local function imageFromDesc(desc)
                 if not desc or desc == '' then return '' end
                 local src = desc:match("src%s*=%s*'([^']*)'")
@@ -842,6 +848,17 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                     if imageFromDesc(desc) ~= '' and not GF.overwriteExisting then return nil end
                     local safe = url:gsub('%%', '%%%%')
                     local newLine, n = line:gsub("src%s*=%s*'[^']*'", "src='" .. safe .. "'", 1)
+                    if n == 0 then
+                        -- لا يوجد وسم img في السطر إطلاقاً (وصف فارغ أو نص فقط)،
+                        -- فنضيف الوسم في بداية الوصف مع الحفاظ على باقي النص.
+                        local tag = ("<img src='%s' width='%d' height='%d'/>"):format(
+                            url,
+                            tonumber(GARAGE.imgWidth) or 300,
+                            tonumber(GARAGE.imgHeight) or 300)
+                        local newDesc = (tag .. (desc or '')):gsub('%%', '%%%%')
+                        newLine, n = line:gsub('"' .. litPat(desc or '') .. '"',
+                            '"' .. newDesc .. '"', 1)
+                    end
                     if n == 0 then return nil end
                     changed = changed + 1
                     byGarage[current] = byGarage[current] or {}
