@@ -20,6 +20,7 @@
     <nav class="nav">
       <button class="nav-btn active" data-tab="spots"><span>📍</span>المواقع</button>
       <button class="nav-btn" data-tab="screenshot"><span>📷</span>التصوير</button>
+      <button class="nav-btn" data-tab="garages"><span>🏠</span>الجراجات</button>
       <button class="nav-btn" data-tab="settings"><span>⚙️</span>الإعدادات</button>
     </nav>
     <div class="sidebar-foot">
@@ -54,6 +55,18 @@
         <p class="hint">عند اختيار المصدر <b>garage</b> يقرأ السكربت ملف الجراج ويصوّر السيارات التي بدون صورة فقط.</p>
       </div>
       <div class="card mb12">
+        <div class="toggle-fg" style="margin-bottom:0">
+          <label>تحكم يدوي — Enter لكل سيارة</label>
+          <label class="toggle">
+            <input id="s-manual" type="checkbox"/>
+            <span class="tknob"></span>
+          </label>
+        </div>
+        <p class="hint">يقف عند كل سيارة وينتظرك:
+          <b>Enter</b> صوّر · <b>Space</b> تخطَّ · <b>الأسهم</b> تدوير · <b>Backspace</b> إنهاء.
+          مفيد إذا كانت بعض السيارات غير موجودة أو الصورة تطلع خطأ.</p>
+      </div>
+      <div class="card mb12">
         <div class="clabel">سيارة تجريبية</div>
         <div class="irow">
           <input id="test-model" type="text" placeholder="adder" value="adder"/>
@@ -69,6 +82,25 @@
       <button class="btn primary full lg mb10" id="btn-start-shot">📷 ابدأ جلسة التصوير</button>
       <button class="btn teal full mb6" id="btn-load-vehicles">🔄 تلويد السيارات للفحص (بدون تصوير)</button>
       <p class="hint">يُعبّئ السيارات في مكان التصوير واحدةً تلو الأخرى للتحقق من التلويد الصحيح. اضغط Backspace للإيقاف.</p>
+    </section>
+    <section class="tab" id="tab-garages">
+      <div class="tbar">
+        <h2>اختيار الجراجات</h2>
+        <span class="g-count" id="g-count">—</span>
+      </div>
+      <div class="irow mb12">
+        <input id="g-search" type="text" placeholder="بحث باسم الجراج..."/>
+        <button class="btn secondary sm" id="g-all">تحديد الكل</button>
+        <button class="btn secondary sm" id="g-none">إلغاء الكل</button>
+      </div>
+      <div id="g-list" class="g-list"></div>
+      <div class="divider"></div>
+      <div class="brow">
+        <button class="btn primary flex1" id="g-apply">💾 تطبيق الاختيار</button>
+        <button class="btn secondary sm" id="g-reload">🔄 إعادة قراءة الملف</button>
+      </div>
+      <p class="hint">اختر الجراجات التي تريد تصويرها. بدون أي اختيار = كل الجراجات.
+        الرقم الأصفر = السيارات بدون صورة، والرمادي = إجمالي سيارات الجراج.</p>
     </section>
     <section class="tab" id="tab-settings">
       <div class="tbar"><h2>إعدادات المكان</h2></div>

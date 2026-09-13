@@ -447,7 +447,9 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 local api     = ('https://api.github.com/repos/%s/%s/contents/%s'):format(GH.owner, GH.repo, path)
                 local message = tostring(GH.commitMessage or 'M5_iCreator: %MODEL% thumbnail')
                 message = message:gsub('%%MODEL%%', meta.model)
-                local function put(sha)
+                local fetchSha
+                local function put(sha, attempt)
+                    attempt = attempt or 1
                     local body = { message = message, content = content, branch = branch }
                     if sha then body.sha = sha end
                     PerformHttpRequest(api, function(code, res)
@@ -458,23 +460,44 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                                 downloadUrl = decoded.content.download_url
                             end
                             cb(ghPublicUrl(path, downloadUrl))
-                        else
-                            cb(nil, ('HTTP %s: %s'):format(tostring(code), tostring(res)))
+                            return
                         end
+                        -- 409 = تعارض: إما أن الملف تغيّر بين القراءة والكتابة،
+                        -- أو أن المستودع فارغ تماماً بدون أي كومت.
+                        if code == 409 and attempt < 4 then
+                            Citizen.CreateThread(function()
+                                Wait(600 * attempt)
+                                fetchSha(attempt + 1)
+                            end)
+                            return
+                        end
+                        local extra = ''
+                        if code == 409 then
+                            extra = ' (409: make sure the repository has at least one commit,' ..
+                                ' e.g. add a README, and that the branch name is correct)'
+                        elseif code == 404 then
+                            extra = ' (404: wrong owner/repo/branch, or the token has no access)'
+                        elseif code == 401 or code == 403 then
+                            extra = ' (token invalid or missing the Contents: Read and write permission)'
+                        end
+                        cb(nil, ('HTTP %s: %s%s'):format(tostring(code), tostring(res), extra))
                     end, 'PUT', json.encode(body), ghHeaders())
                 end
+                fetchSha = function(attempt)
+                    PerformHttpRequest(api .. '?ref=' .. branch, function(code, res)
+                        local sha
+                        if code == 200 then
+                            local ok, decoded = pcall(json.decode, res or '{}')
+                            if ok and type(decoded) == 'table' then sha = decoded.sha end
+                        end
+                        put(sha, attempt)
+                    end, 'GET', '', ghHeaders())
+                end
                 if GH.overwrite == false then
-                    return put(nil)
+                    return put(nil, 1)
                 end
                 -- الملف الموجود مسبقاً يحتاج sha حتى يُستبدل.
-                PerformHttpRequest(api .. '?ref=' .. branch, function(code, res)
-                    local sha
-                    if code == 200 then
-                        local ok, decoded = pcall(json.decode, res or '{}')
-                        if ok and type(decoded) == 'table' then sha = decoded.sha end
-                    end
-                    put(sha)
-                end, 'GET', '', ghHeaders())
+                fetchSha(1)
             end
 
             -- ══════════════════════════════════════════════════════════════
@@ -497,6 +520,7 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
             local garageNames    = {}    -- أسماء الجراجات الموجودة
             local garageSource   = nil   -- المسار الذي نجحت القراءة منه
             local garageTried    = {}    -- المسارات التي تم تجريبها
+            local garageFilter   = nil   -- الجراجات المختارة من الواجهة (nil = حسب الكونفق)
 
             -- تحويل نص عادي إلى نمط Lua حرفي (للبحث عن الوصف داخل السطر).
             local function litPat(s)
@@ -518,6 +542,10 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
             end
             local function garageAllowed(name)
                 if not name then return false end
+                -- الاختيار من داخل اللعبة له الأولوية على الكونفق.
+                if garageFilter and #garageFilter > 0 then
+                    return listHas(garageFilter, name)
+                end
                 local only = GF.garages or {}
                 if #only > 0 and not listHas(only, name) then return false end
                 if listHas(GF.skipGarages, name) then return false end
@@ -674,6 +702,29 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 end
                 return list
             end
+            -- قائمة الجراجات مع عدد السيارات وكم منها بدون صورة (لواجهة الاختيار).
+            local function GarageStats()
+                local order, map = {}, {}
+                local function get(name)
+                    local g = map[name]
+                    if not g then
+                        g = { name = name, total = 0, pending = 0 }
+                        map[name] = g
+                        order[#order + 1] = g
+                    end
+                    return g
+                end
+                for _, name in ipairs(garageNames) do get(name) end
+                for _, v in ipairs(garageEntries) do
+                    local g = get(v.garage)
+                    g.total = g.total + 1
+                    local saved = thumbs[v.model] and thumbs[v.model].url and thumbs[v.model].url ~= ''
+                    if v.img == '' and not saved then
+                        g.pending = g.pending + 1
+                    end
+                end
+                return order
+            end
             -- تشخيص كامل يُطبع دائماً (لا يعتمد على Config.Debug).
             local function GarageDiagnostics(say)
                 say(('^5[M5_iCreator]^0 VehicleSource = %s'):format(tostring(SOURCE)))
@@ -749,6 +800,13 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 end
                 GlobalState.VehiclesFromDB = list
                 GlobalState.VehicleSource  = SOURCE
+                if SOURCE == 'garage' then
+                    GlobalState.GarageList   = GarageStats()
+                    GlobalState.GarageFilter = garageFilter or {}
+                else
+                    GlobalState.GarageList   = {}
+                    GlobalState.GarageFilter = {}
+                end
                 if SOURCE == 'garage' then
                     -- تُطبع دائماً حتى يعرف المالك أن السحب تم بنجاح.
                     print(('^2[M5_iCreator]^0 Garage source: %d vehicles without an image (from %s)')
@@ -1156,6 +1214,25 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 -- auto = true يعني أن الطلب تلقائي بعد انتهاء جلسة التصوير.
                 if auto == true and not GARAGE.sendOnFinish then return end
                 ExportGarage()
+            end)
+            -- اختيار الجراجات من داخل اللعبة (قائمة فارغة = كل الجراجات).
+            RegisterNetEvent('M5_iCreator:setGarageFilter')
+            AddEventHandler('M5_iCreator:setGarageFilter', function(list)
+                local src = source
+                if src ~= 0 and not hasPermission(src) then return end
+                local clean = {}
+                if type(list) == 'table' then
+                    for _, name in ipairs(list) do
+                        if type(name) == 'string' and name ~= '' and #clean < 300 then
+                            clean[#clean + 1] = name
+                        end
+                    end
+                end
+                garageFilter = (#clean > 0) and clean or nil
+                local vehicles = LoadVehicles()
+                TriggerClientEvent('M5_iCreator:vehiclesUpdated', -1)
+                log(('Garage filter set to %d garage(s) | %d vehicles to capture.')
+                    :format(#clean, #vehicles))
             end)
             RegisterNetEvent('M5_iCreator:reloadVehicles')
             AddEventHandler('M5_iCreator:reloadVehicles', function()

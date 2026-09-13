@@ -20,6 +20,8 @@ const S = {
     rotating     : false,
     settingsSpot : null,
     stats        : { source: '—', total: 0, pending: 0 },
+    garages      : [],
+    selected     : new Set(),
 };
 
 const $ = id => document.getElementById(id);
@@ -171,6 +173,46 @@ function updateStats(p) {
     $('src-total').textContent   = p.total ?? 0;
     $('src-pending').textContent = p.pending ?? 0;
     $('src-pending').classList.toggle('done', (p.pending ?? 0) === 0);
+    if (typeof p.manual === 'boolean') $('s-manual').checked = p.manual;
+}
+
+function renderGarages() {
+    const box = $('g-list');
+
+    if (!S.garages.length) {
+        box.innerHTML = '<p class="empty-state"><span class="ei">🏠</span><br/>' +
+            'لا توجد جراجات — تأكد أن المصدر garage وأن الملف يُقرأ (/garagecheck)</p>';
+        $('g-count').textContent = '—';
+        return;
+    }
+
+    const q = ($('g-search').value || '').trim().toLowerCase();
+    const shown = S.garages.filter(g => !q || String(g.name).toLowerCase().includes(q));
+
+    box.innerHTML = shown.map(g => `
+      <div class="g-item${S.selected.has(g.name) ? ' on' : ''}" data-name="${esc(g.name)}">
+        <span class="g-check">${S.selected.has(g.name) ? '✓' : ''}</span>
+        <span class="g-name">${esc(g.name)}</span>
+        <span class="g-pending" title="بدون صورة">${g.pending ?? 0}</span>
+        <span class="g-total" title="إجمالي السيارات">${g.total ?? 0}</span>
+      </div>`).join('');
+
+    box.querySelectorAll('.g-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const name = el.dataset.name;
+            if (S.selected.has(name)) S.selected.delete(name);
+            else S.selected.add(name);
+            renderGarages();
+        });
+    });
+
+    let pending = 0;
+    S.garages.forEach(g => {
+        if (!S.selected.size || S.selected.has(g.name)) pending += (g.pending ?? 0);
+    });
+    $('g-count').textContent = S.selected.size
+        ? `${S.selected.size} محدد · ${pending} بدون صورة`
+        : `الكل (${S.garages.length}) · ${pending} بدون صورة`;
 }
 
 function updateVCDisplay(vc) {
@@ -241,6 +283,36 @@ function bindEvents() {
         if (!S.activeId) { status('اختر مكاناً نشطاً أولاً', 'err'); return; }
         nui('startScreenshot');
         status('جلسة التصوير بدأت...', 'ok');
+    });
+
+    $('s-manual').addEventListener('change', e => {
+        nui('setManual', { enabled: e.target.checked });
+        status(e.target.checked ? 'التحكم اليدوي: مفعّل' : 'التحكم اليدوي: معطّل', 'ok');
+    });
+
+    $('g-search').addEventListener('input', renderGarages);
+
+    $('g-all').addEventListener('click', () => {
+        S.garages.forEach(g => S.selected.add(g.name));
+        renderGarages();
+    });
+
+    $('g-none').addEventListener('click', () => {
+        S.selected.clear();
+        renderGarages();
+    });
+
+    $('g-apply').addEventListener('click', () => {
+        nui('setGarages', { garages: [...S.selected] });
+        status(S.selected.size
+            ? `تم اختيار ${S.selected.size} جراج`
+            : 'تم اختيار كل الجراجات', 'ok');
+        switchTab('screenshot');
+    });
+
+    $('g-reload').addEventListener('click', () => {
+        nui('reloadVehicles');
+        status('جاري إعادة قراءة ملف الجراج...', 'info');
     });
 
     $('btn-reload-src').addEventListener('click', () => {
@@ -366,6 +438,12 @@ window.addEventListener('message', e => {
 
         case 'vehicleStats':
             updateStats(p);
+            break;
+
+        case 'garageList':
+            S.garages  = p.garages || [];
+            S.selected = new Set(p.selected || []);
+            renderGarages();
             break;
     }
 });

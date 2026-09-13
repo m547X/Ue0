@@ -220,6 +220,41 @@ body.hidden { display:none !important; }
 .src-stat.pending .ss-v      { color:var(--warn); }
 .src-stat.pending .ss-v.done { color:var(--ok);   }
 
+.g-count {
+  font-size:11.5px; color:var(--accent); font-weight:700;
+  background:var(--adim); border:1px solid var(--bd-hi);
+  border-radius:var(--r-sm); padding:4px 10px;
+}
+.g-list {
+  display:flex; flex-direction:column; gap:5px;
+  max-height:300px; overflow-y:auto;
+  padding-left:4px;
+}
+.g-item {
+  display:flex; align-items:center; gap:9px;
+  background:var(--bg2); border:1px solid var(--bd);
+  border-radius:var(--r-sm); padding:8px 11px;
+  cursor:pointer; transition:all var(--ease);
+}
+.g-item:hover { background:var(--bg-hover); border-color:rgba(0,212,255,.25); }
+.g-item.on {
+  background:rgba(0,212,255,.06); border-color:var(--accent);
+}
+.g-check {
+  width:17px; height:17px; flex-shrink:0;
+  border:1px solid var(--bd); border-radius:4px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:800; color:#000;
+}
+.g-item.on .g-check { background:var(--accent); border-color:var(--accent); }
+.g-name { flex:1; font-size:12.5px; font-weight:600; }
+.g-pending, .g-total {
+  font-size:10.5px; font-weight:800;
+  padding:2px 7px; border-radius:4px; flex-shrink:0;
+}
+.g-pending { background:rgba(255,179,0,.13); color:var(--warn); }
+.g-total   { background:var(--bg3);          color:var(--t2);   }
+
 .empty-state {
   display:flex; flex-direction:column; align-items:center;
   justify-content:center; gap:10px; padding:50px 20px;

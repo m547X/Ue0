@@ -466,6 +466,7 @@ function UIManager.Open()
     SetNuiFocus(true, true)
     UIManager.SyncSpots()
     UIManager.SyncStats()
+    UIManager.SyncGarages()
     SendNUIMessage({ action = 'open' })
 end
 function UIManager.Close()
@@ -517,6 +518,15 @@ function UIManager.SyncStats()
         source  = GlobalState.VehicleSource or 'config',
         total   = #vehicles,
         pending = pending,
+        manual  = IsManualMode(),
+    })
+end
+-- قائمة الجراجات المتاحة والمختارة حالياً.
+function UIManager.SyncGarages()
+    SendNUIMessage({
+        action   = 'garageList',
+        garages  = GlobalState.GarageList   or {},
+        selected = GlobalState.GarageFilter or {},
     })
 end
 function UIManager.Status(msg, isErr)
@@ -572,6 +582,27 @@ RegisterNUICallback('exportGarage', function(_, cb)
     TriggerServerEvent('M5_iCreator:exportGarage', false)
     UIManager.Status('Garage export requested')
     cb('ok')
+end)
+-- اختيار الجراجات المطلوب تصويرها ({} = الكل).
+RegisterNUICallback('setGarages', function(data, cb)
+    local list = {}
+    if type(data) == 'table' and type(data.garages) == 'table' then
+        for _, name in ipairs(data.garages) do
+            if type(name) == 'string' and name ~= '' then list[#list + 1] = name end
+        end
+    end
+    TriggerServerEvent('M5_iCreator:setGarageFilter', list)
+    UIManager.Status(#list > 0
+        and ('Selected garages: ' .. #list)
+        or  'All garages selected')
+    cb('ok')
+end)
+-- تفعيل / تعطيل التحكم اليدوي بالتصوير.
+RegisterNUICallback('setManual', function(data, cb)
+    local on = SetManualMode(data and data.enabled == true)
+    UIManager.SyncStats()
+    UIManager.Status(on and 'Manual capture: On' or 'Manual capture: Off')
+    cb({ enabled = on })
 end)
 -- إعادة قراءة ملف الجراج أو قاعدة البيانات.
 RegisterNUICallback('reloadVehicles', function(_, cb)
@@ -732,6 +763,7 @@ RegisterNetEvent('M5_iCreator:vehiclesUpdated')
 AddEventHandler('M5_iCreator:vehiclesUpdated', function()
     if UIManager.IsOpen() then
         UIManager.SyncStats()
+        UIManager.SyncGarages()
         UIManager.Status('Vehicle list updated')
     end
 end)
@@ -940,8 +972,10 @@ local function UploadToGithub(v)
         log('Screenshot capture failed: '..v.model, '^1')
         return
     end
-    local b64   = raw:match('base64,(.+)') or raw
-    local size  = math.max(1000, math.floor(tonumber(cap.chunkSize) or 40000))
+    local b64 = raw:match('base64,(.+)') or raw
+    -- الحد الأعلى إجباري: الأحداث الكبيرة تطرد اللاعب برسالة
+    -- "Reliable network event size overflow".
+    local size = math.max(1000, math.min(15000, math.floor(tonumber(cap.chunkSize) or 8000)))
     local total = math.ceil(#b64 / size)
     local uid   = ('%s_%d'):format(v.model, GetGameTimer())
     for i = 1, total do
@@ -957,7 +991,7 @@ local function UploadToGithub(v)
             data  = b64:sub((i - 1) * size + 1, i * size),
             meta  = meta,
         })
-        Wait(60)
+        Wait(35)
     end
     log(('Sent %s to the server in %d chunk(s).'):format(v.model, total))
 end
@@ -978,15 +1012,77 @@ AddEventHandler('M5_iCreator:uploadResult', function(model, url, err)
 end)
 RegisterFontFile('A9eelsh')
 fontId = RegisterFontId('A9eelsh')
-local function DrawProgressHUD(label, current, total)
-    local txt = string.format('%s  |  %d / %d  |  Backspace to cancel', label, current, total)
+-- _drawHud = false يخفي كل النصوص قبل التقاط الصورة حتى لا تظهر فيها.
+local _drawHud   = true
+local _hudPrompt = ''
+local function DrawCenterText(txt, y, r, g, b)
     SetTextFont(fontId)
     SetTextScale(0.32, 0.32)
-    SetTextColour(0, 210, 255, 230)
+    SetTextColour(r or 0, g or 210, b or 255, 230)
     SetTextOutline()
+    SetTextCentre(true)
     BeginTextCommandDisplayText('STRING')
     AddTextComponentSubstringPlayerName(txt)
-    EndTextCommandDisplayText(0.5, 0.96)
+    EndTextCommandDisplayText(0.5, y)
+end
+local function DrawProgressHUD(label, current, total)
+    if not _drawHud then return end
+    DrawCenterText(string.format('%s  |  %d / %d  |  Backspace to cancel',
+        label, current, total), 0.96)
+    if _hudPrompt ~= '' then
+        DrawCenterText(_hudPrompt, 0.92, 255, 220, 120)
+    end
+end
+-- إخفاء النصوص، انتظار فريمين، ثم تنفيذ الالتقاط، ثم إرجاعها.
+local function WithHiddenHUD(fn)
+    _drawHud = false
+    Wait(120)
+    fn()
+    Wait(150)
+    _drawHud = true
+end
+-- ─── التحكم اليدوي ───────────────────────────────────────────
+-- Enter = صوّر | Space = تخطَّ | الأسهم = تدوير | Backspace = إنهاء
+local KEY_ACCEPT  = 201   -- Enter
+local KEY_ACCEPT2 = 176   -- Enter (بديل)
+local KEY_SKIP    = 22    -- Space
+local KEY_LEFT    = 174   -- سهم يسار
+local KEY_RIGHT   = 175   -- سهم يمين
+-- الافتراضي من الكونفق، ويُحفظ اختيار اللاعب في KVP فيبقى بعد إعادة التشغيل.
+local _manualMode = Config.ManualCapture == true
+do
+    local saved = GetResourceKvpString('manualcapture')
+    if saved == 'on' then _manualMode = true
+    elseif saved == 'off' then _manualMode = false end
+end
+function IsManualMode() return _manualMode end
+function SetManualMode(on)
+    _manualMode = on == true
+    SetResourceKvp('manualcapture', _manualMode and 'on' or 'off')
+    return _manualMode
+end
+-- يرجع true للتصوير، false للتخطي أو إنهاء الجلسة.
+function WaitForManualDecision(v, index, total, veh)
+    local label = ('%s  (%s)'):format(tostring(v.name or v.model), tostring(v.model))
+    _hudPrompt = label .. '   |   [Enter] Capture   [Space] Skip   [Arrows] Rotate'
+    local result = nil
+    while _screenshotActive and result == nil do
+        if IsControlJustPressed(0, KEY_ACCEPT) or IsControlJustPressed(0, KEY_ACCEPT2) then
+            result = true
+        elseif IsControlJustPressed(0, KEY_SKIP) then
+            result = false
+            log('Skipped: ' .. tostring(v.model), '^3')
+        elseif veh and DoesEntityExist(veh) then
+            if IsControlPressed(0, KEY_LEFT) then
+                SetEntityHeading(veh, GetEntityHeading(veh) - 1.2)
+            elseif IsControlPressed(0, KEY_RIGHT) then
+                SetEntityHeading(veh, GetEntityHeading(veh) + 1.2)
+            end
+        end
+        Wait(0)
+    end
+    _hudPrompt = ''
+    return result == true
 end
 local function RunScreenshotLoop(spot, vc)
     local vehicles = GlobalState.VehiclesFromDB
@@ -1042,9 +1138,18 @@ local function RunScreenshotLoop(spot, vc)
                         end
                     end)
                 end
-                -- انتظار قابل للقطع: لا نرفع الصورة إذا أُلغيت الجلسة أثناءه.
-                if WaitOrStop(Config.ScreenshotDelay, function() return _screenshotActive end) then
-                    UploadScreenshot(v)
+                local shoot
+                if _manualMode then
+                    -- التحكم اليدوي: ننتظر قرار اللاعب لكل سيارة.
+                    shoot = WaitForManualDecision(v, i, #vehicles, veh)
+                else
+                    -- انتظار قابل للقطع: لا نرفع الصورة إذا أُلغيت الجلسة أثناءه.
+                    shoot = WaitOrStop(Config.ScreenshotDelay,
+                        function() return _screenshotActive end)
+                end
+                if shoot then
+                    -- نخفي شريط التقدم حتى لا يظهر داخل الصورة.
+                    WithHiddenHUD(function() UploadScreenshot(v) end)
                 else
                     -- نرجع العداد خطوة لأن هذه السيارة لم تُصوَّر.
                     _screenshotNum = _screenshotNum - 1
