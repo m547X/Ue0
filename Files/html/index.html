@@ -1,0 +1,164 @@
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<title>M5_iCreator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body class="hidden">
+<div id="app">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">📸</span>
+      <div class="logo-text">
+        <span class="logo-title">M5_iCreator</span>
+        <span class="logo-sub">Vehicle Screenshot System</span>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" data-tab="spots"><span>📍</span>المواقع</button>
+      <button class="nav-btn" data-tab="screenshot"><span>📷</span>التصوير</button>
+      <button class="nav-btn" data-tab="settings"><span>⚙️</span>الإعدادات</button>
+    </nav>
+    <div class="sidebar-foot">
+      <button class="btn ghost sm full" id="btn-close">✕ إغلاق (ESC)</button>
+    </div>
+  </aside>
+  <main class="content">
+    <section class="tab active" id="tab-spots">
+      <div class="tbar">
+        <h2>مواقع التصوير</h2>
+        <button class="btn primary sm" id="btn-open-modal">+ مكان جديد</button>
+      </div>
+      <div id="spots-grid" class="spots-grid"></div>
+    </section>
+    <section class="tab" id="tab-screenshot">
+      <div class="tbar"><h2>جلسة التصوير</h2></div>
+      <div class="active-pill">
+        <div class="ap-label">المكان النشط</div>
+        <div class="ap-val" id="active-name">—</div>
+      </div>
+      <div class="card mb12">
+        <div class="clabel">مصدر السيارات</div>
+        <div class="src-row">
+          <div class="src-stat"><span class="ss-k">المصدر</span><span class="ss-v" id="src-name">—</span></div>
+          <div class="src-stat"><span class="ss-k">الإجمالي</span><span class="ss-v" id="src-total">0</span></div>
+          <div class="src-stat pending"><span class="ss-k">بدون صورة</span><span class="ss-v" id="src-pending">0</span></div>
+        </div>
+        <div class="brow mt8">
+          <button class="btn secondary sm" id="btn-reload-src">🔄 إعادة قراءة الملف</button>
+          <button class="btn secondary sm" id="btn-export-garage">📤 تصدير جدول الجراج</button>
+        </div>
+        <p class="hint">عند اختيار المصدر <b>garage</b> يقرأ السكربت ملف الجراج ويصوّر السيارات التي بدون صورة فقط.</p>
+      </div>
+      <div class="card mb12">
+        <div class="clabel">سيارة تجريبية</div>
+        <div class="irow">
+          <input id="test-model" type="text" placeholder="adder" value="adder"/>
+          <button class="btn secondary sm" id="btn-change-veh">تطبيق</button>
+        </div>
+      </div>
+      <div class="brow mb12">
+        <button class="btn secondary" id="btn-preview"><span>👁</span>معاينة</button>
+        <button class="btn danger-soft" id="btn-stop-preview"><span>⏹</span>إيقاف</button>
+        <button class="btn secondary" id="btn-toggle-rotate"><span>🔃</span>دوران</button>
+      </div>
+      <div class="divider"></div>
+      <button class="btn primary full lg mb10" id="btn-start-shot">📷 ابدأ جلسة التصوير</button>
+      <button class="btn teal full mb6" id="btn-load-vehicles">🔄 تلويد السيارات للفحص (بدون تصوير)</button>
+      <p class="hint">يُعبّئ السيارات في مكان التصوير واحدةً تلو الأخرى للتحقق من التلويد الصحيح. اضغط Backspace للإيقاف.</p>
+    </section>
+    <section class="tab" id="tab-settings">
+      <div class="tbar"><h2>إعدادات المكان</h2></div>
+      <div class="empty-state" id="settings-empty">
+        <div class="ei">📍</div>
+        <p>اختر مكاناً من تبويب المواقع لتعديله</p>
+      </div>
+      <div id="settings-form" class="hidden">
+        <input type="hidden" id="s-id"/>
+        <div class="fg">
+          <label>اسم المكان</label>
+          <input id="s-name" type="text" placeholder="مثل: ستوديو Arena"/>
+        </div>
+        <div class="fgrid2">
+          <div class="fg">
+            <label>الطقس</label>
+            <select id="s-weather">
+              <option value="EXTRASUNNY">☀️ مشمس جداً</option>
+              <option value="CLEAR">🌤 صافي</option>
+              <option value="CLOUDS">☁️ غائم</option>
+              <option value="OVERCAST">🌫 ملبّد</option>
+              <option value="RAIN">🌧 مطر</option>
+              <option value="FOGGY">🌁 ضبابي</option>
+              <option value="BLIZZARD">🌨 عاصفة</option>
+              <option value="SNOW">❄️ ثلج</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>الوقت (ساعة : دقيقة)</label>
+            <div class="irow">
+              <input id="s-hour" type="number" min="0" max="23" value="12"/>
+              <span class="sep">:</span>
+              <input id="s-minute" type="number" min="0" max="59" value="0"/>
+            </div>
+          </div>
+        </div>
+        <div class="fgrid2">
+          <div class="fg toggle-fg">
+            <label>دوران تلقائي للسيارة</label>
+            <label class="toggle">
+              <input id="s-auto-rotate" type="checkbox"/>
+              <span class="tknob"></span>
+            </label>
+          </div>
+          <div class="fg">
+            <label>سرعة الدوران</label>
+            <input id="s-rotate-spd" type="number" min="0.1" max="5" step="0.1" value="0.4"/>
+          </div>
+        </div>
+        <div class="sec-div">
+          <span class="sec-ico">🚗</span> موقع رسبون السيارة
+        </div>
+        <div class="coords-box">
+          <div class="cv"><span class="ck">X</span><span id="vc-x" class="cv-val">—</span></div>
+          <div class="cv"><span class="ck">Y</span><span id="vc-y" class="cv-val">—</span></div>
+          <div class="cv"><span class="ck">Z</span><span id="vc-z" class="cv-val">—</span></div>
+          <div class="cv"><span class="ck">H°</span><span id="vc-h" class="cv-val">—</span></div>
+        </div>
+        <div class="brow mt8 mb14">
+          <button class="btn secondary sm" id="btn-use-my-pos">📍 موقعي الحالي</button>
+          <button class="btn secondary sm" id="btn-interactive-place">🚗 تحديد تفاعلي</button>
+          <button class="btn secondary sm" id="btn-preview-vpos">👁 معاينة</button>
+        </div>
+        <div class="divider"></div>
+        <div class="brow">
+          <button class="btn primary flex1" id="btn-save-settings">💾 حفظ الإعدادات</button>
+          <button class="btn secondary sm" id="btn-open-cam-editor">📷 محرر الكاميرا</button>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer class="statusbar">
+    <span id="s-dot" class="dot idle"></span>
+    <span id="s-text">جاهز</span>
+  </footer>
+</div>
+<div class="overlay hidden" id="modal-create">
+  <div class="modal">
+    <h3>📍 إنشاء مكان جديد</h3>
+    <p class="mhint">سيُستخدم موقعك الحالي كنقطة انطلاق. يمكنك تعديل الكاميرا والرسبون لاحقاً من تبويب الإعدادات.</p>
+    <div class="fg">
+      <label>اسم المكان</label>
+      <input id="create-name" type="text" placeholder="مثل: ستوديو الميناء"/>
+    </div>
+    <div class="brow jend">
+      <button class="btn ghost" id="btn-modal-cancel">إلغاء</button>
+      <button class="btn primary" id="btn-modal-confirm">إنشاء</button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
