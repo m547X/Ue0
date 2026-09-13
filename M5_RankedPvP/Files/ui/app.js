@@ -1137,24 +1137,30 @@ function renderParty(d) {
       clock.classList.toggle('urgent', left <= 5);
     }, 1000);
 
-    const answer = (action) => {
+    /* The card is drawn over the game with the menu shut, so the cursor it is
+       clicked with belongs to it alone. Whoever finishes with the card — an
+       answer, or the clock running out — hands that cursor back, or the player
+       is left with a pointer and no reason for it. */
+    const done = (action) => {
       clearInterval(tick);
+      clearTimeout(expiry);
       S.invite = null;
-      post('party', { action: action });
+      if (action) post('party', { action: action });
+      post('promptDone', {});
       card.remove();
     };
-    a.onclick = () => answer('accept');
-    r.onclick = () => answer('decline');
+    const expiry = setTimeout(() => done(null), secs * 1000);
+
+    a.onclick = () => done('accept');
+    r.onclick = () => done('decline');
 
     row.appendChild(a); row.appendChild(r); row.appendChild(clock);
     card.appendChild(row);
 
-    /* Enter accepts, so an invite that has just opened the menu can be taken
-       without reaching for the mouse. It stops being the live one once the
-       card is gone, whether it was answered or simply ran out. */
-    const mine = { accept: () => answer('accept') };
-    S.invite = mine;
-    setTimeout(() => { if (S.invite === mine) S.invite = null; }, secs * 1000);
+    /* Enter accepts, so the invite can be taken without going for the cursor
+       at all. `done` clears this, so it stops being the live one the moment the
+       card is answered or runs out. */
+    S.invite = { accept: () => done('accept') };
     return;
   }
 
@@ -3114,27 +3120,42 @@ function toast(kind, message, title, ttl) {
   return node;
 }
 
+/* Settings, theme, brand and the string table — everything the page needs to
+   draw anything at all. Shared by `open` and by `prime`, which loads it without
+   putting the interface on screen. */
+function primeFrom(d) {
+  if (!Object.keys(S.settings).length) loadSettings();
+  if (d.theme) applyTheme(d.theme);
+  if (d.brand) renderBrand(d.brand);
+  // Locale.lua carries the string table, the language list and which way the
+  // text reads.
+  if (d.locale) {
+    LOCALE = { strings: d.locale.strings || {}, rtl: d.locale.rtl || {} };
+    NOTIFY_LANG = d.locale.notifyLanguage || d.locale.language || 'en';
+    if (Array.isArray(d.locale.languages) && d.locale.languages.length) {
+      LANGUAGES = d.locale.languages;
+    }
+    // Locale.default wins until the player pins a choice in Settings
+    const lang = (S.langPinned && S.settings.language) || d.locale.language;
+    S.settings.language = lang;
+    applyLanguage(lang);
+  }
+}
+
 /* ============================================================ NUI EVENTS */
 window.addEventListener('message', (e) => {
   const d = e.data || {};
   switch (d.action) {
+    /* Everything `open` loads, without showing the interface. An invite is
+       drawn over the game with the menu shut, and it still has to come out in
+       the player's language and the server's colours — which used to arrive
+       only when the menu was opened. */
+    case 'prime':
+      primeFrom(d);
+      break;
+
     case 'open':
-      if (!Object.keys(S.settings).length) loadSettings();
-      if (d.theme) applyTheme(d.theme);
-      if (d.brand) renderBrand(d.brand);
-      // Locale.lua arrives with every open: it carries the string table, the
-      // language list and which way the text reads.
-      if (d.locale) {
-        LOCALE = { strings: d.locale.strings || {}, rtl: d.locale.rtl || {} };
-        NOTIFY_LANG = d.locale.notifyLanguage || d.locale.language || 'en';
-        if (Array.isArray(d.locale.languages) && d.locale.languages.length) {
-          LANGUAGES = d.locale.languages;
-        }
-        // Locale.default wins until the player pins a choice in Settings
-        const lang = (S.langPinned && S.settings.language) || d.locale.language;
-        S.settings.language = lang;
-        applyLanguage(lang);
-      }
+      primeFrom(d);
       $('app').classList.remove('hidden');
       if (!d.silent) Sfx.play('open');
       showPage(d.page && $('pg-' + d.page) ? d.page : (S.page || 'ranked'));

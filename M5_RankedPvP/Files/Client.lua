@@ -57,6 +57,7 @@ local State = {
     menuOpen   = false,
     menuPage   = nil,
     uiLocked   = false,
+    promptFocus = false,
 
     profile    = nil,
 
@@ -389,6 +390,25 @@ local function setFocus(on)
     SetNuiFocusKeepInput(false)
 end
 
+local promptToken = 0
+
+local function promptKeepsInput()
+    local c = Config.Prompt
+    return not c or c.keepInput ~= false
+end
+
+local function applyPromptFocus()
+    if State.menuOpen then return end
+    local on = State.promptFocus == true
+    SetNuiFocus(on, on)
+    SetNuiFocusKeepInput(on and promptKeepsInput() or false)
+end
+
+local function setPromptFocus(on)
+    State.promptFocus = on and true or false
+    applyPromptFocus()
+end
+
 local function openMenu(page)
     if State.menuOpen then return end
     if State.inMatch and State.roundLive and State.alive then
@@ -432,10 +452,17 @@ local function closeMenu(force)
     State.menuOpen = false
     setFocus(false)
     nui({ action = 'close' })
+    applyPromptFocus()
 end
 
 RegisterNUICallback('close', function(_, cb)
     closeMenu()
+    cb('ok')
+end)
+
+RegisterNUICallback('promptDone', function(_, cb)
+    promptToken = promptToken + 1
+    setPromptFocus(false)
     cb('ok')
 end)
 
@@ -541,19 +568,28 @@ RegisterNetEvent('m5rp:cl:data', function(payload)
 end)
 
 RegisterNetEvent('m5rp:cl:party', function(payload)
-    if payload and payload.invite and not State.menuOpen then
-        State.menuOpen = true
-        setFocus(true)
-        nui({ action = 'open', page = 'ranked', theme = Config.UI, brand = Config.Brand,
+    if payload and payload.invite then
+        nui({ action = 'prime', theme = Config.UI, brand = Config.Brand,
               sounds = Config.Sounds, text = L, locale = localePayload(),
-              defaults = Config.DefaultSettings, silent = true })
+              defaults = Config.DefaultSettings })
+        nui({ action = 'party', data = payload })
+        setPromptFocus(true)
+
+        local c = Config.Prompt
+        if not c or c.sound ~= false then
+            PlaySoundFrontend(-1, 'Beep_Red', 'DLC_HEIST_HACKING_SNAKE_SOUNDS', true)
+        end
+
+        promptToken = promptToken + 1
+        local mine = promptToken
+        local secs = tonumber(payload.invite.timeout) or 30
+        Citizen.SetTimeout(math.floor(secs * 1000) + 2000, function()
+            if promptToken == mine then setPromptFocus(false) end
+        end)
+        return
     end
 
     nui({ action = 'party', data = payload })
-
-    if payload and payload.invite then
-        PlaySoundFrontend(-1, 'Beep_Red', 'DLC_HEIST_HACKING_SNAKE_SOUNDS', true)
-    end
 end)
 
 RegisterNetEvent('m5rp:cl:custom', function(payload)

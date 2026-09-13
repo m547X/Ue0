@@ -172,18 +172,42 @@ const BOOT = {
   await page.waitForTimeout(80);
 
   // ======================================================================
-  // 4. the invite card says which kind it is
+  // 4. the invite: drawn over the game, with the menu shut
   // ======================================================================
-  await page.evaluate(() => window.__send({ action: 'party', data: {
-    invite: { kind: 'room', roomName: 'MY ROOM', from: 'FRIEND', timeout: 30 } } }));
-  await page.waitForTimeout(120);
+  // The whole point of the card is that it does not open the interface. The
+  // menu is closed here and has to stay closed, with the card still readable
+  // and still clickable.
+  await page.evaluate(() => {
+    window.__posted = [];
+    window.__send({ action: 'close' });
+    window.__send({ action: 'prime', theme: {}, brand: {},
+      locale: { language: 'ar', strings: { ar: { ACCEPT: 'قبول', DECLINE: 'رفض', S: 'ث' } },
+                rtl: { ar: true } } });
+    window.__send({ action: 'party', data: {
+      invite: { kind: 'room', roomName: 'MY ROOM', from: 'FRIEND', timeout: 30 } } });
+  });
+  await page.waitForTimeout(150);
+
+  check('the interface stays shut for an invite',
+        await page.locator('#app').evaluate((n) => n.classList.contains('hidden')), true);
+  check('  and the card is on screen anyway', await page.isVisible('.invite-row'), true);
+  check('  and it can actually be clicked, not just seen',
+        await page.locator('.invite-row .btn').first().evaluate((n) => {
+          const r = n.getBoundingClientRect();
+          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return n.contains(top) || n === top;
+        }), true);
+  check('  prime brought the language with it, without opening anything',
+        await page.locator('.invite-row .btn').first().innerText(), 'قبول');
+
   let text = await page.locator('.toast').last().innerText();
   check('a room invite names the room', /MY ROOM/.test(text), true);
   check('  and is labelled a room invite', /ROOM INVITE/i.test(text), true);
   check('  with something to press', await page.locator('.toast button').count() >= 2, true);
 
+  // the seconds suffix comes out of the string table too, so this is Arabic
   check('  and a clock saying how long you have',
-        await page.locator('.invite-clock').last().innerText(), '30S');
+        await page.locator('.invite-clock').last().innerText(), '30ث');
 
   await page.evaluate(() => window.__send({ action: 'party', data: {
     invite: { kind: 'party', from: 'FRIEND', timeout: 30 } } }));
@@ -198,13 +222,16 @@ const BOOT = {
     .locator('.tbar').evaluate((n) => getComputedStyle(n).animationDuration);
   check('  and the card lasts as long as the invite does', life, '30s');
 
-  // accepting, and declining, each send the right thing
+  // accepting, and declining, each send the right thing — and each hands the
+  // cursor back, because the card is the only reason the player has one
   await page.evaluate(() => { window.__posted = []; });
   await page.locator('.toast').last().locator('.btn').first().click();
   await page.waitForTimeout(100);
   check('accept sends accept',
         await page.evaluate(() => window.__posted.find((p) => p.name === 'party')),
         { name: 'party', body: { action: 'accept' } });
+  check('  and hands the cursor back',
+        await page.evaluate(() => window.__posted.some((p) => p.name === 'promptDone')), true);
   check('  and the card goes with it',
         await page.locator('.invite-row').count(), 1);   // the room one is still up
 
@@ -214,6 +241,24 @@ const BOOT = {
   check('decline sends decline',
         await page.evaluate(() => window.__posted.find((p) => p.name === 'party')),
         { name: 'party', body: { action: 'decline' } });
+  check('  and hands the cursor back too',
+        await page.evaluate(() => window.__posted.some((p) => p.name === 'promptDone')), true);
+
+  // an invite nobody answers must not leave the cursor behind either
+  await page.evaluate(() => {
+    window.__posted = [];
+    window.__send({ action: 'party', data: {
+      invite: { kind: 'party', from: 'FRIEND', timeout: 5 } } });
+  });
+  await page.waitForTimeout(200);
+  check('an unanswered invite still holds the cursor',
+        await page.evaluate(() => window.__posted.some((p) => p.name === 'promptDone')), false);
+  await page.waitForTimeout(5200);
+  check('  and gives it back when it runs out',
+        await page.evaluate(() => window.__posted.some((p) => p.name === 'promptDone')), true);
+  check('  without answering it either way',
+        await page.evaluate(() => window.__posted.some((p) => p.name === 'party')), false);
+  check('  and the card is gone', await page.locator('.invite-row').count(), 0);
 
   // enter accepts the one on screen, so an invite that just opened the menu
   // can be taken without reaching for the mouse
@@ -238,6 +283,10 @@ const BOOT = {
   // ======================================================================
   // 5. the lobby: leaving, and a kick you can see
   // ======================================================================
+  // back to English, and the interface open, because the party slots live in it
+  await page.evaluate(() => window.__send({ action: 'open', page: 'ranked', silent: true,
+    locale: { language: 'en', strings: {}, rtl: {} } }));
+  await page.waitForTimeout(120);
   await page.evaluate(() => window.__send({ action: 'party', data: {
     id: 'p1', leader: 1,
     members: [{ userId: 1, name: 'ME', leader: true, rankId: 2 },
