@@ -259,5 +259,7 @@ exports['M5_iCreator']:GetAllThumbnails()
 1. `ServerConfig.VehicleSource = 'garage'` مع مسار ملف الجراج.
 2. `Config.ImageHost = 'github'` + التوكن في `server.cfg`.
 3. `/reloadvehicles` ثم افتح `/vshot` وشوف كم سيارة بدون صورة.
-4. حدد مكان التصوير واضغط "ابدأ جلسة التصوير" (Backspace للإيقاف).
+4. حدد مكان التصوير واضغط "ابدأ جلسة التصوير".
+   للإيقاف اضغط **Backspace** (أو ESC) في أي لحظة — يعمل فوراً حتى أثناء
+   انتظار التقاط الصورة، والسيارة التي لم تُصوَّر لا تُحتسب في العداد.
 5. بعد الانتهاء: الأسطر تصل للويب هوك، والملف كامل في `Files/Data/garage.lua`.

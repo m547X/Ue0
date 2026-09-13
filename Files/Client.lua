@@ -129,7 +129,30 @@ local _vpOnSave  = nil
 local _vpOnCancel = nil
 local KEY_STAMP  = 74
 local KEY_SAVE   = 201
-local KEY_CANCEL = 200
+-- 202 = Backspace، 177 = Backspace/ESC، 200 = ESC.
+-- الرقم 200 وحده يفتح قائمة اللعبة عندما لا تكون الأزرار معطّلة،
+-- لذلك نقبل الثلاثة معاً في كل مكان يُستخدم فيه الإلغاء.
+local CANCEL_KEYS = { 202, 177, 200 }
+function IsCancelPressed(disabled)
+    for _, key in ipairs(CANCEL_KEYS) do
+        if disabled then
+            if IsDisabledControlJustPressed(0, key) then return true end
+        elseif IsControlJustPressed(0, key) then
+            return true
+        end
+    end
+    return false
+end
+-- انتظار يمكن قطعه: يرجع false إذا توقفت الجلسة أثناء الانتظار.
+function WaitOrStop(ms, stillRunning)
+    local waited = 0
+    while waited < ms do
+        if not stillRunning() then return false end
+        Wait(50)
+        waited = waited + 50
+    end
+    return stillRunning()
+end
 RegisterFontFile('A9eelsh')
 fontId = RegisterFontId('A9eelsh')
 local function log(m)
@@ -266,7 +289,7 @@ function VehiclePlacer.Start(spot, onSave, onCancel)
                 VehiclePlacer._Finish({ x=co.x, y=co.y, z=co.z, w=h }, true)
                 return
             end
-            if IsControlJustPressed(0, KEY_CANCEL) then
+            if IsCancelPressed(false) then
                 VehiclePlacer._Finish(nil, false)
                 return
             end
@@ -397,7 +420,7 @@ function CameraEditor.Start(spot, onSave, onCancel)
                 CameraEditor.Save()
                 return
             end
-            if IsDisabledControlJustPressed(0, CTRL.CANCEL) then
+            if IsCancelPressed(true) then
                 CameraEditor.Cancel()
                 return
             end
@@ -853,7 +876,11 @@ local function SpawnForShot(modelHash, vc)
     RequestCollisionAtCoord(vc.x, vc.y, vc.z)
     RequestModel(modelHash)
     local t = 0
-    while not HasModelLoaded(modelHash) and t < 50 do Wait(100); t=t+1 end
+    while not HasModelLoaded(modelHash) and t < 50 do
+        if not _screenshotActive then return nil end
+        Wait(100)
+        t = t + 1
+    end
     if not HasModelLoaded(modelHash) then return nil end
     local veh = CreateVehicle(modelHash, vc.x, vc.y, vc.z, vc.w or 0.0, false, true)
     if not veh or not DoesEntityExist(veh) then return nil end
@@ -973,18 +1000,22 @@ local function RunScreenshotLoop(spot, vc)
     end
     log(string.format('Screenshot loop: %d vehicles, starting from #%d', #vehicles, _screenshotNum))
     local lastVeh = nil
+    -- فحص زر الإلغاء كل فريم، لأن الحلقة نفسها تنتظر ثوانٍ بين سيارة وأخرى.
     Citizen.CreateThread(function()
         while _screenshotActive do
             DrawProgressHUD('Screenshot', _screenshotNum - 1, #vehicles)
+            if IsCancelPressed(false) then
+                _screenshotActive = false
+                log('Session stopped by user (Backspace).', '^3')
+                TriggerEvent('chat:addMessage', {
+                    args = { '^3[M5_iCreator]^0 تم إيقاف جلسة التصوير.' }
+                })
+            end
             Wait(0)
         end
     end)
     for i = _screenshotNum, #vehicles do
         if not _screenshotActive then log('Session stopped.') ; break end
-        if IsControlJustPressed(0, 200) then
-            log('Session stopped by user.')
-            break
-        end
         _screenshotNum = _screenshotNum + 1
         LocalPlayer.state.screenshotnum = _screenshotNum
         SetResourceKvpInt('screenshotnum', _screenshotNum)
@@ -1011,8 +1042,15 @@ local function RunScreenshotLoop(spot, vc)
                         end
                     end)
                 end
-                Wait(Config.ScreenshotDelay)
-                UploadScreenshot(v)
+                -- انتظار قابل للقطع: لا نرفع الصورة إذا أُلغيت الجلسة أثناءه.
+                if WaitOrStop(Config.ScreenshotDelay, function() return _screenshotActive end) then
+                    UploadScreenshot(v)
+                else
+                    -- نرجع العداد خطوة لأن هذه السيارة لم تُصوَّر.
+                    _screenshotNum = _screenshotNum - 1
+                    LocalPlayer.state.screenshotnum = _screenshotNum
+                    SetResourceKvpInt('screenshotnum', _screenshotNum)
+                end
             end
         end
         Wait(0)
@@ -1030,15 +1068,18 @@ local function RunLoadLoop(spot, vc)
     Citizen.CreateThread(function()
         while _loadActive do
             DrawProgressHUD('Test loading', current, #vehicles)
+            if IsCancelPressed(false) then
+                _loadActive = false
+                log('Test loading stopped by user (Backspace).', '^3')
+                TriggerEvent('chat:addMessage', {
+                    args = { '^3[M5_iCreator]^0 تم إيقاف تلويد السيارات.' }
+                })
+            end
             Wait(0)
         end
     end)
     for i = 1, #vehicles do
         if not _loadActive then break end
-        if IsControlJustPressed(0, 200) then
-            log('Test loading stopped by user.')
-            break
-        end
         current = i
         local v         = vehicles[i]
         local modelHash = GetHashKey(v.model)
@@ -1059,7 +1100,7 @@ local function RunLoadLoop(spot, vc)
         else
             log('Missing CDImage: '..v.model, '^3')
         end
-        Wait(300)
+        if not WaitOrStop(300, function() return _loadActive end) then break end
     end
     if lastVeh and DoesEntityExist(lastVeh) then DeleteEntity(lastVeh) end
     log('Test loading finished')
