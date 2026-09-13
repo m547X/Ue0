@@ -1371,6 +1371,176 @@ function customPayload() {
   };
 }
 
+/* ========================================================= BOARD EDITOR */
+/* Moving a thing you have to stand in front of belongs in the world. Every
+   control here pushes the whole layout straight back to the client, which
+   redraws from it — so what is on screen is always exactly what will be saved,
+   and there is no second copy to keep in step. */
+const BE = { layout: null, here: null, sel: 's0' };
+
+function beSel() {
+  const kind = BE.sel[0];
+  const i = parseInt(BE.sel.slice(1), 10);
+  const list = kind === 's' ? BE.layout.screens : BE.layout.podium;
+  return { kind, i, list, item: list && list[i] };
+}
+
+function bePush() {
+  post('boardEdit', { action: 'update', layout: BE.layout });
+}
+
+function beRender(d) {
+  if (d && d.layout) BE.layout = d.layout;
+  if (d && d.here) BE.here = d.here;
+  if (!BE.layout) return;
+
+  BE.layout.screens = BE.layout.screens || [];
+  BE.layout.podium  = BE.layout.podium  || [];
+
+  // the selection can outlive the thing it pointed at
+  if (!beSel().item) BE.sel = BE.layout.screens.length ? 's0' : 'p0';
+
+  const host = $('be-targets');
+  host.innerHTML = '';
+  const row = (id, label, on) => {
+    const b = el('button', 'be-target' + (BE.sel === id ? ' on' : '') + (on ? '' : ' off'),
+      `<span>${esc(label)}</span>`);
+    b.onclick = () => { BE.sel = id; Sfx.play('click'); beRender(); };
+    host.appendChild(b);
+  };
+  BE.layout.screens.forEach((s, i) =>
+    row('s' + i, `${tx('SCREEN')} ${i + 1}${s.title ? ' — ' + s.title : ''}`, s.enabled !== false));
+  BE.layout.podium.forEach((p, i) =>
+    row('p' + i, `${tx('PODIUM')} #${i + 1}`, BE.layout.podiumEnabled !== false));
+
+  beBody();
+}
+
+/** One row of the editor: a label, a value, and a pair of nudge buttons. */
+function beNudge(label, get, set, step, fmt) {
+  const wrap = el('div', 'be-row', `<label>${esc(label)}</label>`);
+  const ctl = el('div', 'be-ctl');
+  const less = el('button', 'be-btn', '−');
+  const val = el('b', 'be-val', (fmt || String)(get()));
+  const more = el('button', 'be-btn', '+');
+
+  const bump = (dir) => {
+    set(get() + (step * dir));
+    val.textContent = (fmt || String)(get());
+    bePush();
+  };
+  less.onclick = () => bump(-1);
+  more.onclick = () => bump(1);
+
+  /* Holding a nudge button repeats, because moving a board ten metres one
+     click at a time is not moving a board. */
+  let held = null;
+  const start = (dir) => {
+    bump(dir);
+    held = setTimeout(function again() {
+      bump(dir);
+      held = setTimeout(again, 70);
+    }, 380);
+  };
+  const stop = () => { clearTimeout(held); held = null; };
+  less.onmousedown = () => start(-1); more.onmousedown = () => start(1);
+  [less, more].forEach((b) => {
+    b.onmouseup = stop; b.onmouseleave = stop;
+    b.onclick = null;                       // mousedown already did it
+  });
+
+  ctl.appendChild(less); ctl.appendChild(val); ctl.appendChild(more);
+  wrap.appendChild(ctl);
+  return wrap;
+}
+
+function beToggle(label, get, set) {
+  const wrap = el('div', 'be-row', `<label>${esc(label)}</label>`);
+  const sw = el('label', 'sw', '<input type="checkbox"/><i></i>');
+  const box = sw.querySelector('input');
+  box.checked = get();
+  box.onchange = () => { set(box.checked); bePush(); beRender(); };
+  wrap.appendChild(sw);
+  return wrap;
+}
+
+function beBody() {
+  const body = $('be-body');
+  body.innerHTML = '';
+  const sel = beSel();
+  if (!sel.item) { body.appendChild(el('div', 'empty', tx('NOTHING TO EDIT'))); return; }
+
+  const it = sel.item;
+  const one = (n) => Math.round(n * 100) / 100;
+
+  $('be-name').textContent = sel.kind === 's'
+    ? `${tx('SCREEN')} ${sel.i + 1}` : `${tx('PODIUM')} #${sel.i + 1}`;
+
+  const posRows = [
+    beNudge(tx('NORTH / SOUTH'), () => it.pos.y, (v) => { it.pos.y = v; }, 0.25, one),
+    beNudge(tx('EAST / WEST'),   () => it.pos.x, (v) => { it.pos.x = v; }, 0.25, one),
+    beNudge(tx('HEIGHT'),        () => it.pos.z, (v) => { it.pos.z = v; }, 0.25, one)
+  ];
+  posRows.forEach((r) => body.appendChild(r));
+
+  const here = el('button', 'btn ghost wide',
+    `<svg><use href="#i-map"/></svg> ${esc(tx('PUT IT WHERE I STAND'))}`);
+  here.onclick = () => {
+    if (!BE.here) { post('boardEdit', { action: 'here' }); return; }
+    it.pos.x = BE.here.x;
+    it.pos.y = BE.here.y;
+    it.pos.z = BE.here.z + (sel.kind === 's' ? 1.35 : 0);
+    if (sel.kind === 'p') it.h = BE.here.h;
+    Sfx.play('click');
+    bePush(); beBody();
+  };
+  body.appendChild(here);
+
+  if (sel.kind === 'p') {
+    body.appendChild(beNudge(tx('FACING'), () => it.h || 0,
+      (v) => { it.h = ((v % 360) + 360) % 360; }, 5, (n) => Math.round(n) + '°'));
+    body.appendChild(beNudge(tx('SEEN FROM'), () => BE.layout.podiumDistance,
+      (v) => { BE.layout.podiumDistance = Math.max(3, Math.min(120, v)); }, 1, (n) => Math.round(n) + 'm'));
+    body.appendChild(beToggle(tx('PODIUM ON'),
+      () => BE.layout.podiumEnabled !== false,
+      (v) => { BE.layout.podiumEnabled = v; }));
+    return;
+  }
+
+  body.appendChild(beNudge(tx('WIDTH'), () => it.width,
+    (v) => { it.width = Math.max(0.4, Math.min(3, v)); }, 0.05, (n) => Math.round(n * 100) + '%'));
+  body.appendChild(beNudge(tx('SIZE'), () => it.scale,
+    (v) => { it.scale = Math.max(0.3, Math.min(4, v)); }, 0.05, (n) => Math.round(n * 100) + '%'));
+  body.appendChild(beNudge(tx('ROWS'), () => it.rows,
+    (v) => { it.rows = Math.max(1, Math.min(25, Math.round(v))); }, 1, String));
+  body.appendChild(beNudge(tx('SEEN FROM'), () => it.distance,
+    (v) => { it.distance = Math.max(3, Math.min(120, v)); }, 1, (n) => Math.round(n) + 'm'));
+  body.appendChild(beNudge(tx('BACKGROUND'), () => it.opacity,
+    (v) => { it.opacity = Math.max(0, Math.min(255, Math.round(v))); }, 10,
+    (n) => Math.round((n / 255) * 100) + '%'));
+
+  const title = el('div', 'be-row', `<label>${esc(tx('TITLE'))}</label>`);
+  const inp = el('input', 'inp');
+  inp.value = it.title || '';
+  inp.maxLength = 48;
+  inp.oninput = () => { it.title = inp.value; bePush(); };
+  title.appendChild(inp);
+  body.appendChild(title);
+
+  body.appendChild(beToggle(tx('SCREEN ON'),
+    () => it.enabled !== false, (v) => { it.enabled = v; }));
+
+  if (BE.layout.screens.length > 1) {
+    const del = el('button', 'btn ghost danger wide', tx('REMOVE THIS SCREEN'));
+    del.onclick = () => {
+      BE.layout.screens.splice(sel.i, 1);
+      BE.sel = 's0';
+      bePush(); beRender();
+    };
+    body.appendChild(del);
+  }
+}
+
 /* =========================================================== LEADERBOARD */
 function fetchBoard() {
   post('fetch', { what: 'leaderboard', board: 'mode', mode: S.lb.mode, page: S.lb.page });
@@ -3248,6 +3418,8 @@ window.addEventListener('message', (e) => {
       primeFrom(d);
       break;
 
+    case 'boardEdit': beRender(d); break;
+
     case 'promptFocus':
       S.promptFocus = d.on === true;
       paintPromptHint();
@@ -3641,6 +3813,25 @@ document.addEventListener('click', (e) => {
     case 'detail-close': $('matchdetail').classList.add('hidden'); break;
     case 'result-close': $('modal-result').classList.add('hidden'); post('close'); break;
     case 'mvp-next': if (showMVP._next) showMVP._next(); break;
+
+    case 'be-save':   post('boardEdit', { action: 'save', layout: BE.layout }); break;
+    case 'be-cancel': post('boardEdit', { action: 'cancel' }); break;
+    case 'be-reset':
+      askConfirm('BACK TO DEFAULTS',
+        'The board goes back to the positions in the config file.',
+        () => post('boardEdit', { action: 'reset' }));
+      break;
+    case 'be-add': {
+      const h = BE.here || { x: 0, y: 0, z: 0 };
+      BE.layout.screens.push({
+        pos: { x: h.x, y: h.y, z: h.z + 1.35 }, title: '', enabled: true,
+        scale: 1.0, width: 1.0, rows: 10, opacity: 190, distance: 18.0
+      });
+      BE.sel = 's' + (BE.layout.screens.length - 1);
+      post('boardEdit', { action: 'here' });
+      bePush(); beRender();
+      break;
+    }
     case 'settings-reset': S.settings = Object.assign({}, DEFAULTS); saveSettings(); renderSettings(); break;
   }
 });

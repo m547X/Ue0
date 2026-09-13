@@ -650,6 +650,14 @@ local SCHEMA = {
   `acquired_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`,`kind`,`item_id`),
   KEY `idx_items_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
+[[CREATE TABLE IF NOT EXISTS `m5_world_board` (
+  `id` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  `layout` LONGTEXT NULL,
+  `updated_by` INT UNSIGNED NOT NULL DEFAULT 0,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]]
 }
 
@@ -7278,7 +7286,102 @@ function Board.liveMatches()
     return out
 end
 
-WorldBoard = { rows = {}, builtAt = 0, pool = nil }
+WorldBoard = { rows = {}, builtAt = 0, pool = nil, layout = nil }
+
+function WorldBoard.loadLayout()
+    local row = DB.single('SELECT layout FROM m5_world_board WHERE id = 1')
+    WorldBoard.layout = row and jsonDecode(row.layout, nil) or nil
+    if WorldBoard.layout then
+        log('world board layout loaded (%d screens, %d podium spots)',
+            #(WorldBoard.layout.screens or {}), #(WorldBoard.layout.podium or {}))
+    end
+end
+
+local function sanitiseSpot(v, withHeading)
+    if type(v) ~= 'table' then return nil end
+    local x, y, z = tonumber(v.x), tonumber(v.y), tonumber(v.z)
+    if not x or not y or not z then return nil end
+
+    if math.abs(x) > 20000 or math.abs(y) > 20000 or z < -1000 or z > 5000 then
+        return nil
+    end
+    local out = { x = x, y = y, z = z }
+    if withHeading then out.h = (tonumber(v.h) or 0.0) % 360 end
+    return out
+end
+
+local function clampNum(v, lo, hi, fallback)
+    local n = tonumber(v)
+    if not n then return fallback end
+    if n < lo then return lo end
+    if n > hi then return hi end
+    return n
+end
+
+function WorldBoard.sanitiseLayout(raw)
+    if type(raw) ~= 'table' then return nil end
+
+    local out = { screens = {}, podium = {} }
+
+    for i = 1, math.min(#(raw.screens or {}), 12) do
+        local s = raw.screens[i]
+        local pos = sanitiseSpot(s and s.pos, false)
+        if pos then
+            out.screens[#out.screens + 1] = {
+                pos     = pos,
+                title   = tostring(s.title or ''):sub(1, 48),
+                enabled = s.enabled ~= false,
+                scale   = clampNum(s.scale, 0.3, 4.0, 1.0),
+                width   = clampNum(s.width, 0.4, 3.0, 1.0),
+                rows    = math.floor(clampNum(s.rows, 1, 25, 10)),
+                opacity = math.floor(clampNum(s.opacity, 0, 255, 190)),
+                distance = clampNum(s.distance, 3.0, 120.0, 18.0)
+            }
+        end
+    end
+
+    for i = 1, math.min(#(raw.podium or {}), 3) do
+        local p = raw.podium[i]
+
+        local pos = sanitiseSpot(p and p.pos, false)
+        if pos then
+            out.podium[#out.podium + 1] = {
+                pos = pos,
+                h   = ((tonumber(p.h) or 0.0) % 360)
+            }
+        end
+    end
+
+    out.podiumDistance = clampNum(raw.podiumDistance, 3.0, 120.0, 25.0)
+    out.podiumEnabled  = raw.podiumEnabled ~= false
+    out.screensEnabled = raw.screensEnabled ~= false
+
+    if #out.screens == 0 and #out.podium == 0 then return nil end
+    return out
+end
+
+function WorldBoard.saveLayout(userId, raw)
+    local clean = WorldBoard.sanitiseLayout(raw)
+    if not clean then return false, 'Nothing to save.' end
+
+    WorldBoard.layout = clean
+    DB.update([[INSERT INTO m5_world_board (id, layout, updated_by, updated_at)
+                VALUES (1, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE layout = VALUES(layout),
+                                        updated_by = VALUES(updated_by),
+                                        updated_at = VALUES(updated_at)]],
+        { jsonEncode(clean), userId, sqlDate(now()) })
+
+    WorldBoard.push()
+    return true
+end
+
+function WorldBoard.clearLayout(userId)
+    WorldBoard.layout = nil
+    DB.update('DELETE FROM m5_world_board WHERE id = 1')
+    WorldBoard.push()
+    return true
+end
 
 function WorldBoard.on()
     local c = Config.WorldBoard
@@ -7336,7 +7439,8 @@ end
 
 function WorldBoard.payload()
     return { pool = WorldBoard.pool, rows = WorldBoard.rows,
-             season = Season.current and Season.current.name or nil }
+             season = Season.current and Season.current.name or nil,
+             layout = WorldBoard.layout }
 end
 
 function WorldBoard.push(src)
@@ -8348,6 +8452,34 @@ RegisterNetEvent('m5rp:sv:roomCode', function()
     log('%s shared room code %s in chat', pd.name, room.code)
 end)
 
+RegisterNetEvent('m5rp:sv:boardLayout', function(action, layout)
+    local pd, src = caller('menu')
+    if not pd then return end
+
+    if not hasPerm(pd.userId, Config.Permissions.editBoard) then
+        notify(src, 'error', 'You do not have access to this feature.', 'BOARD')
+        err('%s (%d) tried to move the world board without permission',
+            pd.name, pd.userId)
+        return
+    end
+
+    if action == 'save' then
+        local ok, reason = WorldBoard.saveLayout(pd.userId, layout)
+        notify(src, ok and 'success' or 'error',
+            ok and 'The board layout was saved.' or tostring(reason), 'BOARD')
+        if ok then
+            log('%s (%d) saved a new world board layout', pd.name, pd.userId)
+            Logger.send('adminActions', 'World Board Moved',
+                ('**%s** saved a new leaderboard layout.'):format(pd.name), pd)
+        end
+
+    elseif action == 'reset' then
+        WorldBoard.clearLayout(pd.userId)
+        notify(src, 'success', 'The board is back to the config defaults.', 'BOARD')
+        log('%s (%d) reset the world board layout', pd.name, pd.userId)
+    end
+end)
+
 RegisterNetEvent('m5rp:sv:worldBoard', function(pedModel)
     local src = source
     local userId = SrcToUser[src]
@@ -9206,6 +9338,7 @@ Citizen.CreateThread(function()
     DB.init()
     pcall(DB.measureBaseline)
     Season.load()
+    pcall(WorldBoard.loadLayout)
 
     Boot.ready = true
 

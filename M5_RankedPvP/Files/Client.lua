@@ -2153,26 +2153,68 @@ local WB = {
     season  = nil,
     peds    = {},
     spawned = false,
-    sent    = false
+    sent    = false,
+    layout  = nil,
+    edit    = nil
 }
+
+local function vec3(p)
+    if not p then return vector3(0.0, 0.0, 0.0) end
+    if p.w ~= nil or getmetatable(p) ~= nil then return p end
+    return vector3(p.x + 0.0, p.y + 0.0, p.z + 0.0)
+end
 
 local function wbOn()
     local c = Config.WorldBoard
     return c ~= nil and c.enabled ~= false
 end
 
+local function wbLayout()
+    if WB.edit then return WB.edit end
+    if WB.layout then return WB.layout end
+
+    local c = Config.WorldBoard or {}
+    local sc = c.screens or {}
+    local pc = c.podium  or {}
+
+    local out = {
+        screens = {}, podium = {},
+        screensEnabled = sc.enabled ~= false,
+        podiumEnabled  = pc.enabled ~= false,
+        podiumDistance = tonumber(pc.distance) or 25.0
+    }
+    for i = 1, #(sc.spots or {}) do
+        local spot = sc.spots[i]
+        out.screens[i] = {
+            pos      = spot.pos,
+            title    = spot.title,
+            enabled  = spot.enabled ~= false,
+            scale    = tonumber(sc.scale) or 1.0,
+            width    = 1.0,
+            rows     = tonumber(sc.rows) or 10,
+            opacity  = tonumber(sc.opacity) or 190,
+            distance = tonumber(sc.distance) or 18.0
+        }
+    end
+    for i = 1, #(pc.spots or {}) do
+        local spot = pc.spots[i]
+        out.podium[i] = { pos = spot.pos, h = spot.h or 0.0, anim = spot.anim }
+    end
+    return out
+end
+
 local function wbScreens()
     if not wbOn() then return nil end
-    local s = Config.WorldBoard.screens
-    if not s or s.enabled == false or not s.spots or #s.spots == 0 then return nil end
-    return s
+    local l = wbLayout()
+    if not l.screensEnabled or #l.screens == 0 then return nil end
+    return l.screens
 end
 
 local function wbPodium()
     if not wbOn() then return nil end
-    local p = Config.WorldBoard.podium
-    if not p or p.enabled == false or not p.spots or #p.spots == 0 then return nil end
-    return p
+    local l = wbLayout()
+    if not l.podiumEnabled or #l.podium == 0 then return nil end
+    return l
 end
 
 local function wbText(text, x, y, scale, r, g, b, a, align, wrapTo)
@@ -2207,15 +2249,16 @@ local WB_COLS = {
     { key = 'rp',       head = 'RP',     w = 1.000, align = 'right', tint = true   }
 }
 
-local function drawScreen(spot, cfg, dist)
-    local scale = (tonumber(cfg.scale) or 1.0) * (1.0 - (dist / (cfg.distance * 2.4)))
+local function drawScreen(spot, dist)
+    local far   = tonumber(spot.distance) or 18.0
+    local scale = (tonumber(spot.scale) or 1.0) * (1.0 - (dist / (far * 2.4)))
     if scale < 0.22 then scale = 0.22 end
 
-    local shown = math.min(tonumber(cfg.rows) or 10, #WB.rows)
-    local alpha = math.floor(tonumber(cfg.opacity) or 190)
+    local shown = math.min(tonumber(spot.rows) or 10, #WB.rows)
+    local alpha = math.floor(tonumber(spot.opacity) or 190)
 
     local lineH = 0.020 * scale
-    local width = 0.230 * scale
+    local width = 0.230 * scale * (tonumber(spot.width) or 1.0)
     local head  = 0.042 * scale
     local hdr   = 0.016 * scale
     local body  = lineH * math.max(shown, 1)
@@ -2304,14 +2347,15 @@ end
 local function wbSpawn(cfg)
     wbDespawn()
 
-    local count = math.min(#cfg.spots, #WB.rows)
+    local fallback = (Config.WorldBoard.podium or {}).fallback or 'a_m_y_skater_01'
+    local count = math.min(#cfg.podium, #WB.rows)
     for i = 1, count do
-        local spot = cfg.spots[i]
+        local spot = cfg.podium[i]
         local row  = WB.rows[i]
 
         local model = row.ped
         if not model or model == 0 or not IsModelInCdimage(model) or not IsModelAPed(model) then
-            model = GetHashKey(cfg.fallback or 'a_m_y_skater_01')
+            model = GetHashKey(fallback)
         end
 
         if IsModelInCdimage(model) and IsModelAPed(model) then
@@ -2389,18 +2433,19 @@ function wbTick(me, podiumAcc)
 
     local screens = wbScreens()
     if screens then
-        for i = 1, #screens.spots do
-            local spot = screens.spots[i]
+        for i = 1, #screens do
+            local spot = screens[i]
+            local far  = tonumber(spot.distance) or 18.0
             if spot.enabled ~= false and spot.pos then
-                local d = #(me - spot.pos)
-                if d <= screens.distance then
+                local d = #(me - vec3(spot.pos))
+                if d <= far then
                     if World3dToScreen2d(spot.pos.x, spot.pos.y, spot.pos.z) then
                         sleep = 0
-                        drawScreen(spot, screens, d)
+                        drawScreen(spot, d)
                     elseif sleep > WB_NEAR then
                         sleep = WB_NEAR
                     end
-                elseif d <= screens.distance * 2.5 and sleep > WB_NEAR then
+                elseif d <= far * 2.5 and sleep > WB_NEAR then
                     sleep = WB_NEAR
                 end
             end
@@ -2417,9 +2462,11 @@ function wbTick(me, podiumAcc)
     if podiumAcc >= 900 then
         podiumAcc = 0
         local near = false
-        for i = 1, #podium.spots do
-            local spot = podium.spots[i]
-            if spot.pos and #(me - spot.pos) <= podium.distance then near = true break end
+        for i = 1, #podium.podium do
+            local spot = podium.podium[i]
+            if spot.pos and #(me - vec3(spot.pos)) <= podium.podiumDistance then
+                near = true break
+            end
         end
         if near and not WB.spawned then
             wbSpawn(podium)
@@ -2428,7 +2475,7 @@ function wbTick(me, podiumAcc)
         end
     end
 
-    if WB.spawned and podium.showNames ~= false then
+    if WB.spawned and (Config.WorldBoard.podium or {}).showNames ~= false then
         for i = 1, #WB.peds do
             local p   = WB.peds[i]
             local row = WB.rows[i]
@@ -2490,4 +2537,109 @@ if Config.ClientCommands.coords and Config.ClientCommands.coords.enabled then
         print('[M5RP] the screen line floats at eye height; the podium line stands on the ground')
         print('')
     end, false)
+end
+
+local function wbEditSnapshot()
+    local l = wbLayout()
+    local out = { screens = {}, podium = {},
+                  screensEnabled = l.screensEnabled ~= false,
+                  podiumEnabled  = l.podiumEnabled ~= false,
+                  podiumDistance = tonumber(l.podiumDistance) or 25.0 }
+    for i = 1, #l.screens do
+        local s = l.screens[i]
+        out.screens[i] = {
+            pos = { x = s.pos.x + 0.0, y = s.pos.y + 0.0, z = s.pos.z + 0.0 },
+            title = s.title or '', enabled = s.enabled ~= false,
+            scale = tonumber(s.scale) or 1.0, width = tonumber(s.width) or 1.0,
+            rows = tonumber(s.rows) or 10, opacity = tonumber(s.opacity) or 190,
+            distance = tonumber(s.distance) or 18.0
+        }
+    end
+    for i = 1, #l.podium do
+        local p = l.podium[i]
+        out.podium[i] = {
+            pos = { x = p.pos.x + 0.0, y = p.pos.y + 0.0, z = p.pos.z + 0.0 },
+            h = tonumber(p.h) or 0.0
+        }
+    end
+    return out
+end
+
+local function wbEditPush()
+    nui({ action = 'boardEdit', layout = WB.edit,
+          here = (function()
+              local c = GetEntityCoords(playerPed())
+              return { x = c.x, y = c.y, z = c.z,
+                       h = GetEntityHeading(playerPed()) }
+          end)() })
+end
+
+local function wbEditOpen()
+    if not wbOn() then
+        nui({ action = 'toast', kind = 'warning',
+              message = 'Config.WorldBoard is switched off.' })
+        return
+    end
+
+    WB.edit = wbEditSnapshot()
+    if #WB.edit.screens == 0 then
+        WB.edit.screens[1] = {
+            pos = (function()
+                local c = GetEntityCoords(playerPed())
+                return { x = c.x, y = c.y, z = c.z + 1.35 }
+            end)(),
+            title = 'LEADERBOARD', enabled = true,
+            scale = 1.0, width = 1.0, rows = 10, opacity = 190, distance = 18.0
+        }
+    end
+
+    State.menuOpen = true
+    setFocus(true)
+    nui({ action = 'open', page = 'board', theme = Config.UI, brand = Config.Brand,
+          sounds = Config.Sounds, text = L, locale = localePayload(),
+          defaults = Config.DefaultSettings, silent = true })
+    wbEditPush()
+end
+
+local function wbEditClose(keep)
+    if not keep then WB.edit = nil end
+    if WB.spawned then
+        local p = wbPodium()
+        if p then wbSpawn(p) else wbDespawn() end
+    end
+    closeMenu(true)
+end
+
+RegisterNUICallback('boardEdit', function(data, cb)
+    local action = tostring(data and data.action or '')
+
+    if action == 'update' then
+        WB.edit = data.layout
+        if WB.spawned then
+            local p = wbPodium()
+            if p then wbSpawn(p) else wbDespawn() end
+        end
+
+    elseif action == 'here' then
+        wbEditPush()
+
+    elseif action == 'save' then
+        TriggerServerEvent('m5rp:sv:boardLayout', 'save', data.layout)
+        WB.layout = data.layout
+        wbEditClose(false)
+
+    elseif action == 'reset' then
+        TriggerServerEvent('m5rp:sv:boardLayout', 'reset')
+        WB.layout = nil
+        wbEditClose(false)
+
+    elseif action == 'cancel' then
+        wbEditClose(false)
+    end
+
+    cb('ok')
+end)
+
+if Config.ClientCommands.board and Config.ClientCommands.board.enabled then
+    RegisterCommand(Config.ClientCommands.board.name, wbEditOpen, false)
 end

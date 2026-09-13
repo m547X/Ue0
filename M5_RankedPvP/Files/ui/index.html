@@ -856,6 +856,32 @@
       </section>
 
       <!-- ======================= PROFILE ======================= -->
+      <!-- ======================= BOARD EDITOR ======================= -->
+      <!-- Moving something you have to look at belongs in the world, not in a
+           config file. Every control here changes the board on screen as it is
+           used; nothing is written down until SAVE. -->
+      <section class="pg" id="pg-board">
+        <div class="scroll">
+          <div class="be-wrap">
+            <div class="be-side">
+              <div class="cm-title"><svg><use href="#i-board"/></svg><span data-i18n="WHAT TO MOVE">WHAT TO MOVE</span></div>
+              <div class="be-targets" id="be-targets"></div>
+              <button class="btn ghost wide" data-action="be-add"><svg><use href="#i-plus"/></svg> <span data-i18n="ADD A SCREEN">ADD A SCREEN</span></button>
+            </div>
+
+            <div class="be-main">
+              <div class="cm-panel-head"><svg><use href="#i-sliders"/></svg><span id="be-name">—</span> <em class="dot"></em></div>
+              <div class="be-body" id="be-body"></div>
+            </div>
+          </div>
+        </div>
+        <div class="be-foot">
+          <button class="btn" data-action="be-save"><svg><use href="#i-check"/></svg> <span data-i18n="SAVE">SAVE</span></button>
+          <button class="btn ghost" data-action="be-cancel"><span data-i18n="CANCEL">CANCEL</span></button>
+          <button class="btn ghost danger" data-action="be-reset"><span data-i18n="BACK TO DEFAULTS">BACK TO DEFAULTS</span></button>
+        </div>
+      </section>
+
       <section class="pg" id="pg-profile"><div class="scroll" id="profile-root"></div></section>
 
       <!-- ======================= HISTORY ======================= -->

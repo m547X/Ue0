@@ -612,7 +612,12 @@ Config.ClientCommands = {
 
     -- يطبع لك مكانك الحالي بصيغة جاهزة تنسخها لـ Config.WorldBoard.
     -- تقف بالمكان وتكتب /pvpcoords وينطبع بالكونسول (F8).
-    coords    = { enabled = true, name = 'pvpcoords' }
+    coords    = { enabled = true, name = 'pvpcoords' },
+
+    -- يفتح محرّر لوحة المتصدرين داخل اللعبة: تحرّك الشاشة والتماثيل وتغيّر
+    -- العرض والحجم وعدد الصفوف وأنت تشوف التغيير مباشرة، وتحفظ.
+    -- محتاج صلاحية Config.Permissions.editBoard بكونفق السيرفر.
+    board     = { enabled = true, name = 'pvpboard' }
 }
 
 -- ============================================================================

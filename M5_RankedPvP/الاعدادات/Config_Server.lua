@@ -88,7 +88,10 @@ Config.Permissions      = {
     manageSeasons  = 'pvp.seasons',
     manageRewards  = 'pvp.rewards',
     manageMaps     = 'pvp.maps',
-    modifyRP       = 'pvp.rp.modify'
+    modifyRP       = 'pvp.rp.modify',
+
+    -- تحريك لوحة المتصدرين وتماثيل التوب ٣ من داخل اللعبة (/pvpboard)
+    editBoard      = 'pvp.board'
 }
 
 -- ============================================================================

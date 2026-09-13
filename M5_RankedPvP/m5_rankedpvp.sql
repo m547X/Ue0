@@ -452,3 +452,14 @@ CREATE TABLE IF NOT EXISTS `m5_player_items` (
   PRIMARY KEY (`user_id`,`kind`,`item_id`),
   KEY `idx_items_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Where the in-game leaderboard screens and the podium spots actually stand.
+-- One row. Config_Client.lua holds the defaults; this holds whatever was moved
+-- with /pvpboard, so a restart does not undo an afternoon of placing things.
+CREATE TABLE IF NOT EXISTS `m5_world_board` (
+  `id`         TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  `layout`     LONGTEXT         NULL,
+  `updated_by` INT UNSIGNED     NOT NULL DEFAULT 0,
+  `updated_at` DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
