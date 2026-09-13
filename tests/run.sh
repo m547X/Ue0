@@ -29,6 +29,25 @@ for f in tests/*.lua; do
   esac
 done
 
+# The browser tests render the real interface in Chromium, so they need node
+# and playwright. Skipped with a line saying so rather than failing the run on
+# a machine that does not have them.
+PW="${PW:-/opt/node22/lib/node_modules/playwright}"
+for f in tests/*.js; do
+  [ -e "$f" ] || continue
+  if [ ! -d "$PW" ]; then
+    printf '%-28s %s\n' "$(basename "$f")" "skipped (no playwright at $PW)"
+    continue
+  fi
+  out=$(PW="$PW" node "$f" 2>&1)
+  last=$(echo "$out" | tail -1)
+  printf '%-28s %s\n' "$(basename "$f")" "$last"
+  case "$last" in
+    *"ALL PASS"*) ;;
+    *) fails=$((fails+1)); echo "$out" | tail -20 ;;
+  esac
+done
+
 echo
 if [ "$fails" -eq 0 ]; then echo "everything passed"; else echo "$fails failed"; fi
 exit "$fails"

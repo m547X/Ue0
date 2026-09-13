@@ -56,6 +56,7 @@ local State = {
     booted     = false,
     menuOpen   = false,
     menuPage   = nil,
+    uiLocked   = false,
 
     profile    = nil,
 
@@ -381,6 +382,7 @@ local function nui(payload)
 end
 
 local showBoundary, hideBoundary, clearBoundary
+local setHeadBones
 
 local function setFocus(on)
     SetNuiFocus(on, on)
@@ -420,7 +422,8 @@ local function openMenu(page)
     end
 end
 
-local function closeMenu()
+local function closeMenu(force)
+    if State.uiLocked and not force then return end
     if blurOn then
         TriggerScreenblurFadeOut(180)
         blurOn = false
@@ -447,7 +450,11 @@ RegisterNUICallback('ready', function(data, cb)
 end)
 
 RegisterNUICallback('mapVote', function(data, cb)
-    TriggerServerEvent('m5rp:sv:mapVote', data.mapId)
+    if data.kind then
+        TriggerServerEvent('m5rp:sv:mapVote', data.kind, data.choice)
+    else
+        TriggerServerEvent('m5rp:sv:mapVote', data.mapId)
+    end
     cb('ok')
 end)
 
@@ -489,6 +496,31 @@ RegisterNUICallback('settings', function(data, cb)
     cb('ok')
 end)
 
+RegisterNUICallback('roomCode', function(data, cb)
+    local c = Config.RoomCodeChat
+    local code = tostring(data and data.code or ''):upper():gsub('%s', '')
+
+    if not c or c.enabled == false or code == '' then
+        cb('ok')
+        return
+    end
+
+    local text = (c.message or '%s'):format(code)
+
+    if c.mode == 'local' then
+        local col = c.localColor or { 220, 60, 80 }
+        TriggerEvent('chat:addMessage', {
+            color = { col[1] or 220, col[2] or 60, col[3] or 80 },
+            multiline = false,
+            args = { c.localTitle or 'RANKED', text }
+        })
+    else
+        ExecuteCommand(('%s %s'):format(c.command or 'say', text))
+    end
+
+    cb('ok')
+end)
+
 RegisterNUICallback('action', function(data, cb)
     TriggerServerEvent('m5rp:sv:action', data.action, data)
     if data.action == 'leaveMatch' or data.action == 'training' then
@@ -509,10 +541,18 @@ RegisterNetEvent('m5rp:cl:data', function(payload)
 end)
 
 RegisterNetEvent('m5rp:cl:party', function(payload)
+    if payload and payload.invite and not State.menuOpen then
+        State.menuOpen = true
+        setFocus(true)
+        nui({ action = 'open', page = 'ranked', theme = Config.UI, brand = Config.Brand,
+              sounds = Config.Sounds, text = L, locale = localePayload(),
+              defaults = Config.DefaultSettings, silent = true })
+    end
+
     nui({ action = 'party', data = payload })
+
     if payload and payload.invite then
-        nui({ action = 'toast', kind = 'info',
-              message = ('%s invited you to a party'):format(payload.invite.from) })
+        PlaySoundFrontend(-1, 'Beep_Red', 'DLC_HEIST_HACKING_SNAKE_SOUNDS', true)
     end
 end)
 
@@ -540,16 +580,22 @@ RegisterNetEvent('m5rp:cl:matchFound', function(payload)
 end)
 
 RegisterNetEvent('m5rp:cl:mapVote', function(payload)
-    nui({ action = 'mapVote', data = payload })
-    if payload and payload.options and not State.menuOpen then
-        State.menuOpen = true
-        setFocus(true)
-        nui({ action = 'open', page = 'ranked', theme = Config.UI, brand = Config.Brand, sounds = Config.Sounds,
-              text = L, locale = localePayload(), defaults = Config.DefaultSettings,
-              silent = true })
+    if payload and payload.options then
+        State.uiLocked = true
+        if not State.menuOpen then
+            State.menuOpen = true
+            setFocus(true)
+            nui({ action = 'open', page = 'ranked', theme = Config.UI, brand = Config.Brand, sounds = Config.Sounds,
+                  text = L, locale = localePayload(), defaults = Config.DefaultSettings,
+                  silent = true })
+        end
     end
-    if payload and payload.close then
-        closeMenu()
+
+    nui({ action = 'mapVote', data = payload })
+
+    if payload and (payload.close or payload.result) then
+        State.uiLocked = false
+        closeMenu(true)
     end
 end)
 
@@ -751,6 +797,7 @@ RegisterNetEvent('m5rp:cl:setup', function(data)
     State.ffa        = data.ffa == true
     State.map        = data.map
     State.settings   = data.settings or {}
+    setHeadBones(State.settings.headBones)
     State.alive      = false
     State.reportedDeath = false
     clearBoundary()
@@ -1015,8 +1062,15 @@ RegisterNetEvent('m5rp:cl:endScreens', function()
 end)
 
 
+local DEFAULT_HEAD_BONES = { 31086, 39317, 12844, 20178, 21550 }
 local HEAD_BONES = {}
-for _, bone in ipairs({ 31086, 39317, 12844, 20178, 21550 }) do HEAD_BONES[bone] = true end
+for _, bone in ipairs(DEFAULT_HEAD_BONES) do HEAD_BONES[bone] = true end
+
+function setHeadBones(list)
+    HEAD_BONES = {}
+    local src = (type(list) == 'table' and #list > 0) and list or DEFAULT_HEAD_BONES
+    for i = 1, #src do HEAD_BONES[src[i]] = true end
+end
 
 local SHOT_REPORT_INTERVAL = 220
 local lastShotReport = 0
@@ -1100,8 +1154,7 @@ AddEventHandler('gameEventTriggered', function(name, args)
     local hasBone, bone = GetPedLastDamageBone(ped)
     local isHead = hasBone and HEAD_BONES[bone] == true
 
-    if isHead and Config.Headshot.enabled and Config.Headshot.oneShotKill
-       and State.settings.headshotOneShot ~= false then
+    if isHead and State.settings.headshotOneShot == true then
         TriggerServerEvent('m5rp:sv:combat', 'hs', {
             attacker = attackerSrc,
             weapon   = weapon,

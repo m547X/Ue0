@@ -63,7 +63,7 @@ const S = {
   rooms: [], room: null,
   cm: {
     mode: '1v1', rounds: 7, matchType: 'normal',
-    weapons: [], armor: false, hsOnly: false,
+    weapons: [], armor: false, hsOnly: false, autoStart: false,
     map: null, mapPage: 1, step: 1
   },
 
@@ -804,10 +804,35 @@ function renderSlots() {
 
     if (fxVars) slot.setAttribute('style', fxVars);
 
+    /* Two controls on the same corner, never both: the leader removes anybody
+       else, and everybody can leave their own seat. Leaving used to have no
+       control at all, so a player invited into a lobby was stuck in it. */
     if (!isMe && iAmLeader) {
-      const kick = el('button', 'slot-kick', '<svg><use href="#i-x"/></svg>');
-      kick.onclick = (ev) => { ev.stopPropagation(); post('party', { action: 'kick', target: m.userId }); };
+      const kick = el('button', 'slot-act slot-kick',
+        `<svg><use href="#i-x"/></svg>${tx('KICK')}`);
+      kick.title = tx('KICK');
+      kick.onclick = (ev) => {
+        ev.stopPropagation();
+        post('party', { action: 'kick', target: m.userId });
+      };
       slot.appendChild(kick);
+    } else if (isMe && members.length > 1) {
+      const leave = el('button', 'slot-act slot-leave',
+        `<svg><use href="#i-logout"/></svg>${tx('LEAVE')}`);
+      leave.title = tx('LEAVE PARTY');
+      leave.onclick = (ev) => {
+        ev.stopPropagation();
+        /* The leader leaving takes the party with them, so that one is asked
+           for rather than done on a stray click. */
+        if (iAmLeader) {
+          askConfirm('LEAVE PARTY',
+            'You lead this party. Leaving disbands it for everyone.',
+            () => post('party', { action: 'leave' }));
+        } else {
+          post('party', { action: 'leave' });
+        }
+      };
+      slot.appendChild(leave);
     }
     host.appendChild(slot);
   }
@@ -936,6 +961,53 @@ function renderFound(d) {
 }
 
 /* =============================================================== MAP VOTE */
+/* One screen, one timer, up to three questions: the map, the weapon everybody
+   spawns with, and whether a kill takes a headshot or any hit at all. Each is
+   optional — the server sends only the groups it is actually asking about. */
+function renderVoteOptions(hostId, wrapId, list, kind) {
+  const wrap = $(wrapId);
+  const host = $(hostId);
+  if (!wrap || !host) return;
+
+  wrap.classList.toggle('hidden', !(list && list.length));
+  host.innerHTML = '';
+  if (!list || !list.length) return;
+
+  list.forEach((o) => {
+    const b = el('button', 'mv-opt',
+      `<span class="lbl">${esc(tx(o.name || o.id))}</span><span class="n" data-vote="${esc(kind)}:${esc(o.id)}">0</span>`);
+    b.onclick = () => {
+      host.querySelectorAll('.mv-opt').forEach((n) => n.classList.remove('picked'));
+      b.classList.add('picked');
+      Sfx.play('click');
+      post('mapVote', { kind: kind, choice: o.id });
+    };
+    host.appendChild(b);
+  });
+}
+
+/* Paints a tally onto whichever group it belongs to. The map cards keep their
+   own diamond; the pills carry a small counter. */
+function paintTallies(tallies) {
+  if (!tallies) return;
+  Object.keys(tallies).forEach((kind) => {
+    const counts = tallies[kind] || {};
+    if (kind === 'map') {
+      document.querySelectorAll('.mv-votes b').forEach((n) => { n.textContent = '0'; });
+      Object.keys(counts).forEach((id) => {
+        const n = document.querySelector(`.mv-votes[data-map="${id}"] b`);
+        if (n) n.textContent = counts[id];
+      });
+      return;
+    }
+    document.querySelectorAll(`.n[data-vote^="${kind}:"]`).forEach((n) => { n.textContent = '0'; });
+    Object.keys(counts).forEach((id) => {
+      const n = document.querySelector(`.n[data-vote="${kind}:${id}"]`);
+      if (n) n.textContent = counts[id];
+    });
+  });
+}
+
 function renderMapVote(d) {
   const modal = $('modal-mapvote');
   if (!d) return;
@@ -943,20 +1015,30 @@ function renderMapVote(d) {
   if (d.close || d.result) {
     modal.classList.add('hidden');
     if (S.mapvoteTimer) { clearInterval(S.mapvoteTimer); S.mapvoteTimer = null; }
+
+    /* One line saying what the match is actually going to be, rather than three
+       toasts in a row. */
+    const parts = [];
     if (d.result) {
-      const nm = (S.mapvote && S.mapvote.names && S.mapvote.names[d.result]) || d.result;
-      toast('info', `Map selected: ${nm}`, 'MAP VOTE');
+      parts.push((S.mapvote && S.mapvote.names && S.mapvote.names[d.result]) || d.result);
     }
+    if (d.weaponName) parts.push(tx(d.weaponName));
+    if (d.rule) parts.push(tx(d.rule === 'head' ? 'HEADSHOT ONLY' : 'FULL BODY'));
+    if (parts.length) toast('info', parts.join(' · '), tn('VOTE'));
+
     S.mapvote = null;
     return;
   }
 
-  if (d.options) {
+  if (d.options || d.weapons || d.rules) {
     S.mapvote = { names: {} };
     modal.classList.remove('hidden');
     const grid = $('mv-grid');
     grid.innerHTML = '';
-    d.options.forEach((m, i) => {
+    /* A map already picked (one map for the mode, or the vote switched off)
+       arrives as an empty list, and the grid simply is not drawn. */
+    grid.classList.toggle('hidden', !(d.options && d.options.length));
+    (d.options || []).forEach((m, i) => {
       S.mapvote.names[m.id] = m.name;
       /* The screenshot is layered over the tinted plate rather than replacing
          it, so a missing or misnamed file degrades to the plate instead of a
@@ -978,11 +1060,24 @@ function renderMapVote(d) {
         document.querySelectorAll('.mv-card').forEach((c) => c.classList.remove('picked'));
         card.classList.add('picked');
         Sfx.play('click');
-        post('mapVote', { mapId: m.id });
+        post('mapVote', { kind: 'map', choice: m.id });
         $('mv-foot').textContent = `${tx('YOU VOTED FOR')} ${String(m.name).toUpperCase()}`;
       };
       grid.appendChild(card);
     });
+
+    renderVoteOptions('mv-weapons', 'mv-weapons-wrap', d.weapons, 'weapon');
+    renderVoteOptions('mv-rules', 'mv-rules-wrap', d.rules, 'rule');
+
+    /* The heading names whatever is actually being asked, so a vote with no
+       map in it does not say MAPS. */
+    const asked = [];
+    if (d.options && d.options.length) asked.push(tx('MAPS'));
+    if (d.weapons && d.weapons.length) asked.push(tx('WEAPON'));
+    if (d.rules && d.rules.length)     asked.push(tx('KILL RULE'));
+    const tag = document.querySelector('.mv-tag i');
+    if (tag) tag.textContent = asked.join(' · ');
+    $('mv-foot').textContent = asked.length > 1 ? tx('PICK ONE IN EACH') : tx('SELECT A MAP');
 
     const total = d.duration || 20;
     let left = total;
@@ -1000,11 +1095,10 @@ function renderMapVote(d) {
     }, 1000);
   }
 
-  if (d.votes) {
-    Object.keys(d.votes).forEach((id) => {
-      const n = document.querySelector(`.mv-votes[data-map="${id}"] b`);
-      if (n) n.textContent = d.votes[id];
-    });
+  if (d.tallies) {
+    paintTallies(d.tallies);
+  } else if (d.votes) {
+    paintTallies({ map: d.votes });          // a server sending map counts only
   }
 }
 
@@ -1013,7 +1107,14 @@ function renderParty(d) {
   if (!d) return;
 
   if (d.invite) {
-    const card = toast('info', `${d.invite.from} invited you to a party`, 'PARTY INVITE', 12000);
+    /* Two kinds arrive down the same pipe: a party invite puts you in their
+       lobby, a room invite puts you in their custom game. Saying which one it
+       is matters, because accepting the wrong one is a different screen. */
+    const room = d.invite.kind === 'room';
+    const where = room ? (d.invite.roomName || tn('their room')) : tn('their party');
+    const card = toast('info',
+      `${d.invite.from} ${tn('invited you to')} ${where}`,
+      room ? tn('ROOM INVITE') : tn('PARTY INVITE'), 12000);
     const row = el('div');
     row.style.cssText = 'display:flex;gap:6px;margin-top:8px';
     const a = el('button', 'btn', 'ACCEPT'); a.style.cssText = 'padding:6px 14px;font-size:10px';
@@ -1044,6 +1145,7 @@ function renderCustom() {
   $('cm-rounds').textContent = S.cm.rounds;
   $('cm-armor').checked = S.cm.armor;
   $('cm-hsonly').checked = S.cm.hsOnly;
+  $('cm-autostart').checked = S.cm.autoStart;
   updateSteps();
 }
 
@@ -1090,17 +1192,25 @@ function renderCustomWeapons() {
 
 function renderCustomMaps() {
   const host = $('cm-maps');
-  const all = ((S.boot && S.boot.maps) || []).filter((m) => !m.modes || m.modes.includes(S.cm.mode));
+  /* A custom room is the host's room, so every map is on offer — filtering by
+     mode left a 1v1 room looking at six of twenty and reading as maps missing.
+     The ones actually built for the mode come first and the rest are marked,
+     so the choice is still informed. */
+  const maps = (S.boot && S.boot.maps) || [];
+  const fits = (m) => !m.modes || m.modes.includes(S.cm.mode);
+  const all = maps.slice().sort((a, b) => (fits(b) ? 1 : 0) - (fits(a) ? 1 : 0));
   const perPage = 9;
   const pages = Math.max(1, Math.ceil(all.length / perPage));
   if (S.cm.mapPage > pages) S.cm.mapPage = 1;
   const slice = all.slice((S.cm.mapPage - 1) * perPage, S.cm.mapPage * perPage);
 
   host.innerHTML = '';
-  if (!slice.length) host.appendChild(el('div', 'empty', 'NO MAP SUPPORTS THIS MODE'));
+  if (!slice.length) host.appendChild(el('div', 'empty', tx('NO MAPS')));
   slice.forEach((m) => {
-    const card = el('div', 'mapcard' + (m.id === S.cm.map ? ' on' : ''),
-      `<div class="art" style="${mapArt(m.id)}"></div><div class="cap">${esc(m.name)}</div>`);
+    const off = fits(m) ? '' : ' offmode';
+    const tag = fits(m) ? '' : `<span class="mapcard-tag">${tx('NOT BUILT FOR')} ${esc(S.cm.mode)}</span>`;
+    const card = el('div', 'mapcard' + off + (m.id === S.cm.map ? ' on' : ''),
+      `<div class="art" style="${mapArt(m.id)}"></div>${tag}<div class="cap">${esc(m.name)}</div>`);
     card.onclick = () => { S.cm.map = m.id; Sfx.play('click'); renderCustomMaps(); updateSteps(); };
     host.appendChild(card);
   });
@@ -1147,12 +1257,18 @@ function renderCustomRoom() {
   const roster = S.room.roster || [];
   const team = (t) => roster.filter((r) => r.team === t && !r.spectator);
 
+  /* The host gets swap and kick on everybody else; everybody gets a way out of
+     their own seat. Before this the only control was a grey `mini` KICK that
+     read as part of the name row, and a guest had nothing at all. */
   const slot = (r) => `
     <div class="cm-slot">
       <span class="av">${esc(initial(r.name))}</span><b>${esc(r.name)}</b>
       ${r.host ? '<span class="tag">HOST</span>' : ''}
-      ${isHost && !r.host ? `<button class="mini" data-room="move" data-user="${r.userId}" data-team="${r.team === 1 ? 2 : 1}">SWAP</button>
-        <button class="mini" data-room="kick" data-user="${r.userId}">KICK</button>` : ''}
+      <span class="cm-slot-acts">
+      ${isHost && !r.host ? `<button class="mini swap" data-room="move" data-user="${r.userId}" data-team="${r.team === 1 ? 2 : 1}">${tx('SWAP')}</button>
+        <button class="mini danger" data-room="kick" data-user="${r.userId}"><svg><use href="#i-x"/></svg>${tx('KICK')}</button>` : ''}
+      ${r.userId === me ? `<button class="mini danger" data-room="leave"><svg><use href="#i-logout"/></svg>${tx('LEAVE')}</button>` : ''}
+      </span>
     </div>`;
 
   view.classList.remove('hidden');
@@ -1176,7 +1292,8 @@ function customPayload() {
   return {
     mode: S.cm.mode, map: S.cm.map, rounds: S.cm.rounds,
     matchType: S.cm.matchType, weapons: S.cm.weapons,
-    armorEnabled: S.cm.armor, headshotOnly: S.cm.hsOnly
+    armorEnabled: S.cm.armor, headshotOnly: S.cm.hsOnly,
+    autoStart: S.cm.autoStart
   };
 }
 
@@ -3251,6 +3368,7 @@ $('prompt-input').onkeydown = (e) => {
 
 $('cm-armor').onchange = (e) => { S.cm.armor = e.target.checked; };
 $('cm-hsonly').onchange = (e) => { S.cm.hsOnly = e.target.checked; };
+$('cm-autostart').onchange = (e) => { S.cm.autoStart = e.target.checked; };
 
 document.addEventListener('click', (e) => {
   const tab = e.target.closest('.ft .tab[data-page], .hd-actions [data-page]');
@@ -3285,6 +3403,18 @@ document.addEventListener('click', (e) => {
     else if (a === 'apply') post('custom', { action: 'settings', settings: customPayload() });
     else if (a === 'kick') post('custom', { action: 'kick', userId: parseInt(room.dataset.user, 10) });
     else if (a === 'move') post('custom', { action: 'move', userId: parseInt(room.dataset.user, 10), team: parseInt(room.dataset.team, 10) });
+    else if (a === 'leave') {
+      /* The host leaving hands the room to somebody else, or closes it when
+         they are the last one, so it is worth confirming. */
+      const isHost = S.room && S.boot && S.room.hostId === S.boot.player.userId;
+      if (isHost) {
+        askConfirm('LEAVE ROOM',
+          'You are the host. The room passes to another player, or closes if you are the last one.',
+          () => post('custom', { action: 'leave' }));
+      } else {
+        post('custom', { action: 'leave' });
+      }
+    }
     return;
   }
 
@@ -3294,7 +3424,7 @@ document.addEventListener('click', (e) => {
   Sfx.play('click');
 
   switch (a) {
-    case 'close': post('close'); break;
+    case 'close': if (!escLocked()) post('close'); break;
     case 'back':
       S.room = null; renderCustomRoom(); renderCustomParty(); updateSteps();
       $('btn-back').classList.add('hidden');
@@ -3320,7 +3450,14 @@ document.addEventListener('click', (e) => {
         toast('success', `Code ${S.room.code} copied`, 'ROOM CODE');
       }
       break;
-    case 'cm-chat': toast('info', tn('Share the room code with your friends.'), tn('ROOM CODE')); break;
+    case 'cm-chat':
+      if (S.room && S.room.code) {
+        post('roomCode', { code: S.room.code });
+        toast('success', `${tn('Room code sent to chat')}: ${S.room.code}`, tn('ROOM CODE'));
+      } else {
+        toast('warning', tn('You are not in a room.'), tn('ROOM CODE'));
+      }
+      break;
     case 'cm-create': post('custom', Object.assign({ action: 'create' }, customPayload())); break;
     case 'cm-leave': post('custom', { action: 'leave' }); break;
     case 'cm-joincode':
@@ -3342,6 +3479,15 @@ document.addEventListener('click', (e) => {
   }
 });
 
+/* Some screens are the server waiting on an answer, not something the player
+   opened. Escaping out of one hides the menu and leaves the answer owed, and
+   the only way back is to open ranked again — so escape does nothing while one
+   is up. The client refuses the close as well, because a stray post() would
+   otherwise get past this. */
+function escLocked() {
+  return !$('modal-mapvote').classList.contains('hidden') || !!S.found;
+}
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!$('modal-prompt').classList.contains('hidden')) {
@@ -3349,6 +3495,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     if (!$('modal-invite').classList.contains('hidden')) { $('modal-invite').classList.add('hidden'); return; }
+    if (escLocked()) { e.preventDefault(); return; }
     if (!$('modal-result').classList.contains('hidden')) $('modal-result').classList.add('hidden');
     post('close');
   }

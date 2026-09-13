@@ -2093,11 +2093,14 @@ function PartyMgr.invite(fromId, targetId)
         end
     end
 
-    Invites[targetId] = { partyId = party.id, from = fromId, expires = now() + Config.Party.inviteTimeout }
+    Invites[targetId] = { kind = 'party', partyId = party.id, from = fromId,
+                          expires = now() + Config.Party.inviteTimeout }
     local s = srcOf(targetId)
     if s then
         TriggerClientEvent('m5rp:cl:party', s, {
-            invite = { partyId = party.id, from = Players[fromId] and Players[fromId].name or '?', timeout = Config.Party.inviteTimeout }
+            invite = { kind = 'party', partyId = party.id,
+                       from = Players[fromId] and Players[fromId].name or '?',
+                       timeout = Config.Party.inviteTimeout }
         })
     end
     return true
@@ -2110,6 +2113,13 @@ function PartyMgr.accept(userId)
         return false, 'Invitation expired.'
     end
     Invites[userId] = nil
+
+    if inv.kind == 'room' then
+        local room = CustomGames.rooms[inv.roomId]
+        if not room then return false, 'That room no longer exists.' end
+        if room.state ~= 'LOBBY' then return false, 'That room has already started.' end
+        return CustomGames.join(userId, room.id, room.password)
+    end
 
     local party = Parties[inv.partyId]
     if not party then return false, 'Party no longer exists.' end
@@ -2130,7 +2140,11 @@ function PartyMgr.decline(userId)
     local inv = Invites[userId]
     Invites[userId] = nil
     if inv then
-        notifyUser(inv.from, 'info', 'Your party invitation was declined.', 'PARTY')
+        local room = inv.kind == 'room'
+        notifyUser(inv.from, 'info',
+            room and 'Your room invitation was declined.'
+                 or  'Your party invitation was declined.',
+            room and 'CUSTOM GAME' or 'PARTY')
     end
     return true
 end
@@ -2866,6 +2880,15 @@ local function presetWeapons(ids)
     return out
 end
 
+function Match.headshotRule(m)
+    local h = Config.Headshot
+    if not h or not h.enabled or not h.oneShotKill then return false end
+    if m.settings.headshotOneShot == false then return false end
+    if m.customId and not h.enabledInCustom then return false end
+    if m.ranked   and not h.enabledInRanked then return false end
+    return true
+end
+
 function Match.loadoutFor(m, userId)
     local base = Config.Loadouts[m.settings.loadout] or Config.Loadouts.standard
 
@@ -3147,6 +3170,10 @@ function Match.create(opts)
         map       = nil,
         mapOptions= {},
         mapVotes  = {},
+        weaponOptions = {},
+        weaponVotes   = {},
+        ruleVotes     = {},
+        ruleVote      = false,
         createdAt = now(),
         startedAt = nil,
         endedAt   = nil,
@@ -3269,8 +3296,9 @@ function Match.deploy(m, userId)
             minimap         = m.settings.minimap,
             movement        = m.settings.movement,
             jump            = m.settings.jump,
-            headshotOneShot = m.settings.headshotOneShot and Config.Headshot.oneShotKill,
+            headshotOneShot = Match.headshotRule(m),
             headshotOnly    = m.settings.headshotOnly,
+            headBones       = Config.Headshot and Config.Headshot.headBones or nil,
             matchType       = m.settings.matchType,
             respawn         = m.settings.respawn,
             spawnProtection = Config.Match.spawnProtection,
@@ -3330,6 +3358,45 @@ function Match.createFromReady(rc)
         })
 end
 
+local function weaponVoteOptions()
+    local w = Config.MapVote.weapons
+    if not w or not w.enabled then return nil end
+
+    local excluded = {}
+    for _, id in ipairs(w.exclude or {}) do excluded[id] = true end
+
+    local forced, pool = {}, {}
+    for _, id in ipairs(w.always or {}) do
+        if PresetById[id] and not excluded[id] then forced[#forced + 1] = id end
+    end
+    local isForced = {}
+    for _, id in ipairs(forced) do isForced[id] = true end
+
+    for i = 1, #Config.WeaponPresets do
+        local p = Config.WeaponPresets[i]
+        if not excluded[p.id] and not isForced[p.id]
+           and Security.weaponAllowed(p.weapon) then
+            pool[#pool + 1] = p.id
+        end
+    end
+
+    local want = tonumber(w.options) or 0
+    if want <= 0 then want = #forced + #pool end
+    if want <= #forced then
+        pool = {}
+    else
+        shuffle(pool)
+        local keep = want - #forced
+        for i = #pool, keep + 1, -1 do pool[i] = nil end
+    end
+
+    local out = {}
+    for _, id in ipairs(forced) do out[#out + 1] = id end
+    for _, id in ipairs(pool)   do out[#out + 1] = id end
+    if #out < 2 then return nil end
+    return out
+end
+
 function Match.startMapVote(m)
     Match.broadcast(m, 'm5rp:cl:matchFound', { done = true })
 
@@ -3340,25 +3407,55 @@ function Match.startMapVote(m)
         return
     end
 
-    if not Config.MapVote.enabled or #pool == 1 then
+    m.mapVotes, m.weaponVotes, m.ruleVotes = {}, {}, {}
+    m.mapOptions, m.weaponOptions = {}, {}
+
+    if Config.MapVote.enabled and #pool > 1 then
+        shuffle(pool)
+        for i = 1, math.min(Config.MapVote.options, #pool) do
+            m.mapOptions[#m.mapOptions + 1] = pool[i]
+        end
+    else
         m.map = pool[math.random(#pool)]
+    end
+
+    if m.ranked and not m.customId then
+        m.weaponOptions = weaponVoteOptions() or {}
+        local hs = Config.MapVote.headshot
+        m.ruleVote = (hs and hs.enabled) == true
+    end
+
+    local groups = 0
+    if #m.mapOptions    > 0 then groups = groups + 1 end
+    if #m.weaponOptions > 0 then groups = groups + 1 end
+    if m.ruleVote           then groups = groups + 1 end
+
+    if groups == 0 then
+        Match.applyVoteDefaults(m)
         Match.beginSetup(m)
         return
     end
 
-    shuffle(pool)
-    m.mapOptions = {}
-    for i = 1, math.min(Config.MapVote.options, #pool) do
-        m.mapOptions[#m.mapOptions + 1] = pool[i]
-    end
-    m.mapVotes = {}
-
     Match.setState(m, 'MAP_VOTE', Config.MapVote.duration)
 
-    local options = {}
+    local maps = {}
     for i = 1, #m.mapOptions do
-        options[#options + 1] = {
+        maps[#maps + 1] = {
             id = m.mapOptions[i].id, name = m.mapOptions[i].name, image = m.mapOptions[i].image
+        }
+    end
+
+    local weapons = {}
+    for i = 1, #m.weaponOptions do
+        local p = PresetById[m.weaponOptions[i]]
+        if p then weapons[#weapons + 1] = { id = p.id, name = p.label or p.id } end
+    end
+
+    local rules = nil
+    if m.ruleVote then
+        rules = {
+            { id = 'full', name = 'FULL BODY' },
+            { id = 'head', name = 'HEADSHOT ONLY' }
         }
     end
 
@@ -3366,64 +3463,135 @@ function Match.startMapVote(m)
         local s = srcOf(userId)
         if s then
             TriggerClientEvent('m5rp:cl:mapVote', s, {
-                matchId = m.id, options = options,
-                duration = Config.MapVote.duration, votes = {}
+                matchId  = m.id,
+                options  = maps,
+                weapons  = weapons,
+                rules    = rules,
+                duration = Config.MapVote.duration,
+                votes    = {}
             })
         end
     end
 end
 
-function Match.vote(m, userId, mapId)
+function Match.applyVoteDefaults(m)
+    if not m.map then
+        local pool = mapsForMode(m.mode)
+        m.map = pool[math.random(#pool)] or m.map
+    end
+    if m.settings.headshotOnly == nil then
+        local hs = Config.MapVote.headshot
+        m.settings.headshotOnly = (hs and hs.default) == true
+    end
+end
+
+local function voteGroups(m)
+    return {
+        { kind = 'map',    votes = m.mapVotes,    open = #m.mapOptions > 0,
+          valid = function(id)
+              for i = 1, #m.mapOptions do
+                  if m.mapOptions[i].id == id then return true end
+              end
+              return false
+          end },
+        { kind = 'weapon', votes = m.weaponVotes, open = #m.weaponOptions > 0,
+          valid = function(id) return inList(m.weaponOptions, id) end },
+        { kind = 'rule',   votes = m.ruleVotes,   open = m.ruleVote == true,
+          valid = function(id) return id == 'full' or id == 'head' end }
+    }
+end
+
+local function tallyOf(votes)
+    local t = {}
+    for _, id in pairs(votes) do t[id] = (t[id] or 0) + 1 end
+    return t
+end
+
+local function winnerOf(votes)
+    local best, bestN, tied = nil, -1, {}
+    for id, n in pairs(tallyOf(votes)) do
+        if n > bestN then bestN, best, tied = n, id, { id }
+        elseif n == bestN then tied[#tied + 1] = id end
+    end
+    if #tied > 1 then return tied[math.random(#tied)] end
+    return best
+end
+
+function Match.vote(m, userId, kind, choice)
     if m.state ~= 'MAP_VOTE' then return false end
     if not m.players[userId] then return false end
-    local valid = false
-    for i = 1, #m.mapOptions do
-        if m.mapOptions[i].id == mapId then valid = true break end
+
+    if choice == nil then kind, choice = 'map', kind end
+    choice = tostring(choice or '')
+
+    local group
+    for _, g in ipairs(voteGroups(m)) do
+        if g.kind == kind then group = g break end
     end
-    if not valid then return false end
+    if not group or not group.open or not group.valid(choice) then return false end
 
-    m.mapVotes[userId] = mapId
+    group.votes[userId] = choice
 
-    local tally = {}
-    for _, id in pairs(m.mapVotes) do tally[id] = (tally[id] or 0) + 1 end
-    Match.broadcast(m, 'm5rp:cl:mapVote', { matchId = m.id, votes = tally, update = true })
+    local tallies = {}
+    for _, g in ipairs(voteGroups(m)) do
+        if g.open then tallies[g.kind] = tallyOf(g.votes) end
+    end
+    Match.broadcast(m, 'm5rp:cl:mapVote', {
+        matchId = m.id, votes = tallies.map, tallies = tallies, update = true
+    })
 
-    local waiting, voted = 0, 0
+    local waiting, done = 0, 0
     for id, mp in pairs(m.players) do
         if mp.connected then
             waiting = waiting + 1
-            if m.mapVotes[id] then voted = voted + 1 end
+            local all = true
+            for _, g in ipairs(voteGroups(m)) do
+                if g.open and not g.votes[id] then all = false break end
+            end
+            if all then done = done + 1 end
         end
     end
-    if waiting > 0 and voted >= waiting then
+    if waiting > 0 and done >= waiting then
         Match.resolveMapVote(m)
     end
     return true
 end
 
 function Match.resolveMapVote(m)
-    local tally, best, bestN = {}, nil, -1
-    for _, id in pairs(m.mapVotes) do tally[id] = (tally[id] or 0) + 1 end
+    local result = {}
 
-    local tied = {}
-    for id, n in pairs(tally) do
-        if n > bestN then bestN, best, tied = n, id, { id }
-        elseif n == bestN then tied[#tied + 1] = id end
+    if #m.mapOptions > 0 then
+        local id = winnerOf(m.mapVotes) or m.mapOptions[math.random(#m.mapOptions)].id
+        m.map = MapById[id] or m.mapOptions[1]
     end
 
-    local chosenId
-    if #tied > 1 then
-        chosenId = tied[math.random(#tied)]
-    else
-        chosenId = best
+    if #m.weaponOptions > 0 then
+        local id = winnerOf(m.weaponVotes)
+                   or m.weaponOptions[math.random(#m.weaponOptions)]
+        local p = PresetById[id]
+        if p then
+            m.settings.weapons = { id }
+            result.weapon     = id
+            result.weaponName = p.label or id
+        end
     end
 
-    if not chosenId then
-        chosenId = m.mapOptions[math.random(#m.mapOptions)].id
+    if m.ruleVote then
+        local id = winnerOf(m.ruleVotes)
+        if id == nil then
+            local hs = Config.MapVote.headshot
+            id = ((hs and hs.default) == true) and 'head' or 'full'
+        end
+        m.settings.headshotOnly = (id == 'head')
+        result.rule = id
     end
 
-    m.map = MapById[chosenId] or m.mapOptions[1]
-    Match.broadcast(m, 'm5rp:cl:mapVote', { matchId = m.id, result = m.map.id, close = true })
+    Match.applyVoteDefaults(m)
+
+    result.matchId = m.id
+    result.result  = m.map and m.map.id or nil
+    result.close   = true
+    Match.broadcast(m, 'm5rp:cl:mapVote', result)
     Match.beginSetup(m)
 end
 
@@ -5212,7 +5380,9 @@ function CustomGames.create(userId, data)
         respawn     = data.respawn == true,
         spectators  = data.spectators ~= false,
         teamBalance = data.teamBalance ~= false,
-        autoStart   = data.autoStart ~= false,
+        autoStart   = (data.autoStart == nil) and (d.autoStart == true)
+                      or (data.autoStart == true),
+        autoStartAt = tonumber(d.autoStartAt) or 1.0,
         minimap     = data.minimap == true,
         vehicles    = data.vehicles == true,
         killcam     = data.killcam == true,
@@ -5299,6 +5469,35 @@ function CustomGames.join(userId, roomId, password)
 
     CustomGames.sync(room)
     CustomGames.checkAutoStart(room)
+    return true
+end
+
+function CustomGames.invite(fromId, targetId)
+    local room = CustomGames.of(fromId)
+    if not room then return false, 'You are not in a room.' end
+    if room.state ~= 'LOBBY' then return false, 'The match has already started.' end
+    if room.players[targetId] then return false, 'That player is already in the room.' end
+    if room.banned[targetId] then return false, 'That player is banned from this room.' end
+    if count(room.players) >= room.maxPlayers and not room.settings.spectators then
+        return false, 'The room is full.'
+    end
+
+    local target = Players[targetId]
+    if not target then return false, 'Player not found.' end
+    if target.state ~= 'IDLE' then return false, 'That player is busy.' end
+    if Bans.check(targetId, 'CUSTOM') then return false, 'That player cannot join custom games.' end
+
+    Invites[targetId] = { kind = 'room', roomId = room.id, from = fromId,
+                          expires = now() + Config.Party.inviteTimeout }
+
+    local s = srcOf(targetId)
+    if s then
+        TriggerClientEvent('m5rp:cl:party', s, {
+            invite = { kind = 'room', roomId = room.id, roomName = room.name,
+                       from = Players[fromId] and Players[fromId].name or '?',
+                       timeout = Config.Party.inviteTimeout }
+        })
+    end
     return true
 end
 
@@ -5493,7 +5692,14 @@ end
 function CustomGames.checkAutoStart(room)
     if not room.settings.autoStart or room.state ~= 'LOBBY' then return end
     local cfg = Config.Modes[room.mode]
-    local needed = cfg.type == 'ffa' and (cfg.minPlayers or 4) or (cfg.teamSize * 2)
+    local seats = cfg.type == 'ffa' and (cfg.maxPlayers or 12) or (cfg.teamSize * 2)
+
+    local ratio = tonumber(room.settings.autoStartAt)
+                  or tonumber(Config.CustomGames.defaults.autoStartAt) or 1.0
+    if ratio <= 0 then ratio = 1.0 end
+    if ratio > 1 then ratio = 1.0 end
+
+    local needed = math.max(2, math.ceil(seats * ratio))
     local active = 0
     for _, e in pairs(room.players) do
         if not e.spectator then active = active + 1 end
@@ -8032,11 +8238,16 @@ RegisterNetEvent('m5rp:sv:ready', function(checkId, accept)
     end
 end)
 
-RegisterNetEvent('m5rp:sv:mapVote', function(mapId)
+RegisterNetEvent('m5rp:sv:mapVote', function(a, b)
     local pd = caller('menu')
     if not pd or not pd.matchId then return end
     local m = Matches[pd.matchId]
-    if m then Match.vote(m, pd.userId, tostring(mapId or '')) end
+    if not m then return end
+    if b == nil then
+        Match.vote(m, pd.userId, 'map', tostring(a or ''))
+    else
+        Match.vote(m, pd.userId, tostring(a or ''), tostring(b or ''))
+    end
 end)
 
 RegisterNetEvent('m5rp:sv:party', function(action, data)
@@ -8051,6 +8262,8 @@ RegisterNetEvent('m5rp:sv:party', function(action, data)
         local target = resolveTarget(data.target)
         if not target then
             ok, reason = false, 'No player with that ID.'
+        elseif CustomGames.of(pd.userId) then
+            ok, reason = CustomGames.invite(pd.userId, target)
         else
             ok, reason = PartyMgr.invite(pd.userId, target)
         end

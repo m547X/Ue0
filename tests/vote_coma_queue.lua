@@ -21,7 +21,7 @@ function log() end
 function err() end
 
 -- ==========================================================================
--- 1. the map vote: decided is decided, so stop counting down
+-- 1. the vote: three questions, one timer, and decided is decided
 -- ==========================================================================
 local RESOLVED, SENT = 0, {}
 Match = {
@@ -29,18 +29,31 @@ Match = {
   broadcast      = function(_, _, data) SENT[#SENT + 1] = data end
 }
 
+function inList(list, value)
+  for i = 1, #list do if list[i] == value then return true end end
+  return false
+end
+
 do
-  local a = SV:find('function Match.vote(m, userId, mapId)', 1, true)
+  local a = SV:find('local function voteGroups(m)', 1, true)
   local b = SV:find('function Match.resolveMapVote', a, true)
   assert(a and b, 'could not slice Match.vote')
   assert(load(SV:sub(a, b - 1), 'vote', 't',
          setmetatable({ Match = Match }, { __index = _G })))()
 end
 
-local function voteMatch(players)
+--- A match mid-vote. `groups` says which questions are being asked, so the
+--- same helper covers a map-only vote and the full three.
+local function voteMatch(players, groups)
+  groups = groups or { map = true }
   RESOLVED, SENT = 0, {}
-  local m = { id = 'm1', state = 'MAP_VOTE', mapVotes = {}, players = {},
-              mapOptions = { { id = 'dust' }, { id = 'neon1' }, { id = 'lego' } } }
+  local m = {
+    id = 'm1', state = 'MAP_VOTE', players = {},
+    mapVotes = {}, weaponVotes = {}, ruleVotes = {},
+    mapOptions    = groups.map and { { id = 'dust' }, { id = 'neon1' }, { id = 'lego' } } or {},
+    weaponOptions = groups.weapon and { 'sniper', 'smg', 'knife' } or {},
+    ruleVote      = groups.rule == true
+  }
   for i = 1, players do m.players[i] = { connected = true } end
   return m
 end
@@ -84,6 +97,91 @@ check('voting after the vote is over is refused', Match.vote(m, 1, 'dust'), fals
 m = voteMatch(1)
 Match.vote(m, 1, 'lego')
 check('a single player decides on their own', RESOLVED, 1)
+
+-- ==========================================================================
+-- 1b. the weapon and the kill rule, on the same screen and the same timer
+-- ==========================================================================
+-- One answer each is owed, and the vote runs until every player has answered
+-- every question. A map picked but no weapon picked is not a finished vote.
+m = voteMatch(1, { map = true, weapon = true, rule = true })
+check('the map alone does not finish a three part vote',
+      Match.vote(m, 1, 'map', 'dust') and RESOLVED, 0)
+check('  nor the weapon on top of it',
+      Match.vote(m, 1, 'weapon', 'smg') and RESOLVED, 0)
+check('the last answer finishes it',
+      Match.vote(m, 1, 'rule', 'head') and RESOLVED, 1)
+check('  and each answer went to its own group', m.weaponVotes[1], 'smg')
+check('  including the rule',                    m.ruleVotes[1], 'head')
+
+-- two players, and neither is finished until both are
+m = voteMatch(2, { map = true, weapon = true })
+Match.vote(m, 1, 'map', 'dust')
+Match.vote(m, 1, 'weapon', 'sniper')
+check('one player answering everything is not the whole vote', RESOLVED, 0)
+Match.vote(m, 2, 'map', 'dust')
+check('  nor the other answering half of it',                  RESOLVED, 0)
+Match.vote(m, 2, 'weapon', 'knife')
+check('  both, on everything, ends it',                        RESOLVED, 1)
+
+-- a weapon that was not offered, and a rule that is not one of the two
+m = voteMatch(2, { map = true, weapon = true, rule = true })
+check('a weapon that was not offered is refused', Match.vote(m, 1, 'weapon', 'minigun'), false)
+check('a rule that is neither is refused',        Match.vote(m, 1, 'rule', 'maybe'), false)
+check('  full body is one of them',               Match.vote(m, 1, 'rule', 'full'), true)
+check('  headshot only is the other',             Match.vote(m, 1, 'rule', 'head'), true)
+
+-- a group that is switched off is not asked about and not waited for
+m = voteMatch(1, { map = true })
+check('voting on a weapon nobody offered is refused',
+      Match.vote(m, 1, 'weapon', 'smg'), false)
+check('  and the map alone still finishes the vote',
+      Match.vote(m, 1, 'map', 'dust') and RESOLVED, 1)
+
+-- a vote with no map in it at all, which is what a one-map mode sends
+m = voteMatch(1, { weapon = true })
+check('a weapon-only vote is finished by the weapon',
+      Match.vote(m, 1, 'weapon', 'smg') and RESOLVED, 1)
+
+-- the old two-argument call still means a map vote
+m = voteMatch(1)
+check('the old vote(m, id, mapId) shape still works', Match.vote(m, 1, 'dust'), true)
+check('  and lands in the map group',                 m.mapVotes[1], 'dust')
+
+-- every group's tally goes out on every vote, so each counter can be painted
+m = voteMatch(2, { map = true, weapon = true, rule = true })
+Match.vote(m, 1, 'map', 'dust')
+Match.vote(m, 2, 'weapon', 'smg')
+local last = SENT[#SENT]
+check('the broadcast carries a tally per group',
+      last.tallies and last.tallies.map and last.tallies.weapon
+      and last.tallies.rule ~= nil, true)
+check('  the map count is right',    last.tallies.map.dust, 1)
+check('  and the weapon count',      last.tallies.weapon.smg, 1)
+check('  and the old votes field still carries the map',
+      last.votes and last.votes.dust, 1)
+
+-- ==========================================================================
+-- 1c. picking the winner
+-- ==========================================================================
+local winnerOf
+do
+  local a = SV:find('local function tallyOf(votes)', 1, true)
+  local b = SV:find('function Match.vote(m, userId, kind, choice)', a, true)
+  winnerOf = assert(load(SV:sub(a, b - 1) .. '\nreturn winnerOf', 'win'))()
+end
+
+check('the most votes wins', winnerOf({ [1] = 'a', [2] = 'b', [3] = 'b' }), 'b')
+check('one vote wins on its own', winnerOf({ [1] = 'a' }), 'a')
+check('nobody voting has no winner', winnerOf({}), nil)
+
+-- a tie is broken at random, so what is checked is that it picks one of them
+-- and does not favour whichever the table happened to hand back first
+local seen = {}
+for _ = 1, 200 do seen[winnerOf({ [1] = 'a', [2] = 'b' })] = true end
+check('a tie picks one of the tied options',
+      (seen.a or seen.b) and not seen.c, true)
+check('  and over 200 draws it picks both at least once',
+      seen.a == true and seen.b == true, true)
 
 -- ==========================================================================
 -- 2. the coma probe: a vRP without isInComa must not be asked twice

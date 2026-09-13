@@ -871,7 +871,11 @@ html[dir="rtl"] .ph-rule.r{background:linear-gradient(90deg,transparent,var(--bn
 .found-wait{margin-top:16px;font-size:12px;letter-spacing:.24em;color:var(--dim);animation:blink 1.2s infinite}
 
 /* ---------- MAP VOTE ---------- */
+/* max-height and a scroll, because this screen grew a weapon row and a kill
+   rule row under the maps. Without it the portrait cards ate the viewport and
+   the two new questions sat below the fold, unclickable and unscrollable. */
 .mapvote{width:min(1420px,94vw);padding:26px 30px 22px;border-radius:18px;
+  max-height:92vh;overflow-y:auto;
   background:linear-gradient(180deg,var(--panel),var(--panel-deep));
   border:1px solid var(--edge);
   box-shadow:0 40px 100px -44px #000,inset 0 1px 0 rgba(255,255,255,.05)}
@@ -896,8 +900,10 @@ html[dir="rtl"] .mv-rail i{background:linear-gradient(270deg,var(--red),var(--re
 .mv-card:hover{transform:translateY(-4px);border-color:var(--red);
   box-shadow:0 22px 44px -24px #000,0 0 0 1px rgba(var(--red-rgb),.3)}
 .mv-card.picked{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset,0 0 26px -8px var(--red-glow)}
-/* tall portrait art, the way a map is previewed in a shooter */
-.mv-art{position:relative;aspect-ratio:3/4;background-size:cover;background-position:center}
+/* tall portrait art, the way a map is previewed in a shooter — capped so three
+   questions still fit on one screen rather than pushing two of them off it */
+.mv-art{position:relative;aspect-ratio:3/4;max-height:min(44vh,330px);
+  background-size:cover;background-position:center}
 .mv-art::after{content:'';position:absolute;inset:0;
   background:linear-gradient(180deg,transparent 55%,rgba(4,7,11,.72))}
 .mv-foot-card{display:flex;flex-direction:column;align-items:center;gap:9px;
@@ -914,8 +920,37 @@ html[dir="rtl"] .mv-rail i{background:linear-gradient(270deg,var(--red),var(--re
   font-variant-numeric:tabular-nums}
 .mv-card.picked .mv-votes{border-color:var(--red);box-shadow:0 0 16px -4px var(--red-glow)}
 .mv-card.picked .mv-votes b{color:var(--red)}
+/* The weapon and the kill rule: two more questions on the same screen, drawn
+   as rows of pills rather than cards, so the map stays the thing the eye lands
+   on and the modal does not grow past the viewport. */
+.mv-extra{margin-top:20px}
+.mv-sub{display:flex;align-items:center;gap:8px;margin-bottom:10px;
+  font-size:10px;font-weight:700;letter-spacing:.24em;color:var(--dim)}
+.mv-sub svg{width:13px;height:13px;color:var(--red)}
+.mv-opts{display:flex;flex-wrap:wrap;gap:10px}
+.mv-opt{position:relative;display:flex;align-items:center;gap:10px;cursor:pointer;
+  padding:10px 16px;border-radius:10px;font-size:12px;font-weight:700;letter-spacing:.1em;
+  color:var(--dim);background:var(--panel-2);border:1px solid var(--edge-soft);
+  transition:.16s var(--ease)}
+.mv-opt:hover{color:var(--txt);border-color:var(--edge);transform:translateY(-2px)}
+.mv-opt.picked{color:var(--red);border-color:var(--red);
+  box-shadow:0 0 0 1px var(--red) inset,0 0 22px -10px var(--red-glow)}
+.mv-opt .n{min-width:20px;height:20px;flex:none;display:grid;place-items:center;
+  border-radius:6px;font-size:11px;font-variant-numeric:tabular-nums;
+  background:var(--panel-deep);border:1px solid var(--edge)}
+.mv-opt.picked .n{border-color:var(--red)}
+
 .mv-foot{margin-top:22px;text-align:center;font-size:11px;font-weight:700;
   letter-spacing:.26em;color:var(--dim)}
+
+/* At phone width the cards go to two across and the modal scrolls rather than
+   running off the screen with three questions stacked in it. */
+@media (max-width:760px){
+  .mapvote{width:94vw;padding:18px 16px 16px;max-height:92vh;overflow-y:auto}
+  .mv-tag,.mv-timer{font-size:24px}
+  .mv-grid{grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px}
+  .mv-opt{padding:8px 12px;font-size:11px}
+}
 
 /* ---------- MATCH RESULT ----------
    An overlay, never a modal: no dark sheet over the world, no pointer events,
@@ -1355,7 +1390,7 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
   background:linear-gradient(180deg,rgba(8,11,16,.66) 0%,rgba(8,11,16,.12) 38%,rgba(8,11,16,.55) 72%,rgba(8,11,16,.94) 100%)}
 .slot.filled > .slot-top,
 .slot.filled > .slot-foot,
-.slot.filled > .slot-kick{position:relative;z-index:1}
+.slot.filled > .slot-act{position:absolute;z-index:3}
 /* with artwork behind it the portrait needs its own ground to sit on */
 .slot.art .slot-av{box-shadow:0 0 0 3px rgba(var(--red-rgb),.5),0 0 30px -4px var(--red-glow),
   0 10px 30px -10px #000}
@@ -1863,11 +1898,21 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
   border:1px solid var(--edge-soft);overflow:hidden}
 .slot-track i{display:block;height:100%;background:linear-gradient(90deg,var(--red),var(--red-3))}
 
-.slot-kick{position:absolute;top:10px;right:10px;width:24px;height:24px;border-radius:6px;
-  display:grid;place-items:center;color:var(--dim-2);border:1px solid var(--edge-soft);opacity:0;transition:.15s}
-.slot:hover .slot-kick{opacity:1}
-.slot-kick:hover{color:var(--red);border-color:var(--red)}
-.slot-kick svg{width:10px;height:10px}
+/* These were 24px, dim, and invisible until the slot was hovered, which is a
+   control nobody finds. They are the only way out of a lobby and the only way
+   to remove somebody from one, so they are always on screen and they say what
+   they do. inset-inline-end rather than right: the interface flips for Arabic
+   and a hard right pinned them over the portrait. */
+.slot-act{position:absolute;top:9px;inset-inline-end:9px;z-index:3;
+  height:24px;padding:0 9px;border-radius:7px;display:flex;align-items:center;gap:5px;
+  font-size:9px;font-weight:700;letter-spacing:.5px;cursor:pointer;transition:.15s var(--ease)}
+.slot-act svg{width:10px;height:10px}
+
+.slot-kick{color:var(--red);background:rgba(210,45,60,.14);border:1px solid rgba(210,45,60,.42)}
+.slot-kick:hover{background:rgba(210,45,60,.26);border-color:var(--red)}
+
+.slot-leave{color:var(--dim);background:rgba(8,10,14,.72);border:1px solid var(--edge)}
+.slot-leave:hover{color:var(--red);border-color:var(--red)}
 
 .modebar{display:flex;gap:9px;justify-content:center;margin-top:16px}
 .ft-modes .mtab{min-width:0;height:34px;padding:0 15px;font-size:12px;border-radius:8px}
@@ -1955,6 +2000,11 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 .mini svg{width:11px;height:11px}
 .mini:hover{color:var(--red);border-color:var(--red)}
 .mini.right{margin-left:auto}
+/* Removing somebody, or removing yourself, should not look the same as any
+   other little grey button on the row. */
+.mini.danger{color:var(--red);background:rgba(210,45,60,.14);border-color:rgba(210,45,60,.42)}
+.mini.danger:hover{background:rgba(210,45,60,.26);border-color:var(--red)}
+.cm-slot-acts{display:flex;align-items:center;gap:6px;margin-inline-start:auto;flex-shrink:0}
 
 .stepper{display:flex;align-items:center;gap:10px}
 .stepper button{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
@@ -2014,6 +2064,13 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
   background:repeating-linear-gradient(58deg,rgba(0,0,0,.22) 0 3px,transparent 3px 11px)}
 .mapcard .cap{padding:7px 9px;font-size:12px;font-weight:600;text-align:center;color:var(--dim)}
 .mapcard.on .cap{color:var(--red)}
+/* Still pickable — the host may want it anyway — just not sold as a fit. */
+.mapcard{position:relative}
+.mapcard.offmode .art{opacity:.55}
+.mapcard.offmode:hover .art{opacity:.8}
+.mapcard-tag{position:absolute;top:7px;inset-inline-start:7px;z-index:2;
+  padding:2px 7px;border-radius:5px;font-size:9px;font-weight:700;letter-spacing:.4px;
+  color:var(--dim);background:rgba(8,10,14,.82);border:1px solid var(--edge-soft)}
 .pager{display:flex;gap:6px;justify-content:center;padding:10px}
 .pgn{width:28px;height:28px;border-radius:7px;font-size:12px;font-weight:600;color:var(--dim);
   background:var(--panel-2);border:1px solid var(--edge-soft)}

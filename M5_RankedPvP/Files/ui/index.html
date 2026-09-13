@@ -44,6 +44,7 @@
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H4l2-3a8 8 0 1115-5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
     <symbol id="i-head" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 14v7M8 18h8" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-login" viewBox="0 0 24 24"><path d="M14 3h5a2 2 0 012 2v14a2 2 0 01-2 2h-5M10 17l5-5-5-5M15 12H3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 3H5a2 2 0 00-2 2v14a2 2 0 002 2h5M17 17l5-5-5-5M22 12H10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9L7 7M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></symbol>
@@ -585,6 +586,19 @@
       </div>
       <div class="mv-rail"><i id="mv-rail-fill"></i></div>
       <div class="mv-grid" id="mv-grid"></div>
+
+      <!-- The weapon and the kill rule ride the same screen and the same
+           timer as the map: three questions, one answer each, one countdown. -->
+      <div class="mv-extra hidden" id="mv-weapons-wrap">
+        <div class="mv-sub"><svg><use href="#i-target"/></svg><span data-i18n="WEAPON">WEAPON</span></div>
+        <div class="mv-opts" id="mv-weapons"></div>
+      </div>
+
+      <div class="mv-extra hidden" id="mv-rules-wrap">
+        <div class="mv-sub"><svg><use href="#i-head"/></svg><span data-i18n="KILL RULE">KILL RULE</span></div>
+        <div class="mv-opts" id="mv-rules"></div>
+      </div>
+
       <div class="mv-foot" id="mv-foot" data-i18n="SELECT A MAP">SELECT A MAP</div>
     </div>
   </div>
@@ -780,6 +794,13 @@
             <div class="fld row">
               <label data-i18n="HEADSHOT ONLY">HEADSHOT ONLY</label>
               <label class="sw"><input type="checkbox" id="cm-hsonly"/><i></i></label>
+            </div>
+
+            <!-- Off by default: the room used to start the moment the seats
+                 filled, which read as the match starting on its own. -->
+            <div class="fld row">
+              <label data-i18n="AUTO START">AUTO START</label>
+              <label class="sw"><input type="checkbox" id="cm-autostart"/><i></i></label>
             </div>
           </aside>
 
