@@ -656,11 +656,35 @@ html[dir="rtl"] .ph-rule.r{background:linear-gradient(90deg,transparent,var(--bn
 .ph-dia{flex:0 0 auto;width:11px;height:11px;background:var(--bnd);
   transform:rotate(45deg);box-shadow:0 0 16px rgba(var(--bnd-rgb),.6)}
 
-.ph-word{flex:0 0 auto;font-size:74px;font-weight:900;line-height:1;letter-spacing:.05em;
+.ph-word{flex:0 0 auto;font-size:112px;font-weight:900;line-height:1;letter-spacing:.04em;
   color:var(--bnd);white-space:nowrap;
-  text-shadow:0 4px 0 rgba(0,0,0,.32),0 0 46px rgba(var(--bnd-rgb),.5),0 3px 14px #000}
-.ph-word.long{font-size:52px;letter-spacing:.1em}
-@keyframes phWord{from{transform:scale(.74);opacity:0}to{transform:scale(1);opacity:1}}
+  text-shadow:0 5px 0 rgba(0,0,0,.34),
+              0 0 34px rgba(var(--bnd-rgb),.85),
+              0 0 88px rgba(var(--bnd-rgb),.5),
+              0 0 150px rgba(var(--bnd-rgb),.28),
+              0 4px 18px #000}
+.ph-word.long{font-size:80px;letter-spacing:.08em}
+@keyframes phWord{
+  0%  {transform:scale(1.28);opacity:0;filter:blur(7px)}
+  55% {transform:scale(.975);opacity:1;filter:blur(0)}
+  100%{transform:scale(1);opacity:1}}
+
+/* The rules sweep outwards from behind the word rather than sitting there, so
+   the verdict lands instead of appearing. */
+.ph-rule{animation:phRule .5s var(--ease) both}
+.ph-dia{animation:phDia .5s .12s var(--ease) both}
+@keyframes phRule{from{transform:scaleX(.1);opacity:0}to{transform:scaleX(1);opacity:1}}
+@keyframes phDia{from{transform:rotate(45deg) scale(0);opacity:0}
+                 to{transform:rotate(45deg) scale(1);opacity:1}}
+
+/* a win gets a ring of its own colour thrown out behind the word */
+.ph-band.win::after,.ph-band.loss::after{content:'';position:absolute;
+  left:50%;top:50%;width:340px;height:340px;margin:-170px 0 0 -170px;z-index:-1;
+  border-radius:50%;border:2px solid rgba(var(--bnd-rgb),.5);
+  animation:phRing .85s var(--ease) forwards;pointer-events:none}
+@keyframes phRing{
+  from{transform:scale(.2);opacity:.85}
+  to  {transform:scale(2.1);opacity:0}}
 
 /* FIGHT: no rules, no diamonds, all glow */
 .ph-band.start{gap:0}
@@ -676,9 +700,11 @@ html[dir="rtl"] .ph-rule.r{background:linear-gradient(90deg,transparent,var(--bn
   100%{transform:scale(1);opacity:1}}
 
 @media (max-width:1500px){
-  .ph-word{font-size:58px}
+  .ph-word{font-size:84px}
+  .ph-word.long{font-size:62px}
   .ph-band.start .ph-word{font-size:104px}
-  .ph-rule{max-width:170px}}
+  .ph-rule{max-width:170px}
+  .ph-band.win::after,.ph-band.loss::after{width:260px;height:260px;margin:-130px 0 0 -130px}}
 
 .ph-label{font-size:12px;font-weight:700;letter-spacing:.36em;color:var(--dim);
   text-shadow:0 1px 3px #000,0 0 12px rgba(0,0,0,.9)}
@@ -689,7 +715,9 @@ html[dir="rtl"] .ph-rule.r{background:linear-gradient(90deg,transparent,var(--bn
   background:linear-gradient(180deg,rgba(14,20,28,.9),rgba(6,9,13,.72));
   border:1px solid var(--edge);box-shadow:0 14px 34px -22px #000;
   font-variant-numeric:tabular-nums;direction:ltr}
-.ph-score b{font-size:30px;font-weight:700;line-height:1}
+.ph-score{animation:phScore .45s .18s var(--ease) both}
+@keyframes phScore{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+.ph-score b{font-size:38px;font-weight:800;line-height:1}
 .ph-score b.a{color:var(--team-a)}
 .ph-score b.b{color:var(--team-b)}
 .ph-score i{width:2px;height:18px;background:rgba(255,255,255,.16)}
@@ -1153,6 +1181,16 @@ html[dir="rtl"] .res-board{text-align:right}
 .mvp-grid{position:relative;display:flex;gap:40px;justify-content:center}
 .mvp-grid b{display:block;font-size:35px;font-weight:700}
 .mvp-grid span{font-size:10px;letter-spacing:.24em;color:var(--dim)}
+/* The MVP is shown before the result now, so it needs a way onwards. The
+   match-end screens carry no cursor, so the key does the work and this is the
+   label for it — clickable too, for wherever a pointer does exist. */
+.mvp-next{position:relative;margin:30px auto 0;padding:12px 26px;gap:12px;
+  animation:mvpNext .4s 1.1s var(--ease) both}
+.mvp-next b{padding:3px 9px;border-radius:6px;font-size:10px;font-weight:700;
+  letter-spacing:.14em;color:#fff;background:rgba(0,0,0,.32);
+  border:1px solid rgba(255,255,255,.25)}
+.mvp-next b.hidden{display:none}
+@keyframes mvpNext{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
 
 /* ==========================================================================
    HUB WINDOW

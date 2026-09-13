@@ -546,28 +546,8 @@ RegisterNUICallback('settings', function(data, cb)
     cb('ok')
 end)
 
-RegisterNUICallback('roomCode', function(data, cb)
-    local c = Config.RoomCodeChat
-    local code = tostring(data and data.code or ''):upper():gsub('%s', '')
-
-    if not c or c.enabled == false or code == '' then
-        cb('ok')
-        return
-    end
-
-    local text = (c.message or '%s'):format(code)
-
-    if c.mode == 'local' then
-        local col = c.localColor or { 220, 60, 80 }
-        TriggerEvent('chat:addMessage', {
-            color = { col[1] or 220, col[2] or 60, col[3] or 80 },
-            multiline = false,
-            args = { c.localTitle or 'RANKED', text }
-        })
-    else
-        ExecuteCommand(('%s %s'):format(c.command or 'say', text))
-    end
-
+RegisterNUICallback('roomCode', function(_, cb)
+    TriggerServerEvent('m5rp:sv:roomCode')
     cb('ok')
 end)
 
@@ -2166,7 +2146,6 @@ Citizen.CreateThread(function()
     Citizen.Wait(6000)
     if not State.booted then TriggerServerEvent('m5rp:sv:boot') end
 end)
-
 
 local WB = {
     rows    = {},

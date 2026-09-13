@@ -668,11 +668,19 @@
       <div class="mvp-tag">MVP</div>
       <div class="mvp-name" id="mvp-name">PLAYER</div>
       <div class="mvp-grid">
-        <div><b id="mvp-kills">0</b><span>KILLS</span></div>
-        <div><b id="mvp-deaths">0</b><span>DEATHS</span></div>
-        <div><b id="mvp-hs">0</b><span>HEADSHOTS</span></div>
-        <div><b id="mvp-dmg">0</b><span>DAMAGE</span></div>
+        <div><b id="mvp-kills">0</b><span data-i18n="KILLS">KILLS</span></div>
+        <div><b id="mvp-deaths">0</b><span data-i18n="DEATHS">DEATHS</span></div>
+        <div><b id="mvp-hs">0</b><span data-i18n="HEADSHOTS">HEADSHOTS</span></div>
+        <div><b id="mvp-dmg">0</b><span data-i18n="DAMAGE">DAMAGE</span></div>
       </div>
+      <!-- The MVP comes before the result, and this is what moves on to it.
+           The match-end screens have no cursor, so the key is what actually
+           does the work and the button is there for when one exists. A timer
+           moves on anyway if nobody presses anything. -->
+      <button class="btn mvp-next" id="mvp-next" data-action="mvp-next">
+        <b id="mvp-key">BACKSPACE</b>
+        <span data-i18n="SEE THE RESULT">SEE THE RESULT</span>
+      </button>
     </div>
   </div>
 

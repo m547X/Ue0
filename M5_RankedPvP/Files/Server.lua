@@ -5960,7 +5960,8 @@ local function botBeginRound(sess)
 
     botPush(sess, 'm5rp:cl:round', {
         matchId = sess.id, phase = 'countdown', round = sess.round,
-        seconds = Config.BotMatch.countdown, scores = sess.scores
+        seconds = Config.BotMatch.countdown,
+        scores = { a = sess.scores[1], b = sess.scores[2] }
     })
     botHud(sess)
 end
@@ -5988,7 +5989,9 @@ local function botEndRound(sess, winner, reason)
     botPush(sess, 'm5rp:cl:bots', { matchId = sess.id, clear = true })
     botPush(sess, 'm5rp:cl:round', {
         matchId = sess.id, phase = 'end', round = sess.round,
-        winner = winner, reason = reason, scores = sess.scores,
+        winner = winner, reason = reason,
+        scores = { a = sess.scores[1], b = sess.scores[2] },
+        myTeam = 1,
         scoreboard = botScoreboard(sess)
     })
     botHud(sess)
@@ -8303,6 +8306,42 @@ RegisterNetEvent('m5rp:sv:boot', function()
     TriggerClientEvent('m5rp:cl:boot', src, Server_BootPayload(pd))
 end)
 
+local RoomCodeSent = {}
+
+RegisterNetEvent('m5rp:sv:roomCode', function()
+    local pd, src = caller('custom')
+    if not pd then return end
+
+    local c = Config.RoomCodeChat
+    if not c or c.enabled == false then return end
+
+    local room = CustomGames.of(pd.userId)
+    if not room then
+        notify(src, 'error', 'You are not in a room.', 'ROOM CODE')
+        return
+    end
+
+    local wait = tonumber(c.cooldown) or 60
+    local last = RoomCodeSent[pd.userId]
+    if last and (now() - last) < wait then
+        if c.tellOnCooldown ~= false then
+            notify(src, 'warning',
+                ('Wait %d seconds before sharing it again.')
+                    :format(wait - (now() - last)), 'ROOM CODE')
+        end
+        return
+    end
+    RoomCodeSent[pd.userId] = now()
+
+    local col = c.color or { 255, 0, 0 }
+    TriggerEvent(c.event or 'chatMessage',
+        c.prefix or '#system |',
+        { col[1] or 255, col[2] or 0, col[3] or 0 },
+        (c.message or '%s : %s'):format(pd.name, room.code))
+
+    log('%s shared room code %s in chat', pd.name, room.code)
+end)
+
 RegisterNetEvent('m5rp:sv:worldBoard', function(pedModel)
     local src = source
     local userId = SrcToUser[src]
@@ -9121,6 +9160,7 @@ AddEventHandler('vRP:playerLeave', function(user_id, source)
     if BotMatch.sessions[user_id] then BotMatch.stop(user_id, 'disconnected') end
     Store.forget(user_id)
     forgetPerms(user_id)
+    RoomCodeSent[user_id] = nil
 
     SrcToUser[pd.source or source] = nil
     UserToSrc[user_id] = nil

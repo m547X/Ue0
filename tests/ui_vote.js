@@ -375,9 +375,25 @@ const BOOT = {
   await page.waitForTimeout(150);
   await page.click('[data-action="cm-chat"]');
   await page.waitForTimeout(100);
-  check('the chat button sends the code to the game',
+  /* The code itself is not sent: the server looks up which room the player is
+     actually in, so a client cannot put arbitrary text in everyone's chat. */
+  check('the chat button asks the server to post the code',
         await page.evaluate(() => window.__posted.find((p) => p.name === 'roomCode')),
-        { name: 'roomCode', body: { code: 'B3C7' } });
+        { name: 'roomCode', body: {} });
+  check('  without sending the code itself',
+        await page.evaluate(() =>
+          window.__posted.filter((p) => p.name === 'roomCode')
+            .every((p) => p.body.code === undefined)), true);
+
+  // hammering the button is one message, not five
+  await page.waitForTimeout(2100);              // let the first press settle
+  await page.evaluate(() => { window.__posted = []; });
+  for (let i = 0; i < 5; i++) {
+    await page.click('[data-action="cm-chat"]', { force: true, timeout: 400 }).catch(() => {});
+  }
+  await page.waitForTimeout(150);
+  check('  and pressing it five times sends once',
+        await page.evaluate(() => window.__posted.filter((p) => p.name === 'roomCode').length), 1);
 
   // and the host can leave their own room
   await page.evaluate(() => { window.__posted = []; });

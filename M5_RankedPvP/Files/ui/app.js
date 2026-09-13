@@ -136,9 +136,24 @@ function mapGradient(id, forced) {
   const hue = forced !== undefined ? forced : h;
   return `linear-gradient(155deg,hsl(${hue} 26% 20%),hsl(${(hue + 42) % 360} 32% 9%))`;
 }
-function mapArt(id, forced) {
-  // background-image, not the shorthand: the caller may also set a size/position
-  return `background-image:${mapGradient(id, forced)}`;
+/** The plate with the map's own screenshot layered over it.
+ *
+ *  This used to return the gradient alone and never look at the image at all,
+ *  which is why every map in the grid was a coloured rectangle however many
+ *  screenshots were configured. The picture goes on top and the plate stays
+ *  underneath, so a missing or misnamed file degrades to the plate rather than
+ *  to an empty card — the same way the vote screen has always done it.
+ *
+ *  Single quotes inside url(): callers put this in a double-quoted style
+ *  attribute, and a double quote in the value would end the attribute early
+ *  and throw the whole declaration away. */
+function mapArt(id, image, forced) {
+  const plate = mapGradient(id, forced);
+  const url = imgUrl(image);
+  return url
+    ? `background-image:url('${String(url).replace(/'/g, "%27")}'),${plate};`
+      + 'background-size:cover;background-position:center'
+    : `background-image:${plate}`;
 }
 /** Turns whatever the config wrote into something the page can load.
  *
@@ -1044,13 +1059,7 @@ function renderMapVote(d) {
       /* The screenshot is layered over the tinted plate rather than replacing
          it, so a missing or misnamed file degrades to the plate instead of a
          blank card. */
-      const plate = mapGradient(m.id, (i * 47 + 200) % 360);
-      const url = imgUrl(m.image);
-      // single quotes inside url(): the style attribute is delimited with a
-      // double quote, so a double quote in the value ends it early and the
-      // whole declaration is thrown away
-      const art = url ? `background-image:url('${esc(url)}'),${plate}`
-                      : `background-image:${plate}`;
+      const art = mapArt(m.id, m.image, (i * 47 + 200) % 360);
       const card = el('div', 'mv-card', `
         <div class="mv-art" style="${art}"></div>
         <div class="mv-foot-card">
@@ -1275,7 +1284,7 @@ function renderCustomMaps() {
     const off = fits(m) ? '' : ' offmode';
     const tag = fits(m) ? '' : `<span class="mapcard-tag">${tx('NOT BUILT FOR')} ${esc(S.cm.mode)}</span>`;
     const card = el('div', 'mapcard' + off + (m.id === S.cm.map ? ' on' : ''),
-      `<div class="art" style="${mapArt(m.id)}"></div>${tag}<div class="cap">${esc(m.name)}</div>`);
+      `<div class="art" style="${mapArt(m.id, m.image)}"></div>${tag}<div class="cap">${esc(m.name)}</div>`);
     card.onclick = () => { S.cm.map = m.id; Sfx.play('click'); renderCustomMaps(); updateSteps(); };
     host.appendChild(card);
   });
@@ -2760,6 +2769,7 @@ const PH_CIRC = 333;
    here, so nothing from the previous round can leak into the next one. */
 function phaseReset() {
   clearInterval(renderRound._t);
+  renderRound._counting = false;
   clearTimeout(renderRound._h);
   // the showcase has had its moment once a round starts moving
   hideShowcase();
@@ -2816,6 +2826,7 @@ function renderRound(d) {
         Sfx.play('tick');
       } else {
         clearInterval(renderRound._t);
+        renderRound._counting = false;
         phase.classList.remove('last');
         $('phase-label').textContent = '';
         arc.classList.remove('run');
@@ -2845,6 +2856,7 @@ function renderRound(d) {
       }
       n -= 1;
     };
+    renderRound._counting = true;
     step();
     renderRound._t = setInterval(step, 1000);
 
@@ -2865,10 +2877,19 @@ function renderRound(d) {
       $('phase-round').textContent = `${tx('ROUND')} ${d.round}`;
       if (d.reason && d.reason !== 'DRAW') $('phase-label').textContent = tx(d.reason);
 
-      // Lua's {[1]=x,[2]=y} arrives as {"1":x,"2":y}; accept both shapes
+      /* Lua's {[1]=x,[2]=y} does not arrive as {"1":x,"2":y} — it is a
+         sequence, so it crosses as the ARRAY [x,y], and reading ["1"] off
+         that gives the second element while ["2"] gives nothing. That is
+         exactly how a 3-1 round came out as "1 | 0". The server sends a and b
+         by name now; this reads the array correctly as well, so an older
+         payload is right rather than quietly wrong. */
       const sc = d.scores || {};
-      $('phase-score-a').textContent = (sc.a !== undefined) ? sc.a : (sc['1'] || 0);
-      $('phase-score-b').textContent = (sc.b !== undefined) ? sc.b : (sc['2'] || 0);
+      const pick = (named, idx) =>
+        (sc[named] !== undefined) ? sc[named]
+        : Array.isArray(sc) ? (sc[idx] || 0)
+        : (sc[String(idx + 1)] || 0);
+      $('phase-score-a').textContent = pick('a', 0);
+      $('phase-score-b').textContent = pick('b', 1);
       $('phase-score').classList.remove('hidden');
     }
 
@@ -2877,9 +2898,15 @@ function renderRound(d) {
                                 cssNum(bc.endMs, 600, 10000, 2600));
 
   } else if (d.phase === 'live') {
-    /* The band is already up — the countdown put FIGHT there the moment it
-       ran out, and this arrives right behind it. Clearing the phase here
-       would take the word away before anyone read it. */
+    /* This arrives the moment the server starts the round, and the countdown
+       running here is the client's own interval — so the two race, and which
+       one lands first is down to the player's ping. Losing that race used to
+       wipe the dial before it ever reached zero, which is why FIGHT appeared
+       on some rounds and not others.
+
+       So: a countdown still running owns the screen and is left to finish, and
+       a band already up is left alone. Only a phase with neither is cleared. */
+    if (renderRound._counting) return;
     if (!$('phase-band').classList.contains('start')) {
       phaseReset();
       phase.classList.add('hidden');
@@ -2911,6 +2938,14 @@ function showBand(word, kind) {
     first and the next one takes the result: the news is never swept away by
     the same keystroke that acknowledges it. */
 function closeResult() {
+  /* Screens are dismissed in the order they were put up: the MVP sits in front
+     of the result, so one press moves past it to the result rather than
+     throwing both away together. */
+  const mvp = $('modal-mvp');
+  if (mvp && !mvp.classList.contains('hidden')) {
+    if (showMVP._next) showMVP._next();
+    return;
+  }
   const rank = $('modal-rank');
   if (rank && !rank.classList.contains('hidden')) {
     closeRankChange();
@@ -2925,7 +2960,10 @@ function closeResult() {
 function renderMatchEnd(d, dismissHint, autoClose, rankCfg) {
   if (!d) return;
   const modal = $('modal-result');
-  modal.classList.remove('hidden');
+  /* The panel is built now and shown later: the MVP goes first and hands over
+     to it. Building it up front means the reveal is instant rather than a
+     second of empty frame after the MVP is dismissed. */
+  modal.classList.add('hidden');
   // the match is over, so the round banner goes with it
   $('phase').classList.add('hidden');
   phaseReset();
@@ -2946,9 +2984,6 @@ function renderMatchEnd(d, dismissHint, autoClose, rankCfg) {
     if (dismissHint) $('result-key').textContent = dismissHint;
   }
   clearTimeout(renderMatchEnd._t);
-  if (autoClose && autoClose > 0) {
-    renderMatchEnd._t = setTimeout(closeResult, autoClose * 1000);
-  }
 
   /* Accept either wording. A real match reports VICTORY/DEFEAT and a practice
      one used to report WIN/LOSS, which matched neither the colour test nor a
@@ -3023,9 +3058,21 @@ function renderMatchEnd(d, dismissHint, autoClose, rankCfg) {
     <div class="rb-team a">${esc(teamName(1))}</div>${rows(1)}
     <div class="rb-team b">${esc(teamName(2))}</div>${rows(2)}`;
 
-  Sfx.play(d.result === 'DEFEAT' ? 'defeat' : 'victory');
-  const rank = () => maybeRankChange(d, renderMatchEnd._rank);
-  setTimeout(() => { if (d.mvp) showMVP(d.mvp, rank); else rank(); }, 2600);
+  /* The order asked for: best player of the match, then who won. The MVP is
+     dismissed by its own button and that button is what brings the result up,
+     so the news arrives in one direction and nothing is swept away by a
+     keystroke meant for the screen behind it. */
+  const reveal = () => {
+    modal.classList.remove('hidden');
+    Sfx.play(d.result === 'DEFEAT' ? 'defeat' : 'victory');
+    if (autoClose && autoClose > 0) {
+      clearTimeout(renderMatchEnd._t);
+      renderMatchEnd._t = setTimeout(closeResult, autoClose * 1000);
+    }
+    setTimeout(() => maybeRankChange(d, renderMatchEnd._rank), 2600);
+  };
+
+  if (d.mvp) showMVP(d.mvp, reveal, dismissHint); else reveal();
 }
 
 /** Opens the promotion screen, but only for a ranked match that moved. */
@@ -3096,7 +3143,7 @@ function hexRgb(hex) {
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
-function showMVP(mvp, done) {
+function showMVP(mvp, done, keyHint) {
   const modal = $('modal-mvp');
   modal.classList.remove('hidden');
   $('mvp-name').textContent = String(mvp.name || '').toUpperCase();
@@ -3104,8 +3151,28 @@ function showMVP(mvp, done) {
   $('mvp-deaths').textContent = mvp.deaths;
   $('mvp-hs').textContent = mvp.headshots;
   $('mvp-dmg').textContent = num(mvp.damage);
+
+  const key = $('mvp-key');
+  if (key) {
+    key.textContent = keyHint || '';
+    key.classList.toggle('hidden', !keyHint);
+  }
+
   Sfx.play('rankup');
-  setTimeout(() => { modal.classList.add('hidden'); if (done) done(); }, 4600);
+
+  /* Whichever comes first — the button or the timer — hands over exactly once.
+     Two paths into the same continuation is how a result screen ends up being
+     opened twice and the rank change fired twice with it. */
+  let handed = false;
+  const hand = () => {
+    if (handed) return;
+    handed = true;
+    clearTimeout(showMVP._t);
+    modal.classList.add('hidden');
+    if (done) done();
+  };
+  showMVP._next = hand;
+  showMVP._t = setTimeout(hand, 7000);
 }
 
 function countUp(node, from, to, duration) {
@@ -3541,12 +3608,20 @@ document.addEventListener('click', (e) => {
       }
       break;
     case 'cm-chat':
-      if (S.room && S.room.code) {
-        post('roomCode', { code: S.room.code });
-        toast('success', `${tn('Room code sent to chat')}: ${S.room.code}`, tn('ROOM CODE'));
-      } else {
+      if (!(S.room && S.room.code)) {
         toast('warning', tn('You are not in a room.'), tn('ROOM CODE'));
+        break;
       }
+      /* One send per press. A double click used to be two messages in chat,
+         and the server's own cooldown would then refuse the second and tell
+         the player off for something they did not mean to do. The button is
+         held down for a moment so the second click never becomes a request;
+         the server still enforces the real limit. */
+      if (act.disabled) break;
+      act.disabled = true;
+      setTimeout(() => { act.disabled = false; }, 2000);
+      post('roomCode', {});
+      toast('success', `${tn('Room code sent to chat')}: ${S.room.code}`, tn('ROOM CODE'));
       break;
     case 'cm-create': post('custom', Object.assign({ action: 'create' }, customPayload())); break;
     case 'cm-leave': post('custom', { action: 'leave' }); break;
@@ -3565,6 +3640,7 @@ document.addEventListener('click', (e) => {
     case 'hist-next': S.hist.page += 1; post('fetch', { what: 'history', page: S.hist.page }); break;
     case 'detail-close': $('matchdetail').classList.add('hidden'); break;
     case 'result-close': $('modal-result').classList.add('hidden'); post('close'); break;
+    case 'mvp-next': if (showMVP._next) showMVP._next(); break;
     case 'settings-reset': S.settings = Object.assign({}, DEFAULTS); saveSettings(); renderSettings(); break;
   }
 });
