@@ -1,6 +1,5 @@
 
 
-
 local Lang = Locale.default or 'en'
 
 local function localeTable(code)
@@ -51,13 +50,13 @@ local function localePayload()
     }
 end
 
-
 local State = {
     booted     = false,
     menuOpen   = false,
     menuPage   = nil,
     uiLocked   = false,
-    promptFocus = false,
+    promptFocus   = false,
+    promptPending = false,
 
     profile    = nil,
 
@@ -112,7 +111,6 @@ local State = {
 local blipHandle = nil
 local matchThreadRunning = false
 local spectateThreadRunning = false
-
 
 local clearBots
 local idleVisualGuard
@@ -377,7 +375,6 @@ local function clearScreenEffects()
     blurOn = false
 end
 
-
 local function nui(payload)
     SendNUIMessage(payload)
 end
@@ -407,6 +404,26 @@ end
 local function setPromptFocus(on)
     State.promptFocus = on and true or false
     applyPromptFocus()
+    nui({ action = 'promptFocus', on = State.promptFocus })
+end
+
+local function clearPrompt()
+    promptToken = promptToken + 1
+    State.promptPending = false
+    setPromptFocus(false)
+end
+
+function promptKeyLabel()
+    local c = Config.Prompt
+    local k = c and c.key
+    if not k or k.enabled == false then return nil end
+    return tostring(k.key or 'LMENU'):upper()
+end
+
+local function togglePromptFocus()
+    if not State.promptPending then return end
+    if State.menuOpen then return end
+    setPromptFocus(not State.promptFocus)
 end
 
 local function openMenu(page)
@@ -461,10 +478,16 @@ RegisterNUICallback('close', function(_, cb)
 end)
 
 RegisterNUICallback('promptDone', function(_, cb)
-    promptToken = promptToken + 1
-    setPromptFocus(false)
+    clearPrompt()
     cb('ok')
 end)
+
+if promptKeyLabel() then
+    RegisterCommand('m5rp_prompt', togglePromptFocus, false)
+    RegisterKeyMapping('m5rp_prompt',
+        (Config.Prompt.key.label or 'M5 Ranked PvP — Answer an invitation'),
+        'keyboard', promptKeyLabel())
+end
 
 RegisterNUICallback('queue', function(data, cb)
     TriggerServerEvent('m5rp:sv:queue', data.action, data.mode, data.autoFill == true)
@@ -556,7 +579,6 @@ RegisterNUICallback('action', function(data, cb)
     cb('ok')
 end)
 
-
 RegisterNetEvent('m5rp:cl:boot', function(payload)
     State.booted  = true
     State.profile = payload
@@ -569,22 +591,30 @@ end)
 
 RegisterNetEvent('m5rp:cl:party', function(payload)
     if payload and payload.invite then
+        local c = Config.Prompt or {}
+
         nui({ action = 'prime', theme = Config.UI, brand = Config.Brand,
               sounds = Config.Sounds, text = L, locale = localePayload(),
               defaults = Config.DefaultSettings })
-        nui({ action = 'party', data = payload })
-        setPromptFocus(true)
+        nui({ action = 'party', data = payload, promptKey = promptKeyLabel() })
 
-        local c = Config.Prompt
-        if not c or c.sound ~= false then
+        promptToken = promptToken + 1
+        State.promptPending = true
+
+        if c.focusOnArrival == true then
+            setPromptFocus(true)
+        else
+            setPromptFocus(false)
+        end
+
+        if c.sound ~= false then
             PlaySoundFrontend(-1, 'Beep_Red', 'DLC_HEIST_HACKING_SNAKE_SOUNDS', true)
         end
 
-        promptToken = promptToken + 1
         local mine = promptToken
         local secs = tonumber(payload.invite.timeout) or 30
         Citizen.SetTimeout(math.floor(secs * 1000) + 2000, function()
-            if promptToken == mine then setPromptFocus(false) end
+            if promptToken == mine then clearPrompt() end
         end)
         return
     end
@@ -634,7 +664,6 @@ RegisterNetEvent('m5rp:cl:mapVote', function(payload)
         closeMenu(true)
     end
 end)
-
 
 RegisterNetEvent('m5rp:cl:openMenu', function(page)
     openMenu(page)
@@ -716,7 +745,6 @@ if Config.ClientCommands.toggleHud and Config.ClientCommands.toggleHud.enabled t
     end, false)
 end
 
-
 local function createBlip()
     local cfg = Config.OpenMenu.location
     if not cfg.enabled or not cfg.blip.enabled then return end
@@ -732,7 +760,6 @@ local function createBlip()
     AddTextComponentSubstringPlayerName(cfg.blip.name)
     EndTextCommandSetBlipName(blipHandle)
 end
-
 
 local function drawMarkerText(x, y, z, text)
     SetDrawOrigin(x, y, z, 0)
@@ -818,7 +845,6 @@ Citizen.CreateThread(function()
         Citizen.Wait(wait)
     end
 end)
-
 
 local startMatchThread
 local stopSpectate
@@ -1097,7 +1123,6 @@ RegisterNetEvent('m5rp:cl:endScreens', function()
     nui({ action = 'matchCleanup' })
 end)
 
-
 local DEFAULT_HEAD_BONES = { 31086, 39317, 12844, 20178, 21550 }
 local HEAD_BONES = {}
 for _, bone in ipairs(DEFAULT_HEAD_BONES) do HEAD_BONES[bone] = true end
@@ -1199,7 +1224,6 @@ AddEventHandler('gameEventTriggered', function(name, args)
         })
     end
 end)
-
 
 local function comaFloor()
     local c = Config.Coma
@@ -1322,7 +1346,6 @@ RegisterNetEvent('m5rp:cl:die', function(data)
     end
 end)
 
-
 local boundaryShown = false
 
 local boundarySeconds, boundaryDistance = -1, -1
@@ -1411,7 +1434,6 @@ RegisterCommand('pvpzone', function()
         :format(m.center.x, m.center.y, m.center.z, pos.x, pos.y, pos.z))
     nui({ action = 'toast', kind = 'info', message = line, title = 'ZONE' })
 end, false)
-
 
 local function pushActivity(ped, pos)
     ped = ped or playerPed()
@@ -1588,7 +1610,6 @@ startMatchThread = function()
     end)
 end
 
-
 local function spectateTargetPed()
     local entry = State.spectateTargets[State.spectateIndex]
     if not entry then return nil end
@@ -1696,7 +1717,6 @@ RegisterNetEvent('m5rp:cl:spectate', function(data)
     end
     startSpectateThread()
 end)
-
 
 local function clearTrainingTargets()
     for i = 1, #State.trainingProps do
@@ -1833,7 +1853,6 @@ RegisterNetEvent('m5rp:cl:training', function(data)
     end)
 end)
 
-
 clearBots = function()
     for i = 1, #State.bots do
         local ped = State.bots[i].ped
@@ -1968,7 +1987,6 @@ RegisterNetEvent('m5rp:cl:bots', function(data)
         end
     end)
 end)
-
 
 do
     local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}

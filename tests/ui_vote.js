@@ -181,9 +181,11 @@ const BOOT = {
     window.__posted = [];
     window.__send({ action: 'close' });
     window.__send({ action: 'prime', theme: {}, brand: {},
-      locale: { language: 'ar', strings: { ar: { ACCEPT: 'قبول', DECLINE: 'رفض', S: 'ث' } },
+      locale: { language: 'ar', strings: { ar: { ACCEPT: 'قبول', DECLINE: 'رفض', S: 'ث',
+                                 'TO ANSWER': 'للرد', 'TO ACCEPT': 'للقبول' } },
                 rtl: { ar: true } } });
-    window.__send({ action: 'party', data: {
+    window.__send({ action: 'promptFocus', on: false });
+    window.__send({ action: 'party', promptKey: 'LMENU', data: {
       invite: { kind: 'room', roomName: 'MY ROOM', from: 'FRIEND', timeout: 30 } } });
   });
   await page.waitForTimeout(150);
@@ -191,14 +193,39 @@ const BOOT = {
   check('the interface stays shut for an invite',
         await page.locator('#app').evaluate((n) => n.classList.contains('hidden')), true);
   check('  and the card is on screen anyway', await page.isVisible('.invite-row'), true);
-  check('  and it can actually be clicked, not just seen',
+  check('  prime brought the language with it, without opening anything',
+        await page.locator('.invite-row .btn').first().innerText(), 'قبول');
+
+  /* No cursor yet: the player is still playing. The card names the key that
+     reaches it rather than grabbing the mouse out of a fight. */
+  check('the buttons are dimmed until the player asks for a cursor',
+        await page.locator('.invite-row').first().evaluate((n) => n.classList.contains('inert')), true);
+  let hint = await page.locator('.invite-hint-key').last().innerText();
+  check('  and the key to press is named',   /LMENU/.test(hint), true);
+  check('  along with the shortcut to accept', /ENTER/.test(hint), true);
+  check('  in the player\'s language',        /للرد/.test(hint), true);
+
+  // the client says the cursor is theirs now
+  await page.evaluate(() => window.__send({ action: 'promptFocus', on: true }));
+  await page.waitForTimeout(100);
+  check('once the key is pressed the buttons come alive',
+        await page.locator('.invite-row').first().evaluate((n) => n.classList.contains('inert')), false);
+  check('  and the hint goes away',
+        await page.locator('.invite-hint-key').last().isVisible(), false);
+  check('  and the buttons can actually be clicked, not just seen',
         await page.locator('.invite-row .btn').first().evaluate((n) => {
           const r = n.getBoundingClientRect();
           const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
           return n.contains(top) || n === top;
         }), true);
-  check('  prime brought the language with it, without opening anything',
-        await page.locator('.invite-row .btn').first().innerText(), 'قبول');
+
+  // pressing it again puts the cursor away, and the hint comes back
+  await page.evaluate(() => window.__send({ action: 'promptFocus', on: false }));
+  await page.waitForTimeout(100);
+  check('putting the cursor away brings the hint back',
+        await page.locator('.invite-hint-key').last().isVisible(), true);
+  await page.evaluate(() => window.__send({ action: 'promptFocus', on: true }));
+  await page.waitForTimeout(100);
 
   let text = await page.locator('.toast').last().innerText();
   check('a room invite names the room', /MY ROOM/.test(text), true);

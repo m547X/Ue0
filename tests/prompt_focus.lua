@@ -24,18 +24,84 @@ local FOCUS, KEEP = nil, nil
 function SetNuiFocus(a) FOCUS = a end
 function SetNuiFocusKeepInput(a) KEEP = a end
 
-State  = { menuOpen = false, promptFocus = false }
-Config = { Prompt = { keepInput = true, sound = true } }
+-- and what the interface was last told
+local SENT = {}
+function nui(p) SENT[#SENT + 1] = p end
 
-local setFocus, setPromptFocus, applyPromptFocus
+State  = { menuOpen = false, promptFocus = false, promptPending = false }
+Config = { Prompt = {
+  key = { enabled = true, key = 'LMENU', label = 'answer' },
+  focusOnArrival = false, keepInput = true, sound = true
+} }
+
+local setFocus, setPromptFocus, applyPromptFocus, clearPrompt, togglePromptFocus
 do
   local a = CL:find('local function setFocus(on)', 1, true)
   local b = CL:find('local function openMenu(page)', a, true)
   assert(a and b, 'could not slice the focus helpers')
-  setFocus, setPromptFocus, applyPromptFocus = assert(load(
-    CL:sub(a, b - 1) ..
-    '\nreturn setFocus, setPromptFocus, applyPromptFocus', 'focus'))()
+  setFocus, setPromptFocus, applyPromptFocus, clearPrompt, togglePromptFocus =
+    assert(load(CL:sub(a, b - 1) ..
+      '\nreturn setFocus, setPromptFocus, applyPromptFocus, clearPrompt, togglePromptFocus',
+      'focus'))()
 end
+
+--- An invite has landed: the card is up, and nothing has taken the cursor.
+local function inviteArrives()
+  SENT = {}
+  State.promptPending = true
+  setPromptFocus(Config.Prompt.focusOnArrival == true)
+end
+
+-- ==========================================================================
+-- 0. the card arrives without taking anything
+-- ==========================================================================
+-- This is the whole point: an invite lands while the player is in a fight and
+-- does not touch their mouse. They press a key when they are ready.
+inviteArrives()
+check('an invite takes no cursor on its own', FOCUS, false)
+check('  and leaves the controls alone',      KEEP, false)
+check('  but it is waiting to be answered',   State.promptPending, true)
+check('  and the card is told there is no cursor yet',
+      SENT[#SENT] and SENT[#SENT].action .. ':' .. tostring(SENT[#SENT].on), 'promptFocus:false')
+
+togglePromptFocus()
+check('pressing the key gives the cursor', FOCUS, true)
+check('  without freezing the player',     KEEP, true)
+check('  and the card is told',
+      SENT[#SENT] and tostring(SENT[#SENT].on), 'true')
+
+-- pressing it again puts the cursor away without answering
+togglePromptFocus()
+check('pressing it again puts the cursor away', FOCUS, false)
+check('  and the invite is still waiting',      State.promptPending, true)
+
+togglePromptFocus()
+check('and it can be brought back', FOCUS, true)
+
+clearPrompt()
+check('answering it ends the whole thing', FOCUS, false)
+check('  and nothing is waiting any more',  State.promptPending, false)
+
+-- the key does nothing when there is no invite on screen
+FOCUS = false
+togglePromptFocus()
+check('the key does nothing with no invite up', FOCUS, false)
+
+-- nor while the menu is open, which owns the cursor itself
+State.promptPending = true
+State.menuOpen = true
+setFocus(true)
+togglePromptFocus()
+check('the key is ignored while the menu is open', KEEP, false)
+State.menuOpen = false
+clearPrompt()
+
+-- a server that wants the old behaviour asks for it
+Config.Prompt.focusOnArrival = true
+inviteArrives()
+check('focusOnArrival gives the cursor straight away', FOCUS, true)
+Config.Prompt.focusOnArrival = false
+clearPrompt()
 
 -- ==========================================================================
 -- 1. the invite takes the cursor without freezing the player
@@ -107,9 +173,16 @@ check('  and does not keep input on either',       KEEP, false)
 check('the client releases the cursor itself on a timer',
       CL:find('Citizen.SetTimeout', 1, true) ~= nil, true)
 check('  keyed to the invite it belongs to',
-      CL:find('if promptToken == mine then setPromptFocus(false) end', 1, true) ~= nil, true)
+      CL:find('if promptToken == mine then clearPrompt() end', 1, true) ~= nil, true)
 check('  and the page can release it early',
       CL:find("RegisterNUICallback('promptDone'", 1, true) ~= nil, true)
+
+-- the key is a real binding, so the player can rebind it in the game's own
+-- settings rather than editing a config file
+check('the key is registered as a rebindable mapping',
+      CL:find("RegisterKeyMapping('m5rp_prompt'", 1, true) ~= nil, true)
+check('  and the card is told which key it is',
+      CL:find('promptKey = promptKeyLabel()', 1, true) ~= nil, true)
 
 -- ==========================================================================
 -- 4. an invite does not open the interface
@@ -123,8 +196,10 @@ check('  and never claims the menu is open',
       handler:find('State.menuOpen = true', 1, true) ~= nil, false)
 check('  it primes the page instead',
       handler:find("action = 'prime'", 1, true) ~= nil, true)
-check('  and takes prompt focus',
-      handler:find('setPromptFocus(true)', 1, true) ~= nil, true)
+check('  and marks an invite as waiting to be answered',
+      handler:find('State.promptPending = true', 1, true) ~= nil, true)
+check('  without grabbing the cursor unless asked to',
+      handler:find('if c.focusOnArrival == true then', 1, true) ~= nil, true)
 
 -- a match being found is the other case, and that one does still open it
 local found = CL:match("RegisterNetEvent%('m5rp:cl:matchFound'.-\nend%)")

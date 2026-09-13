@@ -814,6 +814,17 @@ html[dir="rtl"] .ph-rule.r{background:linear-gradient(90deg,transparent,var(--bn
 .invite-clock.urgent{color:var(--gold)}
 .toast.rtl .invite-row{flex-direction:row-reverse}
 
+/* No cursor until the player asks for one, so the buttons are shown dimmed —
+   the choice is legible, it just is not reachable yet. */
+.invite-row.inert{opacity:.5}
+.invite-row.inert .btn{cursor:default}
+.invite-hint-key{margin-top:8px;font-size:10px;font-weight:600;letter-spacing:.06em;
+  color:var(--dim-2)}
+.invite-hint-key b{display:inline-block;min-width:22px;padding:1px 6px;border-radius:5px;
+  font-size:10px;font-weight:700;color:var(--txt);
+  background:var(--panel-3);border:1px solid var(--edge)}
+.invite-hint-key .sep{opacity:.45;margin:0 3px}
+
 /* ==========================================================================
    MODALS
    ========================================================================== */

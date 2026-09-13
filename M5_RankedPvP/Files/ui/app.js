@@ -52,6 +52,7 @@ const S = {
   queue: { searching: false, elapsed: 0 },
   lastQueue: null,
   found: null, foundTimer: null, invite: null,
+  promptFocus: false, promptHint: null, promptKey: null,
   mapvote: null, mapvoteTimer: null,
 
   party: null,
@@ -1103,6 +1104,22 @@ function renderMapVote(d) {
 }
 
 /* ================================================================== PARTY */
+/* Whether the player currently has a cursor, and what to tell them if not.
+   The client is the authority on it — it owns the focus — so this just paints
+   whatever it was last told. */
+function paintPromptHint() {
+  const h = S.promptHint;
+  if (!h || !h.node.parentNode) return;
+
+  const on = S.promptFocus === true;
+  h.row.classList.toggle('inert', !on && !!h.key);
+
+  if (on || !h.key) { h.node.textContent = ''; h.node.classList.add('hidden'); return; }
+  h.node.classList.remove('hidden');
+  h.node.innerHTML = `<b>${esc(h.key)}</b> ${esc(tx('TO ANSWER'))}
+    <span class="sep">·</span> <b>ENTER</b> ${esc(tx('TO ACCEPT'))}`;
+}
+
 function renderParty(d) {
   if (!d) return;
 
@@ -1145,6 +1162,7 @@ function renderParty(d) {
       clearInterval(tick);
       clearTimeout(expiry);
       S.invite = null;
+      S.promptHint = null;
       if (action) post('party', { action: action });
       post('promptDone', {});
       card.remove();
@@ -1156,6 +1174,15 @@ function renderParty(d) {
 
     row.appendChild(a); row.appendChild(r); row.appendChild(clock);
     card.appendChild(row);
+
+    /* The card sits over the game with no cursor until the player asks for one.
+       Until then the buttons are shown but dimmed, with the key that reaches
+       them named underneath — pressing something is a choice, not a thing the
+       game does to you mid-fight. */
+    const hint = el('div', 'invite-hint-key');
+    card.appendChild(hint);
+    S.promptHint = { node: hint, row: row, key: S.promptKey || null };
+    paintPromptHint();
 
     /* Enter accepts, so the invite can be taken without going for the cursor
        at all. `done` clears this, so it stops being the live one the moment the
@@ -3154,6 +3181,11 @@ window.addEventListener('message', (e) => {
       primeFrom(d);
       break;
 
+    case 'promptFocus':
+      S.promptFocus = d.on === true;
+      paintPromptHint();
+      break;
+
     case 'open':
       primeFrom(d);
       $('app').classList.remove('hidden');
@@ -3177,7 +3209,12 @@ window.addEventListener('message', (e) => {
     case 'queue': renderQueue(d.data); break;
     case 'matchFound': renderFound(d.data); break;
     case 'mapVote': renderMapVote(d.data); break;
-    case 'party': renderParty(d.data); break;
+    /* The key that reaches a card rides on the message, not on the server
+       payload — it is the player's own binding, so only the client knows it. */
+    case 'party':
+      if (d.promptKey !== undefined) S.promptKey = d.promptKey;
+      renderParty(d.data);
+      break;
 
     case 'custom':
       if (d.data && d.data.list) S.rooms = d.data.list;
