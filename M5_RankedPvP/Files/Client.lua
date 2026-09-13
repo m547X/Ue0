@@ -2148,6 +2148,7 @@ Citizen.CreateThread(function()
 end)
 
 local WB = {
+    ready   = false,
     rows    = {},
     season  = nil,
     peds    = {},
@@ -2195,17 +2196,38 @@ local function wbColour(hex)
     return (n >> 16) & 255, (n >> 8) & 255, n & 255
 end
 
+local WB_COLS = {
+    { key = 'position', head = '#',      w = 0.000, align = 'left',   tint = true  },
+    { key = 'name',     head = 'PLAYER', w = 0.026, align = 'left'                 },
+    { key = 'kills',    head = 'K',      w = 0.560, align = 'right'                },
+    { key = 'deaths',   head = 'D',      w = 0.660, align = 'right'                },
+    { key = 'wins',     head = 'W',      w = 0.760, align = 'right', good = true   },
+    { key = 'losses',   head = 'L',      w = 0.845, align = 'right', bad  = true   },
+    { key = 'kd',       head = 'K/D',    w = 0.930, align = 'right', warm = true   },
+    { key = 'rp',       head = 'RP',     w = 1.000, align = 'right', tint = true   }
+}
+
 local function drawScreen(spot, cfg, dist)
     local scale = (tonumber(cfg.scale) or 1.0) * (1.0 - (dist / (cfg.distance * 2.4)))
     if scale < 0.22 then scale = 0.22 end
 
-    local rows  = math.min(tonumber(cfg.rows) or 10, #WB.rows)
+    local shown = math.min(tonumber(cfg.rows) or 10, #WB.rows)
     local alpha = math.floor(tonumber(cfg.opacity) or 190)
 
-    local lineH = 0.022 * scale
-    local width = 0.150 * scale
-    local head  = 0.040 * scale
-    local total = head + (lineH * rows) + (0.012 * scale)
+    local lineH = 0.020 * scale
+    local width = 0.230 * scale
+    local head  = 0.042 * scale
+    local hdr   = 0.016 * scale
+    local body  = lineH * math.max(shown, 1)
+    local total = head + hdr + body + (0.012 * scale)
+
+    local left  = -(width / 2) + (0.010 * scale)
+    local right =  (width / 2) - (0.010 * scale)
+    local span  = right - left
+
+    local function colX(c)
+        return left + (span * c.w)
+    end
 
     SetDrawOrigin(spot.pos.x, spot.pos.y, spot.pos.z, 0)
 
@@ -2213,31 +2235,53 @@ local function drawScreen(spot, cfg, dist)
     DrawRect(0.0, -(total / 2) + (head / 2), width, head, 150, 28, 42, math.min(255, alpha + 45))
     DrawRect(0.0, -(total / 2) + head, width, 0.0016 * scale, 210, 45, 60, 255)
 
-    local title = spot.title or 'LEADERBOARD'
-    wbText(title, 0.0, -(total / 2) + (head / 2) - (0.011 * scale),
-           0.44 * scale, 245, 245, 250, 255, 'centre')
-
+    wbText(spot.title or 'LEADERBOARD', 0.0, -(total / 2) + (head / 2) - (0.012 * scale),
+           0.46 * scale, 245, 245, 250, 255, 'centre')
     if WB.season then
-        wbText(WB.season, 0.0, -(total / 2) + (head / 2) + (0.003 * scale),
+        wbText(WB.season, 0.0, -(total / 2) + (head / 2) + (0.004 * scale),
                0.26 * scale, 205, 175, 180, 210, 'centre')
     end
 
-    local y = -(total / 2) + head + (0.006 * scale)
-    local left  = -(width / 2) + (0.010 * scale)
-    local right =  (width / 2) - (0.010 * scale)
+    local y = -(total / 2) + head + (0.004 * scale)
 
-    for i = 1, rows do
+    for i = 1, #WB_COLS do
+        local c = WB_COLS[i]
+        wbText(c.head, colX(c), y, 0.25 * scale, 150, 158, 170, 220, c.align, right)
+    end
+    y = y + hdr
+    DrawRect(0.0, y - (0.002 * scale), width - (0.008 * scale), 0.0008 * scale, 90, 96, 108, 160)
+
+    if shown == 0 then
+        wbText('NO PLAYERS ON THE BOARD YET', 0.0, y + (lineH * 0.6),
+               0.30 * scale, 150, 158, 170, 210, 'centre')
+        ClearDrawOrigin()
+        return
+    end
+
+    for i = 1, shown do
         local row = WB.rows[i]
         local r, g, b = wbColour(row.color)
 
         if i <= 3 then
             DrawRect(0.0, y + (lineH / 2) - (0.002 * scale), width - (0.008 * scale),
-                     lineH, r, g, b, 34)
+                     lineH, r, g, b, 38)
+        elseif i % 2 == 0 then
+            DrawRect(0.0, y + (lineH / 2) - (0.002 * scale), width - (0.008 * scale),
+                     lineH, 255, 255, 255, 8)
         end
 
-        wbText(tostring(row.position), left, y, 0.31 * scale, r, g, b, 255)
-        wbText(row.name, left + (0.020 * scale), y, 0.31 * scale, 235, 235, 240, 255)
-        wbText(tostring(row.rp) .. ' RP', right, y, 0.31 * scale, r, g, b, 255, 'right')
+        for n = 1, #WB_COLS do
+            local c  = WB_COLS[n]
+            local cr, cg, cb = 225, 228, 234
+            if c.tint then cr, cg, cb = r, g, b
+            elseif c.good then cr, cg, cb = 70, 210, 140
+            elseif c.bad  then cr, cg, cb = 220, 80, 90
+            elseif c.warm then cr, cg, cb = 235, 190, 90 end
+
+            local v = row[c.key]
+            wbText(tostring(v == nil and '-' or v), colX(c), y,
+                   0.29 * scale, cr, cg, cb, 255, c.align, right)
+        end
 
         y = y + lineH
     end
@@ -2321,6 +2365,7 @@ end
 
 RegisterNetEvent('m5rp:cl:worldBoard', function(payload)
     if not payload then return end
+    WB.ready  = true
     WB.rows   = payload.rows or {}
     WB.season = payload.season
     if WB.spawned then
@@ -2339,7 +2384,8 @@ local WB_NEAR = 400
 
 function wbTick(me, podiumAcc)
     local sleep = WB_FAR
-    if #WB.rows == 0 then return sleep, podiumAcc end
+
+    if not WB.ready then return sleep, podiumAcc end
 
     local screens = wbScreens()
     if screens then

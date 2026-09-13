@@ -332,6 +332,28 @@ const BOOT = {
     members: [{ userId: 2, name: 'FRIEND', leader: true, rankId: 2 },
               { userId: 1, name: 'ME', rankId: 2 }] } }));
   await page.waitForTimeout(150);
+  /* The rank plate lives at the bottom of the card. It is the flex layout that
+     puts it there — the top takes the free space and the foot is pushed down
+     by margin-top:auto — so anything that takes either of them out of flow
+     lands the plate under the name instead. Which is exactly what happened. */
+  const layout = await page.locator('.slot.filled').first().evaluate((n) => {
+    const card = n.getBoundingClientRect();
+    const foot = n.querySelector('.slot-foot').getBoundingClientRect();
+    const top  = n.querySelector('.slot-top').getBoundingClientRect();
+    return {
+      footInFlow: getComputedStyle(n.querySelector('.slot-foot')).position,
+      topInFlow:  getComputedStyle(n.querySelector('.slot-top')).position,
+      // how far the bottom of the rank plate is from the bottom of the card
+      gap: Math.round(card.bottom - foot.bottom),
+      // and the plate is below the name, not above it
+      below: foot.top >= top.bottom - 1
+    };
+  });
+  check('the rank plate is in flow', layout.footInFlow, 'relative');
+  check('  and so is the block above it', layout.topInFlow, 'relative');
+  check('  the plate sits at the bottom of the card', layout.gap <= 16, true);
+  check('  below the name, not above it', layout.below, true);
+
   check('a member who does not lead sees a leave control',
         await page.locator('.slot-leave').count(), 1);
   check('  and no kick control',  await page.locator('.slot-kick').count(), 0);

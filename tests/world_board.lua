@@ -103,7 +103,8 @@ local function rows(n)
   local out = {}
   for i = 1, n do
     out[i] = { position = i, name = 'P' .. i, rp = 1000 - i, rank = 'Gold',
-               color = '#d2a23c', ped = 0 }
+               color = '#d2a23c', ped = 0,
+               kills = 10 * i, deaths = i, wins = i, losses = 1, kd = 1.5 }
   end
   return out
 end
@@ -114,13 +115,29 @@ local function tick(x, y, z, acc)
 end
 
 -- ==========================================================================
+-- 0. a board with nobody on it is still a board
+-- ==========================================================================
+-- A fresh server has no qualified players, and this used to return before
+-- drawing anything — so the spot was simply empty and read as broken rather
+-- than as an empty table.
+WB.ready, WB.rows = false, {}
+local sleep = tick(0)
+check('before the server has said anything, nothing is drawn', DRAWS, 0)
+check('  and the thread sleeps',                               sleep, 2000)
+
+WB.ready, WB.rows = true, {}
+sleep = tick(0)
+check('a board with no players still draws its frame', DRAWS > 0, true)
+check('  and runs at frame rate while you look at it', sleep, 0)
+
+-- ==========================================================================
 -- 1. what it costs when nobody is near it
 -- ==========================================================================
 -- This is the whole question. A board on the other side of the map must not
 -- wake the thread up, and must not draw anything.
 WB.rows = rows(10)
 
-local sleep = tick(500)
+sleep = tick(500)
 check('a board far away sleeps for two seconds', sleep, 2000)
 check('  and draws nothing at all',              DRAWS, 0)
 
@@ -140,11 +157,11 @@ check('turning away from it stops the drawing', DRAWS, 0)
 check('  and lets the thread sleep again',      sleep, 400)
 VISIBLE = true
 
--- with nothing to show there is nothing to do, however close you stand
+-- and an empty one still costs nothing from a distance
 WB.rows = {}
-sleep = tick(0)
-check('an empty board sleeps regardless of distance', sleep, 2000)
-check('  and draws nothing',                          DRAWS, 0)
+sleep = tick(500)
+check('an empty board far away still sleeps', sleep, 2000)
+check('  and draws nothing',                  DRAWS, 0)
 WB.rows = rows(10)
 
 -- ==========================================================================
@@ -210,13 +227,21 @@ for _, a in ipairs(ALIGNMENTS) do
 end
 check('  none of them inherits it from the line before', unset, 0)
 
--- and the right justified column really is the only right justified one
-local rights = 0
+-- the number columns are right justified and the name column is not, on every
+-- row and on the header — the count is the invariant that catches a leak
+local rights, lefts = 0, 0
 for _, a in ipairs(ALIGNMENTS) do
-  if a:find('/true') then rights = rights + 1 end
+  if a:find('/true') then rights = rights + 1 else lefts = lefts + 1 end
 end
-check('  one right justified draw per row, no more',
-      rights, math.min(Config.WorldBoard.screens.rows, #WB.rows))
+local numeric, text = 0, 0
+for _, c in ipairs({ 'position', 'name', 'kills', 'deaths', 'wins', 'losses', 'kd', 'rp' }) do
+  if c == 'position' or c == 'name' then text = text + 1 else numeric = numeric + 1 end
+end
+local lines = math.min(Config.WorldBoard.screens.rows, #WB.rows) + 1   -- +1 header
+check('  the number columns are right justified, on every row',
+      rights, numeric * lines)
+check('  and the name column never is',
+      lefts >= text * lines, true)
 Config.WorldBoard.podium.enabled = true
 
 -- ==========================================================================

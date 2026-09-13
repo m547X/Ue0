@@ -7292,14 +7292,17 @@ function WorldBoard.build()
     local pool = c.mode or defaultPool()
     local top  = math.max(1, math.min(tonumber(c.top) or 10, 25))
 
-    local rows = DB.query([[SELECT r.user_id, r.rp, r.rank_id, p.name, p.level, p.ped_model,
-                                   s.wins, s.losses, s.kills, s.deaths
-                            FROM m5_player_ranks r
-                            LEFT JOIN m5_players p ON p.user_id = r.user_id
-                            LEFT JOIN m5_player_stats s ON s.user_id = r.user_id AND s.season_id = r.season_id
-                            WHERE r.season_id = ? AND r.mode = ? AND r.placement_done = 1
-                            ORDER BY r.rp DESC, s.wins DESC
-                            LIMIT ?]], { Season.id(), pool, top }) or {}
+    local placed = c.requirePlacement == true and ' AND r.placement_done = 1' or ''
+
+    local rows = DB.query(([[SELECT r.user_id, r.rp, r.rank_id, r.placement_done,
+                                    p.name, p.level, p.ped_model,
+                                    s.wins, s.losses, s.kills, s.deaths
+                             FROM m5_player_ranks r
+                             LEFT JOIN m5_players p ON p.user_id = r.user_id
+                             LEFT JOIN m5_player_stats s ON s.user_id = r.user_id AND s.season_id = r.season_id
+                             WHERE r.season_id = ? AND r.mode = ?%s
+                             ORDER BY r.rp DESC, s.wins DESC
+                             LIMIT ?]]):format(placed), { Season.id(), pool, top }) or {}
 
     local out = {}
     for i = 1, #rows do
@@ -7317,7 +7320,10 @@ function WorldBoard.build()
             level    = tonumber(row.level) or 1,
             wins     = tonumber(row.wins) or 0,
             losses   = tonumber(row.losses) or 0,
+            kills    = k,
+            deaths   = d,
             kd       = d > 0 and round(k / d, 2) or k,
+            placed   = tonumber(row.placement_done) == 1,
             ped      = tonumber(row.ped_model) or nil
         }
     end
@@ -8990,6 +8996,19 @@ local function perfReport(printer)
 
     printer(('vrp permissions   %d real asks (%.0f/min), %d ms — the rest came from cache')
         :format(p.vrp.calls, perMin(p.vrp.calls), p.vrp.wall))
+
+    if WorldBoard.on() then
+        printer(('world board      %d rows on the %s ladder, built %.0fs ago')
+            :format(#WorldBoard.rows, tostring(WorldBoard.pool or '?'),
+                    WorldBoard.builtAt > 0 and ((ms() - WorldBoard.builtAt) / 1000) or -1))
+        if #WorldBoard.rows == 0 then
+            printer('  >>              the board has nobody to show. With '
+                 .. 'requirePlacement = true that means nobody has finished their '
+                 .. 'placement matches yet; the screen draws its frame and says so.')
+        end
+    else
+        printer('world board      off')
+    end
 
     printer(('boot payloads     %d (%.1f/min)'):format(p.boots, perMin(p.boots)))
 

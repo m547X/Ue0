@@ -34,6 +34,7 @@ CustomGames = { rooms = {} }
 Board       = { cache = {} }
 Store       = { cache = {} }
 DB          = { txAvailable = true }
+WorldBoard  = { rows = {}, builtAt = 0, pool = '1v1', on = function() return true end }
 
 Perf = { startedAt = 0, boots = 3, net = { queue = 40, store = 9 },
   vrp  = { calls = 12, wall = 30 },
@@ -144,6 +145,22 @@ Perf.loop = { ticks = 0, busy = 0, cpu = 0, worst = 0,
 Perf.net, Perf.vrp, Perf.boots = {}, { calls = 0, wall = 0 }, 0
 text, e = render()
 check('a report with nothing in it still renders', text ~= nil, true)
+if text then
+  check('  and says the world board has nobody on it',
+        has(text, 'the board has nobody to show'), true)
+end
+
+WorldBoard.rows = { {}, {}, {} }
+WorldBoard.builtAt = CLOCK - 30000
+check('a board with players says how many',
+      has(render(), '3 rows on the 1v1 ladder'), true)
+check('  and stops warning about it',
+      has(render(), 'the board has nobody to show'), false)
+
+WorldBoard.on = function() return false end
+check('a board switched off is reported as off',
+      has(render(), 'world board      off'), true)
+WorldBoard.on = function() return true end
 if text then
   check('  and says so rather than showing a blank', has(text, 'by kind         none'), true)
   check('  no nan or inf anywhere', has(text, 'nan') or has(text, 'inf'), false)

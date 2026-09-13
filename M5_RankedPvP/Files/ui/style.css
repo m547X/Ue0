@@ -1447,9 +1447,14 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
   opacity:.72}
 .slot-art::after{content:'';position:absolute;inset:0;
   background:linear-gradient(180deg,rgba(8,11,16,.66) 0%,rgba(8,11,16,.12) 38%,rgba(8,11,16,.55) 72%,rgba(8,11,16,.94) 100%)}
+/* relative, not absolute: these two are the card's layout. The top is the
+   flex child that takes the free space and the foot is pushed down by
+   margin-top:auto, and an absolutely positioned element is out of flow, so
+   neither works — the rank plate leaves the bottom of the card and lands
+   under the name. The action button does its own absolute positioning in its
+   own rule and is deliberately not in here. */
 .slot.filled > .slot-top,
-.slot.filled > .slot-foot,
-.slot.filled > .slot-act{position:absolute;z-index:3}
+.slot.filled > .slot-foot{position:relative;z-index:1}
 /* with artwork behind it the portrait needs its own ground to sit on */
 .slot.art .slot-av{box-shadow:0 0 0 3px rgba(var(--red-rgb),.5),0 0 30px -4px var(--red-glow),
   0 10px 30px -10px #000}
