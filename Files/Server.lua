@@ -151,8 +151,27 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 end
                 return hasOwnerPermission(source)
             end
+            -- كل جزء من الصورة يصل كحدث مستقل (عشرات الأجزاء للسيارة الواحدة)،
+            -- وفحص صلاحية vRP لكل جزء يعني مئات الاستدعاءات في الجلسة.
+            -- نخزّن النتيجة لمدة قصيرة ونمسحها عند تحديث الصلاحية أو خروج اللاعب.
+            local permCache = {}
+            local PERM_TTL  = 30
+            local function hasPermissionCached(src)
+                local entry = permCache[src]
+                local now   = os.time()
+                if entry and (now - entry.at) < PERM_TTL then
+                    return entry.allowed
+                end
+                local allowed = hasPermission(src) == true
+                permCache[src] = { allowed = allowed, at = now }
+                return allowed
+            end
+            AddEventHandler('playerDropped', function()
+                permCache[source] = nil
+            end)
             local function syncPermissionState(source)
                 local allowed, detail = hasPermission(source)
+                permCache[source] = { allowed = allowed == true, at = os.time() }
                 Player(source).state.screenshotperms = allowed == true
                 return allowed, detail
             end
@@ -315,42 +334,56 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                     end
                 end, API.method or 'POST', json.encode(payload), apiHeaders())
             end
-            -- model اختياري: يُمرَّر لإرسال سيارة واحدة فقط عند perVehicle.
-            local function SaveThumbnails(model)
+            -- الإرسال الفوري لسيارة واحدة (خيار perVehicle في الـ API).
+            local function apiSendOne(model)
+                local entry = thumbs[model]
+                if not entry then return end
+                apiSend({
+                    resource = GetCurrentResourceName(),
+                    model    = model,
+                    name     = entry.name,
+                    price    = entry.price,
+                    garage   = entry.garage,
+                    category = entry.category,
+                    url      = entry.url,
+                    id       = entry.id,
+                    savedAt  = entry.savedAt,
+                })
+            end
+            -- الكتابة على القرص وبث جدول الصور مكلفان، وكانا يتكرران بعد كل سيارة.
+            -- نجمّع التغييرات ونكتبها دفعة واحدة كل ثانيتين، ونفرغها فوراً عند
+            -- التصدير أو إيقاف الريسورس حتى لا يضيع شيء.
+            local thumbsDirty = false
+            local function FlushThumbnails(force)
+                if not thumbsDirty and not force then return end
+                thumbsDirty = false
                 if SAVE_MODE == 'kvp' then
                     SetResourceKvp('thumbnails', json.encode(thumbs))
-                    return
-                end
-                if SAVE_MODE == 'api' then
+                elseif SAVE_MODE == 'api' then
                     if not apiReady() then
                         warn('ServerConfig.save = "api" but SaveAPI.saveUrl is empty - saving to json instead.')
                         saveThumbFile()
-                        return
-                    end
-                    if API.perVehicle and model and thumbs[model] then
-                        local entry = thumbs[model]
-                        apiSend({
-                            resource = GetCurrentResourceName(),
-                            model    = model,
-                            name     = entry.name,
-                            price    = entry.price,
-                            garage   = entry.garage,
-                            category = entry.category,
-                            url      = entry.url,
-                            id       = entry.id,
-                            savedAt  = entry.savedAt,
-                        })
                     else
-                        apiSend({
-                            resource   = GetCurrentResourceName(),
-                            count      = countThumbs(),
-                            thumbnails = thumbs,
-                        })
+                        if not API.perVehicle then
+                            apiSend({
+                                resource   = GetCurrentResourceName(),
+                                count      = countThumbs(),
+                                thumbnails = thumbs,
+                            })
+                        end
+                        if API.mirrorToFile then saveThumbFile() end
                     end
-                    if API.mirrorToFile then saveThumbFile() end
-                    return
+                else
+                    saveThumbFile()
                 end
-                saveThumbFile()
+                GlobalState.VehicleImages = thumbs
+            end
+            -- model اختياري: يُمرَّر لإرسال سيارة واحدة فقط عند perVehicle.
+            local function SaveThumbnails(model)
+                if SAVE_MODE == 'api' and apiReady() and API.perVehicle and model then
+                    apiSendOne(model)
+                end
+                thumbsDirty = true
             end
             local function LoadThumbnails(done)
                 done = done or function() end
@@ -638,31 +671,33 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 if not garageRaw then return false end
                 local current = nil
                 for line in garageRaw:gmatch('[^\r\n]+') do
-                    -- نحذف التعليق في نهاية السطر قبل فحص ترويسة الجراج فقط.
-                    local headLine = line:gsub('%-%-[^\r\n]*$', ''):gsub('%s+$', '')
-                    local head = headLine:match(HEAD_PAT)
-                    if head then
-                        current = head
-                        garageNames[#garageNames + 1] = head
-                    else
-                        local model, name, price, desc = line:match(VEH_PAT)
-                        if not model then
-                            model, name, price = line:match(VEH_PAT2)
-                            desc = nil
-                        end
+                    -- أسطر السيارات هي الأكثر في الملف، فنجرّبها أولاً ونتجنّب
+                    -- تنظيف السطر (gsub مرتين) لكل سطر بلا داعٍ.
+                    local model, name, price, desc = line:match(VEH_PAT)
+                    if not model then
+                        model, name, price = line:match(VEH_PAT2)
+                        desc = nil
+                    end
+                    if model then
                         -- لو لم نتعرف على ترويسة الجراج نضع اسماً افتراضياً
                         -- بدل تجاهل السيارات، حتى يعمل مع ملفات بترتيب مختلف.
                         current = current or GF.defaultGarage or GARAGE.garageName or 'garage'
-                        if model then
-                            local entry = {
-                                model  = model,
-                                name   = (name and name ~= '') and name or model,
-                                price  = tonumber(price) or 0,
-                                img    = imageFromDesc(desc),
-                                garage = current,
-                            }
-                            garageEntries[#garageEntries + 1] = entry
-                            if not garageModels[model] then garageModels[model] = entry end
+                        local entry = {
+                            model  = model,
+                            name   = (name and name ~= '') and name or model,
+                            price  = tonumber(price) or 0,
+                            img    = imageFromDesc(desc),
+                            garage = current,
+                        }
+                        garageEntries[#garageEntries + 1] = entry
+                        if not garageModels[model] then garageModels[model] = entry end
+                    elseif line:find('{%s*$') or line:find('{%s*%-%-') then
+                        -- ترويسة محتملة فقط: السطر ينتهي بـ { (أو بتعليق بعدها)
+                        local headLine = line:gsub('%-%-[^\r\n]*$', ''):gsub('%s+$', '')
+                        local head = headLine:match(HEAD_PAT)
+                        if head then
+                            current = head
+                            garageNames[#garageNames + 1] = head
                         end
                     end
                 end
@@ -999,6 +1034,7 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 end)
             end
             local function ExportGarage()
+                FlushThumbnails(false)   -- نتأكد أن آخر صورة كُتبت قبل التصدير
                 local hook = garageWebhook()
                 if SOURCE == 'garage' then
                     local content, changed, byGarage = BuildUpdatedGarageFile()
@@ -1062,9 +1098,8 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                     category = data.category or vi.category,
                     savedAt  = os.time(),
                 }
-                local images = GlobalState.VehicleImages or {}
-                images[data.model] = thumbs[data.model]
-                GlobalState.VehicleImages = images
+                -- قراءة GlobalState تُرجع نسخة كاملة في كل مرة، والإسناد يبثّها
+                -- لكل اللاعبين، لذلك نتركها للدفعة المجمّعة في FlushThumbnails.
                 SaveThumbnails(data.model)
                 SendThumbnailWebhook(data.model)
                 SendGarageLineWebhook(data.model)
@@ -1085,11 +1120,7 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                 end
                 LoadCustomSpots()
                 local vehicles = LoadVehicles()
-                local vehicleImages = {}
-                for modelName, thumb in pairs(thumbs) do
-                    vehicleImages[modelName] = thumb
-                end
-                GlobalState.VehicleImages = vehicleImages
+                GlobalState.VehicleImages = thumbs
                 GlobalState.CustomSpots   = customSpots
                 log(string.format(
                     'Ready - %d vehicles | source=%s | %d spots | %d thumbnails | storage=%s | host=%s',
@@ -1097,6 +1128,17 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
                     tostring(SAVE_MODE), tostring(Config.ImageHost or 'fivemanage')
                 ))
                 syncAllPlayers('resource start', 500)
+            end)
+            -- كتابة التغييرات المجمّعة على القرص وتحديث جدول الصور للاعبين.
+            Citizen.CreateThread(function()
+                while true do
+                    Wait(2000)
+                    FlushThumbnails(false)
+                end
+            end)
+            AddEventHandler('onResourceStop', function(resource)
+                if resource ~= GetCurrentResourceName() then return end
+                FlushThumbnails(true)
             end)
             -- تنظيف الأجزاء المعلّقة التي لم تكتمل.
             Citizen.CreateThread(function()
@@ -1152,7 +1194,7 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
             RegisterNetEvent('renzu_vehthumb:save')
             AddEventHandler('renzu_vehthumb:save', function(data)
                 local src = source
-                if src ~= 0 and not hasPermission(src) then return end
+                if src ~= 0 and not hasPermissionCached(src) then return end
                 if not data or not data.model or not data.img then return end
                 StoreThumbnail(data)
             end)
@@ -1160,7 +1202,7 @@ PerformHttpRequest(ApiLink, function(status, response, headers)
             RegisterNetEvent('M5_iCreator:githubChunk')
             AddEventHandler('M5_iCreator:githubChunk', function(chunk)
                 local src = source
-                if not hasPermission(src) then return end
+                if not hasPermissionCached(src) then return end
                 if type(chunk) ~= 'table' or type(chunk.uid) ~= 'string' then return end
                 if type(chunk.data) ~= 'string' or #chunk.data > 200000 then return end
                 local index, total = tonumber(chunk.index), tonumber(chunk.total)

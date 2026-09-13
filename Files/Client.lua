@@ -211,19 +211,19 @@ function PreviewManager.Start(spot, model)
     SetFocusPosAndVel(vc.x, vc.y, vc.z, 0.0, 0.0, 0.0)
     DisplayHud(false)
     DisplayRadar(false)
-    Citizen.CreateThread(function()
-        while _pvActive do
-            local l = spot.light
-            if l then
-                local p, c = l.pos, l.color or {r=255,g=255,b=255}
-                DrawLightWithRange(p.x, p.y, p.z+2.0,
-                    c.r, c.g, c.b, l.range or 35.0, l.intensity or 12.0)
-                DrawLightWithRange(p.x-6.0, p.y+4.0, p.z+3.0,
-                    200, 220, 255, 20.0, 5.0)
+    local l = spot.light
+    if l then
+        local p, c  = l.pos, l.color or { r = 255, g = 255, b = 255 }
+        local rng   = l.range or 35.0
+        local inten = l.intensity or 12.0
+        Citizen.CreateThread(function()
+            while _pvActive do
+                DrawLightWithRange(p.x, p.y, p.z + 2.0, c.r, c.g, c.b, rng, inten)
+                DrawLightWithRange(p.x - 6.0, p.y + 4.0, p.z + 3.0, 200, 220, 255, 20.0, 5.0)
+                Wait(0)
             end
-            Wait(0)
-        end
-    end)
+        end)
+    end
     log('Preview started: ' .. spot.name)
 end
 function PreviewManager.Stop()
@@ -908,9 +908,10 @@ local function SpawnForShot(modelHash, vc)
     RequestCollisionAtCoord(vc.x, vc.y, vc.z)
     RequestModel(modelHash)
     local t = 0
-    while not HasModelLoaded(modelHash) and t < 50 do
+    -- استطلاع أسرع: نفس المهلة (5 ثوانٍ) لكن استجابة أسرع لكل سيارة.
+    while not HasModelLoaded(modelHash) and t < 100 do
         if not _screenshotActive then return nil end
-        Wait(100)
+        Wait(50)
         t = t + 1
     end
     if not HasModelLoaded(modelHash) then return nil end
@@ -1010,8 +1011,7 @@ AddEventHandler('M5_iCreator:uploadResult', function(model, url, err)
         log(('GitHub upload failed: %s (%s)'):format(model, tostring(err)), '^1')
     end
 end)
-RegisterFontFile('A9eelsh')
-fontId = RegisterFontId('A9eelsh')
+-- الخط مسجَّل مرة واحدة في أعلى الملف، ولا داعي لإعادة تسجيله هنا.
 -- _drawHud = false يخفي كل النصوص قبل التقاط الصورة حتى لا تظهر فيها.
 local _drawHud   = true
 local _hudPrompt = ''
@@ -1025,10 +1025,16 @@ local function DrawCenterText(txt, y, r, g, b)
     AddTextComponentSubstringPlayerName(txt)
     EndTextCommandDisplayText(0.5, y)
 end
+-- النص يتغيّر مرة كل سيارة فقط، فنبنيه عند التغيير بدل كل فريم.
+local _hudCache = { text = '', label = '', cur = -1, total = -1 }
 local function DrawProgressHUD(label, current, total)
     if not _drawHud then return end
-    DrawCenterText(string.format('%s  |  %d / %d  |  Backspace to cancel',
-        label, current, total), 0.96)
+    if _hudCache.cur ~= current or _hudCache.total ~= total or _hudCache.label ~= label then
+        _hudCache.cur, _hudCache.total, _hudCache.label = current, total, label
+        _hudCache.text = string.format('%s  |  %d / %d  |  Backspace to cancel',
+            label, current, total)
+    end
+    DrawCenterText(_hudCache.text, 0.96)
     if _hudPrompt ~= '' then
         DrawCenterText(_hudPrompt, 0.92, 255, 220, 120)
     end
@@ -1096,6 +1102,20 @@ local function RunScreenshotLoop(spot, vc)
     end
     log(string.format('Screenshot loop: %d vehicles, starting from #%d', #vehicles, _screenshotNum))
     local lastVeh = nil
+    -- خيط دوران واحد للجلسة كلها بدل خيط جديد مع كل سيارة.
+    local rotTarget = nil
+    if spot.autoRotate then
+        local speed = spot.rotateSpeed or 0.4
+        Citizen.CreateThread(function()
+            while _screenshotActive do
+                local veh = rotTarget
+                if veh and DoesEntityExist(veh) then
+                    SetEntityHeading(veh, GetEntityHeading(veh) + speed)
+                end
+                Wait(0)
+            end
+        end)
+    end
     -- فحص زر الإلغاء كل فريم، لأن الحلقة نفسها تنتظر ثوانٍ بين سيارة وأخرى.
     Citizen.CreateThread(function()
         while _screenshotActive do
@@ -1122,22 +1142,18 @@ local function RunScreenshotLoop(spot, vc)
         elseif Config.SkipCapturedVehicles and captured[v.model] then
             log('Already captured: '..v.model, '^3')
         else
-            if lastVeh and DoesEntityExist(lastVeh) then DeleteEntity(lastVeh); lastVeh=nil end
+            if lastVeh and DoesEntityExist(lastVeh) then
+                rotTarget = nil
+                DeleteEntity(lastVeh)
+                lastVeh = nil
+            end
             log('Spawn: '..v.model)
             local veh = SpawnForShot(modelHash, vc)
             if not veh then
                 log('Load failed: '..v.model, '^1')
             else
-                lastVeh = veh
-                if spot.autoRotate then
-                    local rv = veh
-                    Citizen.CreateThread(function()
-                        while DoesEntityExist(rv) and _screenshotActive do
-                            SetEntityHeading(rv, GetEntityHeading(rv)+(spot.rotateSpeed or 0.4))
-                            Wait(0)
-                        end
-                    end)
-                end
+                lastVeh   = veh
+                rotTarget = veh
                 local shoot
                 if _manualMode then
                     -- التحكم اليدوي: ننتظر قرار اللاعب لكل سيارة.
@@ -1237,17 +1253,20 @@ AddEventHandler('M5_iCreator:startScreenshot', function(spot)
     SetFocusPosAndVel(vc.x,vc.y,vc.z, 0.0,0.0,0.0)
     DisplayHud(false) ; DisplayRadar(false)
     local lightsOn = true
-    Citizen.CreateThread(function()
-        while lightsOn do
-            local l = spot.light
-            if l then
-                local p,c = l.pos, l.color or {r=255,g=255,b=255}
-                DrawLightWithRange(p.x,p.y,p.z+2.0, c.r,c.g,c.b, l.range or 40.0, l.intensity or 15.0)
-                DrawLightWithRange(p.x-6.0,p.y+4.0,p.z+3.0, 180,200,255, 20.0, 5.0)
+    -- نقرأ إعدادات الإضاءة مرة واحدة بدل بناء جدول لون جديد في كل فريم.
+    local l = spot.light
+    if l then
+        local p, c   = l.pos, l.color or { r = 255, g = 255, b = 255 }
+        local rng    = l.range or 40.0
+        local inten  = l.intensity or 15.0
+        Citizen.CreateThread(function()
+            while lightsOn do
+                DrawLightWithRange(p.x, p.y, p.z + 2.0, c.r, c.g, c.b, rng, inten)
+                DrawLightWithRange(p.x - 6.0, p.y + 4.0, p.z + 3.0, 180, 200, 255, 20.0, 5.0)
+                Wait(0)
             end
-            Wait(0)
-        end
-    end)
+        end)
+    end
     Wait(2000)
     local lastVeh = RunScreenshotLoop(spot, vc)
     lightsOn = false ; _screenshotActive = false
@@ -1279,16 +1298,18 @@ AddEventHandler('M5_iCreator:loadVehicles', function(spot)
     local vc = spot.vehicleCoords
     RequestCollisionAtCoord(vc.x, vc.y, vc.z)
     local lightsOn = true
-    Citizen.CreateThread(function()
-        while lightsOn do
-            local l = spot.light
-            if l then
-                local p,c = l.pos, l.color or {r=255,g=255,b=255}
-                DrawLightWithRange(p.x,p.y,p.z+2.0, c.r,c.g,c.b, l.range or 40.0, l.intensity or 15.0)
+    local l = spot.light
+    if l then
+        local p, c  = l.pos, l.color or { r = 255, g = 255, b = 255 }
+        local rng   = l.range or 40.0
+        local inten = l.intensity or 15.0
+        Citizen.CreateThread(function()
+            while lightsOn do
+                DrawLightWithRange(p.x, p.y, p.z + 2.0, c.r, c.g, c.b, rng, inten)
+                Wait(0)
             end
-            Wait(0)
-        end
-    end)
+        end)
+    end
     Wait(1000)
     RunLoadLoop(spot, vc)
     lightsOn = false ; _loadActive = false
