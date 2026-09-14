@@ -46,13 +46,16 @@ function World3dToScreen2d() return VISIBLE end
 -- the flags are recorded per draw here.
 local CENTRE, RIGHT = nil, nil
 ALIGNMENTS = {}
+-- captured now, so swapping the global tostring later to count the code's own
+-- string building does not count this stub's
+local rawTostring = tostring
 
 function SetTextCentre(v) CENTRE = v; DRAWS = DRAWS + 1 end
 function SetTextRightJustify(v) RIGHT = v; DRAWS = DRAWS + 1 end
 function SetTextWrap() DRAWS = DRAWS + 1 end
 function EndTextCommandDisplayText()
   DRAWS = DRAWS + 1
-  ALIGNMENTS[#ALIGNMENTS + 1] = tostring(CENTRE) .. '/' .. tostring(RIGHT)
+  ALIGNMENTS[#ALIGNMENTS + 1] = rawTostring(CENTRE) .. '/' .. rawTostring(RIGHT)
 end
 
 -- the podium
@@ -242,6 +245,31 @@ check('  the number columns are right justified, on every row',
       rights, numeric * lines)
 check('  and the name column never is',
       lefts >= text * lines, true)
+Config.WorldBoard.podium.enabled = true
+
+-- ==========================================================================
+-- 2c. what a frame in front of the board costs
+-- ==========================================================================
+-- The board redraws every frame while somebody stands at it, and the numbers on
+-- it change once every few minutes. Turning each cell into a string on every
+-- frame was eighty string allocations a frame; they are built once when the
+-- rows arrive instead.
+Config.WorldBoard.screens.enabled = true
+Config.WorldBoard.podium.enabled = false
+WB.rows = rows(10)
+for i = 1, #WB.rows do            -- the client formats these when they arrive
+  local row = WB.rows[i]
+  row.cells = {}
+  for n = 1, 8 do row.cells[n] = tostring(n) end
+  row.r, row.g, row.b = 210, 160, 60
+end
+
+STRINGS = 0
+local realTostring = tostring
+tostring = function(v) STRINGS = STRINGS + 1 return realTostring(v) end
+tick(5, 0, 0, 0)
+tostring = realTostring
+check('a frame at the board builds no strings', STRINGS, 0)
 Config.WorldBoard.podium.enabled = true
 
 -- ==========================================================================

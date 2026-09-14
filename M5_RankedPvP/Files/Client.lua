@@ -258,12 +258,13 @@ local function holdingNothing(ped)
 end
 
 local function rearmGuard(ped)
-    local cfg = Config.Loadout or {}
-    if cfg.rearmWhenEmpty == false then return end
-    if not State.inMatch or not State.alive then return end
 
     local t = ms()
     if t < nextRearm then return end
+    if not State.inMatch or not State.alive then return end
+
+    local cfg = Config.Loadout or {}
+    if cfg.rearmWhenEmpty == false then return end
 
     local lo = State.loadout
     if not lo or not lo.weapons or #lo.weapons == 0 then return end
@@ -1415,20 +1416,28 @@ RegisterCommand('pvpzone', function()
     nui({ action = 'toast', kind = 'info', message = line, title = 'ZONE' })
 end, false)
 
+local ACTIVITY_MOVE_SQ = 1.5 * 1.5
+
 local function pushActivity(ped, pos)
     ped = ped or playerPed()
     pos = pos or GetEntityCoords(ped)
-    local heading = GetGameplayCamRot(2).z
 
-    local movedOk = #(pos - State.lastPos) >= 1.5
-    local camOk   = math_abs(((heading - State.lastCamHeading + 180) % 360) - 180) >= 4.0
-    local acted   = movedOk or camOk
-                    or IsPedShooting(ped) or IsControlPressed(0, 24)
-                    or IsControlPressed(0, 25) or IsControlPressed(0, 38)
+    local last = State.lastPos
+    local dx, dy, dz = pos.x - last.x, pos.y - last.y, pos.z - last.z
+    local moved = (dx * dx + dy * dy + dz * dz) >= ACTIVITY_MOVE_SQ
+
+    local heading
+    local acted = moved
+    if not acted then
+        heading = GetGameplayCamRot(2).z
+        acted = math_abs(((heading - State.lastCamHeading + 180) % 360) - 180) >= 4.0
+             or IsPedShooting(ped) or IsControlPressed(0, 24)
+             or IsControlPressed(0, 25) or IsControlPressed(0, 38)
+    end
 
     if acted then
         State.lastPos = pos
-        State.lastCamHeading = heading
+        if heading then State.lastCamHeading = heading end
         local t = ms()
         if (t - State.lastActivityPush) > 3000 then
             State.lastActivityPush = t
@@ -1461,6 +1470,27 @@ local function applyMatchRestrictions()
     DisableControlAction(0, 167, true)
 end
 
+local TAG_ROSTER_EVERY = 500
+local tagRoster, tagRosterAt, tagRosterTeam = {}, 0, nil
+
+local function refreshTagRoster(teams, myTeam)
+    tagRosterAt   = ms()
+    tagRosterTeam = myTeam
+    local n = 0
+    local players = GetActivePlayers()
+    for i = 1, #players do
+        local player = players[i]
+        local sid = GetPlayerServerId(player)
+        if teams[sid] == myTeam then
+            n = n + 1
+            local e = tagRoster[n]
+            if e then e.player, e.sid = player, sid
+            else tagRoster[n] = { player = player, sid = sid } end
+        end
+    end
+    for i = #tagRoster, n + 1, -1 do tagRoster[i] = nil end
+end
+
 local function drawTeammateTags(myPed, myPos)
     if not Config.Display.teammateNameplates or State.ffa then return end
 
@@ -1470,16 +1500,27 @@ local function drawTeammateTags(myPed, myPos)
     local myTeam = State.team
     local names  = State.nameOfServerId
     local range  = Config.Display.nameplateDistance
+    local rangeSq = range * range
     myPed = myPed or playerPed()
     myPos = myPos or GetEntityCoords(myPed)
 
-    for _, player in ipairs(GetActivePlayers()) do
-        local sid = GetPlayerServerId(player)
+    local t = ms()
+    if tagRosterTeam ~= myTeam or (t - tagRosterAt) >= TAG_ROSTER_EVERY then
+        refreshTagRoster(teams, myTeam)
+    end
+
+    local mx, my, mz = myPos.x, myPos.y, myPos.z
+
+    for i = 1, #tagRoster do
+        local sid = tagRoster[i].sid
         if teams[sid] == myTeam then
-            local ped = GetPlayerPed(player)
+            local ped = GetPlayerPed(tagRoster[i].player)
             if ped ~= myPed and DoesEntityExist(ped) then
                 local pos = GetEntityCoords(ped)
-                if #(myPos - pos) <= range then
+                local dx, dy, dz = mx - pos.x, my - pos.y, mz - pos.z
+
+                if (dx * dx + dy * dy + dz * dz) <= rangeSq
+                   and World3dToScreen2d(pos.x, pos.y, pos.z + 1.05) then
                     SetDrawOrigin(pos.x, pos.y, pos.z + 1.05, 0)
                     SetTextFont(4)
                     SetTextScale(0.30, 0.30)
@@ -2169,11 +2210,25 @@ local function wbOn()
     return c ~= nil and c.enabled ~= false
 end
 
+local wbFromConfig = nil
+
 local function wbLayout()
     if WB.edit then return WB.edit end
     if WB.layout then return WB.layout end
-
     local c = Config.WorldBoard or {}
+
+    if wbFromConfig then
+        local scc = c.screens or {}
+        local pcc = c.podium  or {}
+        wbFromConfig.screensEnabled = scc.enabled ~= false
+        wbFromConfig.podiumEnabled  = pcc.enabled ~= false
+        for i = 1, #wbFromConfig.screens do
+            local spot = (scc.spots or {})[i]
+            if spot then wbFromConfig.screens[i].enabled = spot.enabled ~= false end
+        end
+        return wbFromConfig
+    end
+
     local sc = c.screens or {}
     local pc = c.podium  or {}
 
@@ -2185,6 +2240,7 @@ local function wbLayout()
     }
     for i = 1, #(sc.spots or {}) do
         local spot = sc.spots[i]
+
         out.screens[i] = {
             pos      = spot.pos,
             title    = spot.title,
@@ -2200,6 +2256,7 @@ local function wbLayout()
         local spot = pc.spots[i]
         out.podium[i] = { pos = spot.pos, h = spot.h or 0.0, anim = spot.anim }
     end
+    wbFromConfig = out
     return out
 end
 
@@ -2303,7 +2360,8 @@ local function drawScreen(spot, dist)
 
     for i = 1, shown do
         local row = WB.rows[i]
-        local r, g, b = wbColour(row.color)
+        local r, g, b = row.r or 220, row.g or 220, row.b or 225
+        local cells = row.cells
 
         if i <= 3 then
             DrawRect(0.0, y + (lineH / 2) - (0.002 * scale), width - (0.008 * scale),
@@ -2321,8 +2379,7 @@ local function drawScreen(spot, dist)
             elseif c.bad  then cr, cg, cb = 220, 80, 90
             elseif c.warm then cr, cg, cb = 235, 190, 90 end
 
-            local v = row[c.key]
-            wbText(tostring(v == nil and '-' or v), colX(c), y,
+            wbText(cells and cells[n] or '-', colX(c), y,
                    0.29 * scale, cr, cg, cb, 255, c.align, right)
         end
 
@@ -2407,11 +2464,27 @@ local function wbSpawn(cfg)
     WB.spawned = #WB.peds > 0
 end
 
+local function wbFormatRows()
+    for i = 1, #WB.rows do
+        local row = WB.rows[i]
+        local cells = {}
+        for n = 1, #WB_COLS do
+            local v = row[WB_COLS[n].key]
+            cells[n] = (v == nil) and '-' or tostring(v)
+        end
+        row.cells = cells
+        row.plate = ('#%d  %s'):format(row.position or i, row.name or '')
+        row.under = ('%s \194\183 %d RP'):format(row.rank or '', row.rp or 0)
+        row.r, row.g, row.b = wbColour(row.color)
+    end
+end
+
 RegisterNetEvent('m5rp:cl:worldBoard', function(payload)
     if not payload then return end
     WB.ready  = true
     WB.rows   = payload.rows or {}
     WB.season = payload.season
+    wbFormatRows()
     if WB.spawned then
         local cfg = wbPodium()
         if cfg then wbSpawn(cfg) else wbDespawn() end
@@ -2484,13 +2557,11 @@ function wbTick(me, podiumAcc)
                 if #(me - pos) <= 14.0
                    and World3dToScreen2d(pos.x, pos.y, pos.z + 1.05) then
                     sleep = 0
-                    local r, g, b = wbColour(row.color)
                     SetDrawOrigin(pos.x, pos.y, pos.z + 1.05, 0)
                     DrawRect(0.0, 0.0, 0.058, 0.026, 8, 10, 14, 170)
-                    wbText(('#%d  %s'):format(row.position, row.name),
-                           0.0, -0.010, 0.32, 240, 240, 245, 255, 'centre')
-                    wbText(('%s \194\183 %d RP'):format(row.rank or '', row.rp or 0),
-                           0.0, 0.001, 0.24, r, g, b, 235, 'centre')
+                    wbText(row.plate or '', 0.0, -0.010, 0.32, 240, 240, 245, 255, 'centre')
+                    wbText(row.under or '', 0.0, 0.001, 0.24,
+                           row.r or 220, row.g or 220, row.b or 225, 235, 'centre')
                     ClearDrawOrigin()
                 end
             end

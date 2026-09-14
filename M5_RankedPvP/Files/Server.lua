@@ -3119,7 +3119,11 @@ end
 
 local function playerListPayload(m)
     local out, byUser = {}, {}
+    local aliveA, aliveB = 0, 0
     for userId, mp in pairs(m.players) do
+        if mp.alive and mp.connected then
+            if mp.team == 2 then aliveB = aliveB + 1 else aliveA = aliveA + 1 end
+        end
         local s = srcOf(userId)
         local row = {
             userId = userId, serverId = s,
@@ -3135,7 +3139,7 @@ local function playerListPayload(m)
         byUser[userId] = row
     end
     table.sort(out, byTeamThenScore)
-    return out, byUser
+    return out, byUser, aliveA, aliveB
 end
 
 function Match.create(opts)
@@ -3815,13 +3819,14 @@ function Match.checkMatchOver(m)
 end
 
 function Match.pushHud(m, force)
-    if not force and (ms() - m.lastHudPush) < 900 then return end
-    m.lastHudPush = ms()
+    local t = ms()
+    if not force and (t - m.lastHudPush) < 900 then return end
+    m.lastHudPush = t
 
     local timeLeft = 0
-    if m.stateEnd then timeLeft = math.max(0, math.floor((m.stateEnd - ms()) / 1000)) end
+    if m.stateEnd then timeLeft = math.max(0, math.floor((m.stateEnd - t) / 1000)) end
 
-    local board, byUser = playerListPayload(m)
+    local board, byUser, aliveA, aliveB = playerListPayload(m)
 
     local payload = {
         matchId  = m.id,
@@ -3830,8 +3835,8 @@ function Match.pushHud(m, force)
         maxRounds= m.settings.rounds,
         scores   = { a = m.scores[1], b = m.scores[2] },
         time     = timeLeft,
-        aliveA   = aliveCount(m, 1),
-        aliveB   = aliveCount(m, 2),
+        aliveA   = aliveA,
+        aliveB   = aliveB,
         teamA    = teamNameFor(m, 1),
         teamB    = teamNameFor(m, 2),
         overtime = m.overtimeCount > 0,
@@ -4613,46 +4618,39 @@ end
 function Match.checkForfeit(m)
     if m.state == 'MATCH_END' or m.state == 'CLEANUP' then return end
 
+    local total, teamA, teamB, lastTeam = 0, 0, 0, 0
+
     for userId, mp in pairs(m.players) do
         if mp.connected and not srcOf(userId) then
             mp.connected = false
             mp.alive     = false
             mp.leftEarly = true
         end
+        if mp.connected then
+            total = total + 1
+            lastTeam = mp.team
+            if mp.team == 2 then teamB = teamB + 1 else teamA = teamA + 1 end
+        end
     end
 
-    local anyone = false
-    for _, mp in pairs(m.players) do
-        if mp.connected then anyone = true break end
-    end
-    if not anyone then
+    if total == 0 then
         Match.abort(m, 'EVERYONE_LEFT')
         return
     end
 
     if m.ffa then
-        local remaining = 0
-        for _, mp in pairs(m.players) do if mp.connected then remaining = remaining + 1 end end
-        if remaining <= 1 then
-            local winner = 0
-            for _, mp in pairs(m.players) do if mp.connected then winner = mp.team end end
-            Match.endMatch(m, winner, 'FORFEIT')
+        if total <= 1 then
+            Match.endMatch(m, lastTeam, 'FORFEIT')
         end
         return
     end
 
-    local connected = { [1] = 0, [2] = 0 }
-    for _, mp in pairs(m.players) do
-        if mp.connected then
-            local t = mp.team == 2 and 2 or 1
-            connected[t] = connected[t] + 1
-        end
-    end
-
+    local least = Config.Match.minPlayersToContinue
     for team = 1, 2 do
-        if connected[team] < Config.Match.minPlayersToContinue then
+        local here = (team == 1) and teamA or teamB
+        if here < least then
 
-            if connected[team] == 0 and not Match.awaitingReconnect(m, team) then
+            if here == 0 and not Match.awaitingReconnect(m, team) then
                 Match.endMatch(m, team == 1 and 2 or 1, 'FORFEIT')
                 return
             end
@@ -4826,12 +4824,13 @@ local function inComa(userId)
 end
 
 function Match.checkComa(m)
-    if not comaWatchOn() then return end
     if m.state ~= 'LIVE' then return end
 
     local t = ms()
-    local every = tonumber(Config.ComaWatch.interval) or 2000
-    if (t - (m.lastComaCheck or 0)) < every then return end
+    if (t - (m.lastComaCheck or 0)) < (tonumber(Config.ComaWatch.interval) or 2000) then
+        return
+    end
+    if not comaWatchOn() then return end
     m.lastComaCheck = t
 
     for userId, mp in pairs(m.players) do
@@ -4853,11 +4852,10 @@ end
 
 function Match.checkAFK(m)
     if not Config.AFK.enabled then return end
-    if inSet(Config.AFK.ignoreStates, m.state) then return end
 
     local t = ms()
-
     if (t - (m.lastAfkCheck or 0)) < (Config.AFK.checkInterval or 5000) then return end
+    if inSet(Config.AFK.ignoreStates, m.state) then return end
     m.lastAfkCheck = t
     for userId, mp in pairs(m.players) do
         if mp.connected and (mp.alive or m.settings.respawn) then
