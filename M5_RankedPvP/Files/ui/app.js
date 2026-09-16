@@ -698,12 +698,39 @@ function renderSlots() {
      seat with nobody in it, and dashes where a crest and RP should be said
      nothing. The seat after the party is always invitable, whatever mode is
      selected — inviting is how the party grows, and the mode follows the new
-     size (1v1 -> 2v2 -> 3v3 ...). */
-  const nextSeat = members.length;
+     size (1v1 -> 2v2 -> 3v3 ...).
+
+     You sit in the middle of the row and the party grows outwards around you,
+     rather than everyone filling in from the left and leaving you wherever you
+     happened to join. On a row of five that is seats 3, 4, 2, 5, 1 in the order
+     they fill; on an even row the middle is the left of the two. */
+  const seatOrder = [];
+  const mid = Math.ceil(max / 2) - 1;
+  seatOrder.push(mid);
+  for (let d = 1; d < max; d++) {
+    if (mid + d < max) seatOrder.push(mid + d);
+    if (mid - d >= 0) seatOrder.push(mid - d);
+  }
+
+  /* Whoever is looking goes first in the fill order, so the middle seat is
+     theirs. Everyone else keeps the order the server sent them in. */
+  const meAt = members.findIndex((m) => m.userId === meId);
+  const ordered = meAt > 0
+    ? [members[meAt]].concat(members.slice(0, meAt), members.slice(meAt + 1))
+    : members.slice();
+
+  // visual position -> who is in it, and which position the next invite is
+  const seatOf = new Array(max).fill(null);
+  const rankOf = new Array(max).fill(0);
+  for (let i = 0; i < seatOrder.length; i++) rankOf[seatOrder[i]] = i + 1;
+  for (let i = 0; i < ordered.length && i < seatOrder.length; i++) {
+    seatOf[seatOrder[i]] = ordered[i];
+  }
+  const nextSeat = seatOrder[ordered.length];
 
   host.innerHTML = '';
   for (let i = 0; i < max; i++) {
-    const m = members[i];
+    const m = seatOf[i];
 
     if (!m) {
       const isNext    = i === nextSeat;
@@ -722,8 +749,10 @@ function renderSlots() {
         head = 'OPEN SLOT';     sub = 'INVITE IN ORDER';
       }
 
-      /* the mode this seat belongs to, when one exists for that team size */
-      const seatMode = modeLabelForSize(i + 1);
+      /* The mode this seat belongs to, when one exists for that team size.
+         That is how many players the party would have once this seat fills —
+         its place in the fill order, not its place in the row. */
+      const seatMode = modeLabelForSize(rankOf[i]);
 
       const slot = el('div', 'slot ' + cls, `
         <div class="slot-top">

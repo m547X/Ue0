@@ -354,6 +354,55 @@ const BOOT = {
   check('  the plate sits at the bottom of the card', layout.gap <= 16, true);
   check('  below the name, not above it', layout.below, true);
 
+  /* Where you sit in the row. Filling from the left put you wherever you
+     happened to join; the middle seat is yours now and the party grows outwards
+     around it. */
+  const seats = () => page.evaluate(() => Array.from(
+    document.querySelectorAll('#party-slots .slot'),
+    (n) => n.classList.contains('filled')
+      ? (n.querySelector('.slot-name') || {}).textContent || '?'
+      : (n.classList.contains('invite') && !n.classList.contains('locked') ? 'INVITE' : '-')));
+
+  await page.evaluate(() => window.__send({ action: 'party', data: {
+    id: 'p1', leader: 2,
+    members: [{ userId: 2, name: 'FRIEND', leader: true, rankId: 2 },
+              { userId: 1, name: 'ME', rankId: 2 }] } }));
+  await page.waitForTimeout(150);
+  let row = await seats();
+  check('two in the party: you are in the middle of five',
+        row[2].indexOf('ME'), 0);
+  check('  and the other one is beside you',
+        row[3].indexOf('FRIEND'), 0);
+
+  await page.evaluate(() => window.__send({ action: 'party', data: {
+    id: 'p1', leader: 1,
+    members: [{ userId: 1, name: 'ME', leader: true, rankId: 2 }] } }));
+  await page.waitForTimeout(150);
+  row = await seats();
+  check('alone: still the middle seat, not the first',
+        row[2].indexOf('ME'), 0);
+  check('  and the invite seat is next to you, not at the end', row[3], 'INVITE');
+  check('  with the seats either side left open', [row[0], row[4]], ['-', '-']);
+
+  // four of them, and you are still in the middle however the server ordered them
+  await page.evaluate(() => window.__send({ action: 'party', data: {
+    id: 'p1', leader: 5,
+    members: [{ userId: 5, name: 'A', leader: true, rankId: 2 },
+              { userId: 6, name: 'B', rankId: 2 },
+              { userId: 7, name: 'C', rankId: 2 },
+              { userId: 1, name: 'ME', rankId: 2 }] } }));
+  await page.waitForTimeout(150);
+  row = await seats();
+  check('four in the party, and you joined last: still the middle',
+        row[2].indexOf('ME'), 0);
+  check('  and everybody else is on the row', row.filter((x) => x !== '-' && x !== 'INVITE').length, 4);
+
+  await page.evaluate(() => window.__send({ action: 'party', data: {
+    id: 'p1', leader: 2,
+    members: [{ userId: 2, name: 'FRIEND', leader: true, rankId: 2 },
+              { userId: 1, name: 'ME', rankId: 2 }] } }));
+  await page.waitForTimeout(150);
+
   check('a member who does not lead sees a leave control',
         await page.locator('.slot-leave').count(), 1);
   check('  and no kick control',  await page.locator('.slot-kick').count(), 0);
