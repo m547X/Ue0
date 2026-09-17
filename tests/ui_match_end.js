@@ -268,6 +268,27 @@ const END = {
         (await page.evaluate(() => getComputedStyle(document.getElementById('sc-bg')).filter)),
         'none');
 
+  /* The card is drawn over the HUD. With nothing behind it that cost nothing;
+     with the map behind it, anything under it is gone — and the whole HUD was
+     under it. */
+  const layers = await page.evaluate(() => ({
+    hud: Number(getComputedStyle(document.getElementById('hud')).zIndex),
+    card: Number(getComputedStyle(document.getElementById('showcase')).zIndex),
+    board: Number(getComputedStyle(document.getElementById('scoreboard')).zIndex),
+    banner: Number(getComputedStyle(document.getElementById('phase')).zIndex),
+    hudShown: !document.getElementById('hud').classList.contains('hidden'),
+    cardOverlapsHud: (() => {
+      const a = document.getElementById('sc-bg').getBoundingClientRect();
+      const b = document.getElementById('hud-player').getBoundingClientRect();
+      return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    })()
+  }));
+  check('the arena card is opened with the HUD on', layers.hudShown, true);
+  check('  and the card does cover where the HUD sits', layers.cardOverlapsHud, true);
+  check('  so the HUD is painted over it, not under',  layers.hud > layers.card, true);
+  check('  while the scoreboard still opens over both', layers.board > layers.hud, true);
+  check('  and the round banner over everything',       layers.banner > layers.board, true);
+
   sc = await showcase({ id: 'lego', name: 'LEGO' });
   check('a map with no picture falls back to its own colour plate',
         sc.image.includes('gradient'), true);

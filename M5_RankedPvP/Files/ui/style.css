@@ -95,7 +95,12 @@ h1,h2,h3,h4{font-weight:700}
 .sd-x:hover{filter:brightness(1.15)}
 
 /* ---------- HUD ---------- */
-.hud{position:absolute;inset:0;font-variant-numeric:tabular-nums}
+/* Above the arena card at 41. The card used to be text over a transparent
+   screen, so painting it on top cost nothing; now that it carries the map
+   behind it, anything under it is gone — and the HUD is not something to hide
+   while a match is being set up. Its panels sit at the edges and the card's
+   own content is centred, so the two do not fight over the same pixels. */
+.hud{position:absolute;inset:0;z-index:42;font-variant-numeric:tabular-nums}
 .hud-top{position:absolute;top:16px;left:50%;transform:translateX(-50%);display:flex;align-items:stretch;
   background:linear-gradient(180deg,rgba(16,23,32,.94),rgba(6,9,14,.82));
   border:1px solid var(--edge);border-radius:14px;overflow:hidden;min-width:430px;
