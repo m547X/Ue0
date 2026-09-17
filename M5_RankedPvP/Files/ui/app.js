@@ -633,6 +633,12 @@ function renderModeTabs() {
       : `${tx('A party of')} ${partySize()} ${tx('cannot search')} ${m.label}.`;
     b.title = ok ? '' : why;
     b.onclick = () => {
+      /* The search is already out on a mode, so the tabs cannot move under it —
+         otherwise the button names one mode and the server is matching another. */
+      if (S.queue && S.queue.searching) {
+        toast('warning', tx('Cancel the search first to change mode.'), tx('QUEUE'));
+        return;
+      }
       if (!ok) { toast('warning', why, 'QUEUE'); return; }
       Sfx.play('click');
       S.mode = m.id;
@@ -644,6 +650,8 @@ function renderModeTabs() {
     };
     host.appendChild(b);
   });
+
+  renderStartMode();
 
   // ---- leaderboard tabs stay a plain mode filter
   const lb = $('lb-tabs');
@@ -969,10 +977,22 @@ function toggleQueue() {
   post('queue', { action: 'join', mode: S.mode, autoFill: autoFillOn() });
 }
 
-/** Label of the mode the START button would queue for. */
+/** Label of the mode the START button would queue for — or, once a search is
+ *  running, the one it actually went out on. */
 function currentModeLabel() {
-  const m = ((S.boot && S.boot.modes) || []).find((x) => x.id === S.mode);
-  return (m && m.label) || String(S.mode || '').toUpperCase();
+  const live = (S.queue && S.queue.searching && S.lastQueue && S.lastQueue.mode) || null;
+  const id = live || S.mode;
+  const m = ((S.boot && S.boot.modes) || []).find((x) => x.id === id);
+  return (m && m.label) || String(id || '').toUpperCase();
+}
+
+/* The mode line under the search button. It lives inside the button's markup,
+   which renderQueue writes, so picking a tab used to leave it on the old mode
+   until a queue message happened to redraw it — the tab said 2V2 and the button
+   still said 1V1. */
+function renderStartMode() {
+  const line = $('btn-start-mode');
+  if (line) line.textContent = currentModeLabel();
 }
 
 function renderQueue(q) {

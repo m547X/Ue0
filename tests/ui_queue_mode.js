@@ -95,11 +95,26 @@ const party = (ids, autoMode) => ({
   check('AUTO FILL unlocks 2V2 for one player',
         await tab('2V2').evaluate((n) => n.classList.contains('locked')), false);
 
+  check('the search button starts on 1V1',
+        await page.locator('#btn-start-mode').innerText(), '1V1');
+
   await tab('2V2').click();
   await page.waitForTimeout(80);
   check('  picking 2V2 selects it', await mode(), '2v2');
   check('  and the tab shows as the active one',
         await tab('2V2').evaluate((n) => n.classList.contains('active')), true);
+  /* The mode line lives inside the search button, which only the queue message
+     used to redraw — so the tab said 2V2 and the button still said 1V1 until
+     you pressed search. */
+  check('  and the search button says so without being pressed',
+        await page.locator('#btn-start-mode').innerText(), '2V2');
+
+  await tab('3V3').click();
+  await page.waitForTimeout(80);
+  check('  it follows every tab, not just the first',
+        await page.locator('#btn-start-mode').innerText(), '3V3');
+  await tab('2V2').click();
+  await page.waitForTimeout(80);
 
   /* This is the bug: autoMode looks at the party size, decides one player means
      1V1, and quietly undid the choice — so the search went out on 1V1. */
@@ -113,6 +128,33 @@ const party = (ids, autoMode) => ({
   check('  and the search goes out on 2V2',
         await page.evaluate(() => window.__posted.find((p) => p.name === 'queue')),
         { name: 'queue', body: { action: 'join', mode: '2v2', autoFill: true } });
+
+  // ======================================================================
+  // 2b. a running search owns the mode
+  // ======================================================================
+  await page.evaluate(() => window.__send({ action: 'queue', data: {
+    state: 'SEARCHING', mode: '2v2', elapsed: 4 } }));
+  await page.waitForTimeout(120);
+  check('while searching the button names the mode being searched',
+        await page.locator('#btn-start-mode').innerText(), '2V2');
+
+  await page.evaluate(() => { window.__posted = []; });
+  await tab('5V5').click();
+  await page.waitForTimeout(120);
+  check('  and the tabs cannot move under it', await mode(), '2v2');
+  check('  the button is not rewritten either',
+        await page.locator('#btn-start-mode').innerText(), '2V2');
+  check('  nothing is sent to the server', await page.evaluate(() => window.__posted.length), 0);
+
+  await page.evaluate(() => window.__send({ action: 'queue', data: { state: 'IDLE' } }));
+  await page.waitForTimeout(120);
+  check('once the search stops the tabs work again', await (async () => {
+    await tab('5V5').click();
+    await page.waitForTimeout(80);
+    return mode();
+  })(), '5v5');
+  await tab('2V2').click();
+  await page.waitForTimeout(80);
 
   // ======================================================================
   // 3. the pin is only kept while that mode can still be searched

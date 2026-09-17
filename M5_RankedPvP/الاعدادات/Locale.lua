@@ -183,6 +183,8 @@ Locale.ar = {
                                   = 'الأطوار الأكبر مفتوحة. الأماكن الفاضية في فريقك يعبّيها البحث.',
     ['Only modes that fit your party can be searched.']
                                   = 'ما تقدر تبحث إلا الأطوار الي تناسب عدد مجموعتك.',
+    ['Cancel the search first to change mode.']
+                                  = 'ألغِ البحث أول عشان تغيّر الطور.',
     ['Your weapons were given back.'] = 'رجعت أسلحتك.',
     ['RANK UP']                   = 'ترقية',
     ['RANK DOWN']                 = 'هبوط',
