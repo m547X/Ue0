@@ -1739,26 +1739,77 @@ RegisterNetEvent('m5rp:cl:spectate', function(data)
     startSpectateThread()
 end)
 
+local TRAIN_MODEL = 's_m_y_marine_01'
+
 local function clearTrainingTargets()
     for i = 1, #State.trainingProps do
-        local ped = State.trainingProps[i]
-        if DoesEntityExist(ped) then DeletePed(ped) end
+        local rec = State.trainingProps[i]
+        local ped = rec and rec.ped
+        if ped and DoesEntityExist(ped) then DeletePed(ped) end
     end
     State.trainingProps = {}
 end
 
-local function spawnTrainingTargets(origin, count, spacing, headshotOnly)
-    clearTrainingTargets()
-    if count <= 0 then return end
-
-    local model = GetHashKey('s_m_y_marine_01')
+local function trainingModel()
+    local model = GetHashKey(TRAIN_MODEL)
     RequestModel(model)
     local timeout = ms() + 5000
     while not HasModelLoaded(model) and ms() < timeout do Citizen.Wait(20) end
-    if not HasModelLoaded(model) then return end
+    if not HasModelLoaded(model) then return nil end
+    return model
+end
 
+local function trainingGroundZ(x, y, z)
+    local ok, gz = GetGroundZFor_3dCoord(x, y, z + 25.0, false)
+    if ok and gz and gz > -150.0 and math.abs(gz - z) < 40.0 then return gz + 1.0 end
+    return z
+end
+
+local function trainingSpot(origin, minDist, maxDist)
+    local lo   = minDist or 0.0
+    local span = math.max(0.0, (maxDist or lo) - lo)
+    local ang  = math.random() * math.pi * 2.0
+    local dist = lo + math.random() * span
+    local x = origin.x + math.cos(ang) * dist
+    local y = origin.y + math.sin(ang) * dist
+    return x, y, trainingGroundZ(x, y, origin.z)
+end
+
+local function trainingArcSpot(origin, spec)
+    local half = math.rad(spec.arc or 80.0) * 0.5
+    local ang  = math.rad(origin.h or 0.0) + (math.random() * 2.0 - 1.0) * half
+    local near = spec.near or 10.0
+    local dist = near + math.random() * math.max(0.0, (spec.far or 26.0) - near)
+    local x = origin.x - math.sin(ang) * dist
+    local y = origin.y + math.cos(ang) * dist
+    return x, y, trainingGroundZ(x, y, origin.z)
+end
+
+local function trainingTarget(model, x, y, z, h, frozen)
+    local ped = CreatePed(4, model, x, y, z, h or 0.0, false, false)
+    if not DoesEntityExist(ped) then return nil end
+    SetEntityInvincible(ped, false)
+    SetPedCanRagdoll(ped, false)
+    FreezeEntityPosition(ped, frozen == true)
+    SetBlockingOfNonTemporaryEvents(ped, true)
+    SetPedSuffersCriticalHits(ped, true)
+    SetPedDiesWhenInjured(ped, true)
+    SetPedFleeAttributes(ped, 0, false)
+    SetPedDropsWeaponsWhenDead(ped, false)
+    SetEntityAsMissionEntity(ped, true, true)
+    return ped
+end
+
+local function trainingWalk(rec, origin, spec)
+    rec.gx, rec.gy, rec.gz = trainingSpot(origin, 4.0, spec.area or 26.0)
+    TaskGoToCoordAnyMeans(rec.ped, rec.gx, rec.gy, rec.gz, rec.speed, 0, false, 786603, 0.0)
+    local p = GetEntityCoords(rec.ped)
+    rec.lx, rec.ly = p.x, p.y
+end
+
+local function spawnTrainingLine(origin, count, spacing, headshotOnly, model)
     local heading = origin.h or 0.0
-    local rad = math.rad(heading)
+    local rad     = math.rad(heading)
     local forward = vector3(-math.sin(rad), math.cos(rad), 0.0)
     local right   = vector3(math.cos(rad), math.sin(rad), 0.0)
 
@@ -1769,18 +1820,65 @@ local function spawnTrainingTargets(origin, count, spacing, headshotOnly)
                   + (forward * (10.0 + dist))
                   + (right * offset)
 
-        local ped = CreatePed(4, model, pos.x, pos.y, pos.z, heading + 180.0, false, false)
-        SetEntityInvincible(ped, false)
-        SetPedCanRagdoll(ped, false)
-        FreezeEntityPosition(ped, true)
-        SetBlockingOfNonTemporaryEvents(ped, true)
-        SetPedSuffersCriticalHits(ped, true)
-        SetPedDiesWhenInjured(ped, true)
-        SetEntityAsMissionEntity(ped, true, true)
-        State.trainingProps[#State.trainingProps + 1] = ped
+        local ped = trainingTarget(model, pos.x, pos.y, pos.z, heading + 180.0, true)
+        if ped then
+            State.trainingProps[#State.trainingProps + 1] = {
+                ped = ped, fixed = true,
+                x = pos.x, y = pos.y, z = pos.z, h = heading + 180.0
+            }
+        end
+    end
+end
+
+local function spawnTrainingMover(origin, spec, model)
+    local x, y, z = trainingSpot(origin, spec.minDist or 10.0, spec.area or 26.0)
+    local ped = trainingTarget(model, x, y, z, math.random() * 360.0, false)
+    if not ped then return nil end
+
+    local pick = spec.speeds[math.random(1, #spec.speeds)]
+    local rec  = { ped = ped, speed = pick.speed or 1.0, pace = pick.label or '' }
+    trainingWalk(rec, origin, spec)
+    return rec
+end
+
+local function spawnTrainingReflex(origin, spec, model)
+    local x, y, z = trainingArcSpot(origin, spec)
+    local h = GetHeadingFromVector_2d(origin.x - x, origin.y - y)
+    local ped = trainingTarget(model, x, y, z, h, true)
+    if not ped then return nil end
+    return { ped = ped, born = ms() }
+end
+
+local function trainingStatRows(kind, st)
+    if kind == 'reflex' then
+        local react = st.reactCount > 0
+                      and (math.floor(st.reactTotal / st.reactCount) .. ' MS')
+                      or '-'
+        return {
+            { l = 'HITS',     v = tostring(st.hits) },
+            { l = 'MISSED',   v = tostring(st.misses) },
+            { l = 'REACTION', v = react },
+            { l = 'STREAK',   v = st.streak .. ' / ' .. st.bestStreak }
+        }
     end
 
-    SetModelAsNoLongerNeeded(model)
+    if kind == 'moving' then
+        local acc = st.shots > 0 and math.min(100, math.floor((st.hits / st.shots) * 100)) or 0
+        return {
+            { l = 'HITS',      v = tostring(st.hits) },
+            { l = 'HEADSHOTS', v = tostring(st.headshots) },
+            { l = 'ACCURACY',  v = acc .. '%' },
+            { l = 'TIME',      v = st.clock }
+        }
+    end
+
+    local rate = st.hits > 0 and math.floor((st.headshots / st.hits) * 100) or 0
+    return {
+        { l = 'HITS',      v = tostring(st.hits) },
+        { l = 'HEADSHOTS', v = tostring(st.headshots) },
+        { l = 'HS RATE',   v = rate .. '%' },
+        { l = 'TIME',      v = st.clock }
+    }
 end
 
 RegisterNetEvent('m5rp:cl:training', function(data)
@@ -1810,13 +1908,33 @@ RegisterNetEvent('m5rp:cl:training', function(data)
     if data.spawn then teleport(data.spawn, false) end
     if data.loadout then applyLoadout(data.loadout, true) end
 
-    spawnTrainingTargets(data.spawn, data.targets or 0, data.spacing or 8.0,
-                         data.kind == 'headshot')
+    local origin  = data.spawn
+    local kind    = data.kind
+    local reflex  = data.reflex
+    local moving  = data.moving
+    local oneShot = data.headshotOneShot == true
+    local limit   = math.max(0, math.floor(tonumber(data.time) or 0))
+
+    clearTrainingTargets()
+
+    local model = (origin and (reflex or moving or (data.targets or 0) > 0)) and trainingModel() or nil
+    if origin and model then
+        if moving and moving.speeds and #moving.speeds > 0 then
+            for _ = 1, math.max(1, math.floor(tonumber(data.targets) or 6)) do
+                local rec = spawnTrainingMover(origin, moving, model)
+                if rec then State.trainingProps[#State.trainingProps + 1] = rec end
+            end
+        elseif not reflex then
+            spawnTrainingLine(origin, math.floor(tonumber(data.targets) or 0),
+                              tonumber(data.spacing) or 8.0, kind == 'headshot', model)
+        end
+    end
 
     local exitCfg = (Config.Training and Config.Training.exit) or {}
     nui({ action = 'training', data = {
-        active = true, label = data.label, kind = data.kind,
-        targets = data.targets, time = data.time,
+        active = true, label = data.label, kind = kind,
+        pace = reflex and reflex.label or nil,
+        targets = data.targets, time = limit,
         exit = (exitCfg.enabled and exitCfg.hint and exitCfg.hint.enabled) and {
             key  = (exitCfg.keybind and exitCfg.keybind.display) or 'BACKSPACE',
             text = (exitCfg.hint and exitCfg.hint.text) or 'EXIT TRAINING',
@@ -1826,51 +1944,177 @@ RegisterNetEvent('m5rp:cl:training', function(data)
     } })
 
     Citizen.CreateThread(function()
-        local hits, headshots, shots = 0, 0, 0
-        local startedAt = ms()
+        local st = {
+            hits = 0, headshots = 0, misses = 0, shots = 0,
+            streak = 0, bestStreak = 0, reactTotal = 0, reactCount = 0, clock = '0s'
+        }
+        local startedAt  = ms()
+        local wasShooting = false
+        local nextSpawn  = 0
+        local nextTask   = 0
+        local nextClock  = 0
+        local dirty      = true
+        local ended      = false
+
+        local function push()
+            nui({ action = 'training', data = {
+                active = true, hits = st.hits, headshots = st.headshots,
+                misses = st.misses, streak = st.streak,
+                left = limit > 0 and math.max(0, limit - math.floor((ms() - startedAt) / 1000)) or nil,
+                stats = trainingStatRows(kind, st)
+            } })
+        end
+
+        local function scored(head, react)
+            st.hits = st.hits + 1
+            if head then st.headshots = st.headshots + 1 end
+            st.streak = st.streak + 1
+            if st.streak > st.bestStreak then st.bestStreak = st.streak end
+            if react then
+                st.reactTotal = st.reactTotal + react
+                st.reactCount = st.reactCount + 1
+            end
+            dirty = true
+        end
+
+        push()
 
         while State.training do
-            local ped = playerPed()
+            local me = playerPed()
+            local t  = ms()
 
-            for i = 1, #State.trainingProps do
-                local target = State.trainingProps[i]
-                if DoesEntityExist(target) and IsEntityDead(target) then
-                    hits = hits + 1
-                    local hasBone, bone = GetPedLastDamageBone(target)
-                    if hasBone and HEAD_BONES[bone] then headshots = headshots + 1 end
+            local shooting = IsPedShooting(me)
+            if shooting and not wasShooting then st.shots = st.shots + 1 end
+            wasShooting = shooting
 
-                    local pos = GetEntityCoords(target)
-                    local heading = GetEntityHeading(target)
-                    DeletePed(target)
+            if reflex then
+                for i = #State.trainingProps, 1, -1 do
+                    local rec = State.trainingProps[i]
+                    local ped = rec.ped
+                    if not ped or not DoesEntityExist(ped) then
+                        table.remove(State.trainingProps, i)
+                        nextSpawn = t + reflex.gap
+                    else
+                        local hit = IsEntityDead(ped)
+                                    or HasEntityBeenDamagedByEntity(ped, me, true)
+                        if hit then
+                            local hasBone, bone = GetPedLastDamageBone(ped)
+                            scored(hasBone and HEAD_BONES[bone] == true, t - rec.born)
+                            DeletePed(ped)
+                            table.remove(State.trainingProps, i)
+                            nextSpawn = t + reflex.gap
+                        elseif t - rec.born >= reflex.live then
+                            st.misses = st.misses + 1
+                            st.streak = 0
+                            dirty = true
+                            DeletePed(ped)
+                            table.remove(State.trainingProps, i)
+                            nextSpawn = t + reflex.gap
+                        end
+                    end
+                end
 
-                    local model = GetHashKey('s_m_y_marine_01')
-                    RequestModel(model)
-                    local timeout = ms() + 3000
-                    while not HasModelLoaded(model) and ms() < timeout do Citizen.Wait(10) end
+                if origin and model and #State.trainingProps < reflex.up and t >= nextSpawn then
+                    local rec = spawnTrainingReflex(origin, reflex, model)
+                    if rec then State.trainingProps[#State.trainingProps + 1] = rec end
+                end
+            else
+                for i = 1, #State.trainingProps do
+                    local rec = State.trainingProps[i]
+                    local ped = rec.ped
 
-                    local fresh = CreatePed(4, model, pos.x, pos.y, pos.z, heading, false, false)
-                    SetEntityInvincible(fresh, false)
-                    SetPedCanRagdoll(fresh, false)
-                    FreezeEntityPosition(fresh, true)
-                    SetBlockingOfNonTemporaryEvents(fresh, true)
-                    SetPedSuffersCriticalHits(fresh, true)
-                    SetPedDiesWhenInjured(fresh, true)
-                    SetEntityAsMissionEntity(fresh, true, true)
-                    State.trainingProps[i] = fresh
+                    if ped and DoesEntityExist(ped) and not rec.down then
+                        if oneShot and not IsEntityDead(ped) then
+                            local hasBone, bone = GetPedLastDamageBone(ped)
+                            if hasBone and HEAD_BONES[bone]
+                               and HasEntityBeenDamagedByEntity(ped, me, true) then
+                                ClearEntityLastDamageEntity(ped)
+                                SetEntityHealth(ped, 0)
+                            end
+                        end
 
-                    nui({ action = 'training', data = {
-                        active = true, hits = hits, headshots = headshots,
-                        accuracy = hits > 0 and math.floor((headshots / hits) * 100) or 0,
-                        elapsed = math.floor((ms() - startedAt) / 1000)
-                    } })
+                        if IsEntityDead(ped) then
+                            local hasBone, bone = GetPedLastDamageBone(ped)
+                            scored(hasBone and HEAD_BONES[bone] == true, nil)
+                            rec.down = true
+                            rec.at   = t
+
+                            if rec.fixed then
+                                DeletePed(ped)
+                                rec.ped = nil
+                            end
+                        end
+                    end
+
+                    if rec.down and model and (not rec.ped or not DoesEntityExist(rec.ped)) then
+                        local wait = moving and moving.respawn or 0
+                        if t - (rec.at or t) >= wait then
+                            if moving then
+                                local x, y, z = trainingSpot(origin, moving.minDist or 10.0,
+                                                             moving.area or 26.0)
+                                local fresh = trainingTarget(model, x, y, z, math.random() * 360.0, false)
+                                if fresh then
+                                    rec.ped   = fresh
+                                    rec.down  = false
+                                    local pick = moving.speeds[math.random(1, #moving.speeds)]
+                                    rec.speed = pick.speed or 1.0
+                                    rec.pace  = pick.label or ''
+                                    trainingWalk(rec, origin, moving)
+                                end
+                            else
+                                local fresh = trainingTarget(model, rec.x, rec.y, rec.z, rec.h, true)
+                                if fresh then
+                                    rec.ped  = fresh
+                                    rec.down = false
+                                end
+                            end
+                        end
+                    elseif rec.down and rec.ped and DoesEntityExist(rec.ped)
+                           and t - (rec.at or t) >= (moving and moving.respawn or 1500) then
+                        DeletePed(rec.ped)
+                        rec.ped = nil
+                    end
+                end
+
+                if moving and t >= nextTask then
+                    nextTask = t + (moving.retask or 900)
+                    for i = 1, #State.trainingProps do
+                        local rec = State.trainingProps[i]
+                        if rec.ped and not rec.down and DoesEntityExist(rec.ped)
+                           and not IsEntityDead(rec.ped) then
+                            local p = GetEntityCoords(rec.ped)
+                            local reached = #(p - vector3(rec.gx, rec.gy, rec.gz)) < 3.5
+                            local stuck = rec.lx and (math.abs(p.x - rec.lx) + math.abs(p.y - rec.ly)) < 0.6
+                            rec.lx, rec.ly = p.x, p.y
+                            if reached or stuck then trainingWalk(rec, origin, moving) end
+                        end
+                    end
                 end
             end
 
-            if IsPedShooting(playerPed()) then shots = shots + 1 end
-            Citizen.Wait(120)
+            if t >= nextClock then
+                nextClock = t + 1000
+                local elapsed = math.floor((t - startedAt) / 1000)
+                st.clock = (limit > 0 and math.max(0, limit - elapsed) or elapsed) .. 's'
+                dirty = true
+
+                if limit > 0 and elapsed >= limit then
+                    ended = true
+                    State.training = false
+                end
+            end
+
+            if dirty then
+                dirty = false
+                push()
+            end
+
+            Citizen.Wait(reflex and 0 or 120)
         end
 
         clearTrainingTargets()
+        if model then SetModelAsNoLongerNeeded(model) end
+        if ended then exitTraining() end
     end)
 end)
 

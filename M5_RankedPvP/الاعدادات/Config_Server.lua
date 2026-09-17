@@ -1178,10 +1178,88 @@ Config.Training         = {
     bucket  = 90000,                                -- الباكت الي ينعزل فيه
     spawn   = vector4(1208.5, -3115.6, 5.5, 180.0), -- نقطة النزول
     loadout = 'training',                           -- السلاح من Config.Loadouts
-    modes   = {                                     -- الأطوار: عدد الأهداف، والمسافة بينها، والوقت بالثواني
-        aim      = { label = 'AIM TRAINING', targets = 12, spacing = 8.0, time = 120 },
-        headshot = { label = 'HEADSHOT TRAINING', targets = 8, spacing = 12.0, time = 120 },
-        range    = { label = 'FREE RANGE', targets = 0, spacing = 0.0, time = 0 }
+    -- الأطوار. الترتيب (order) هو ترتيب الكروت باللوحة، و desc هو الشرح تحت
+    -- الاسم. كل شي هنا يترسل للكلنت داخل حدث التدريب، فالكلنت ما يقرأ هذا
+    -- الملف أبداً.
+    modes   = {
+
+        -- أهداف واقفة بصف، مسافات ثابتة. تسخين.
+        aim      = {
+            order   = 1,
+            label   = 'AIM TRAINING',
+            desc    = 'Static targets at mixed ranges. Warm up tracking and flicks.',
+            targets = 12,   -- عدد الأهداف
+            spacing = 8.0,  -- المسافة بينك وبينها
+            time    = 120   -- الوقت بالثواني، و 0 = بلا حد
+        },
+
+        -- نفس الي قبله بس بعيدة، والهيدشوت يقتل بطلقة
+        headshot = {
+            order   = 2,
+            label   = 'HEADSHOT TRAINING',
+            desc    = 'Long range targets. One clean head hit is always lethal — practise it.',
+            targets = 8,
+            spacing = 12.0,
+            time    = 120
+        },
+
+        -- أهداف تتحرك: تنزل بأماكن عشوائية حولك وتتمشى بين نقاط عشوائية،
+        -- وكل هدف ياخذ سرعة من الخليط تحت. ما ترد عليك ولا تطلق.
+        moving   = {
+            order   = 3,
+            label   = 'MOVING TARGETS',
+            desc    = 'Targets spawn around you and keep moving at mixed speeds. Lead your shots.',
+            targets = 6,    -- كم هدف بنفس الوقت
+            time    = 120,
+            moving  = {
+                area    = 26.0, -- نصف قطر الساحة الي يتحركون داخلها
+                minDist = 10.0, -- أقرب مسافة ينزل فيها هدف عنك
+                respawn = 1500, -- ملي ثانية قبل ما ينزل بديل للي مات
+                retask  = 900,  -- كل كم ملي ثانية نتأكد إنهم لا زالوا ماشين
+
+                -- خليط السرعات. الوزن = كم نسخة منها داخل السحب، فكل ما زاد
+                -- الرقم كل ما كثرت الأهداف الي تمشي بهذي السرعة.
+                speeds  = {
+                    { id = 'walk',   label = 'WALK',   speed = 1.0, weight = 1 },
+                    { id = 'jog',    label = 'JOG',    speed = 1.8, weight = 2 },
+                    { id = 'sprint', label = 'SPRINT', speed = 3.0, weight = 1 }
+                }
+            }
+        },
+
+        -- طور الايم لاب: هدف واحد (أو أكثر) يطلع قدامك بمكان عشوائي، وله عمر
+        -- قصير — إما تصيبه قبل ما يختفي أو ينحسب عليك ميس. والسرعة تختارها من
+        -- الكرت نفسه.
+        reflex   = {
+            order   = 4,
+            label   = 'REFLEX TARGETS',
+            desc    = 'Aim Lab style. Targets pop up one after another — hit them before they vanish.',
+            time    = 120,
+            reflex  = {
+                default = 'normal', -- السرعة الافتراضية
+                arc     = 80.0,     -- زاوية الطلوع: يمين ويسار عن اتجاه الساحة
+                near    = 10.0,     -- أقرب مسافة يطلع فيها هدف
+                far     = 26.0,     -- وأبعد مسافة
+
+                -- السرعات. live = عمر الهدف بالملي ثانية، gap = الوقفة بين
+                -- هدف والي بعده، up = كم هدف مطلوع بنفس اللحظة.
+                paces   = {
+                    { id = 'slow',   label = 'SLOW',   live = 2600, gap = 700, up = 1 },
+                    { id = 'normal', label = 'NORMAL', live = 1700, gap = 420, up = 1 },
+                    { id = 'fast',   label = 'FAST',   live = 1000, gap = 220, up = 2 }
+                }
+            }
+        },
+
+        -- ساحة مفتوحة بدون أهداف ولا وقت
+        range    = {
+            order   = 5,
+            label   = 'FREE RANGE',
+            desc    = 'Open range with a full loadout. No targets, no timer.',
+            targets = 0,
+            spacing = 0.0,
+            time    = 0
+        }
     }
 }
 

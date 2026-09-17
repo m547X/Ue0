@@ -5812,17 +5812,116 @@ end
 
 local Training = { players = {} }
 
-function Training.start(userId, kind)
+function Training.paceList(mode)
+    local r = mode and mode.reflex
+    if not r or type(r.paces) ~= 'table' then return nil end
+    local out = {}
+    for i = 1, #r.paces do
+        local p = r.paces[i]
+        if p and p.id then
+            out[#out + 1] = { id = p.id, label = p.label or string.upper(p.id) }
+        end
+    end
+    if #out == 0 then return nil end
+    return out
+end
+
+function Training.paceOf(mode, want)
+    local r = mode and mode.reflex
+    if not r or type(r.paces) ~= 'table' then return nil end
+    local fallback
+    for i = 1, #r.paces do
+        local p = r.paces[i]
+        if p and p.id then
+            if p.id == want then return p end
+            if p.id == r.default then fallback = p end
+        end
+    end
+    return fallback or r.paces[1]
+end
+
+function Training.modeList()
+    local out = {}
+    for kind, mode in pairs(Config.Training.modes or {}) do
+        out[#out + 1] = {
+            kind  = kind,
+            label = mode.label or string.upper(kind),
+            desc  = mode.desc,
+            order = tonumber(mode.order) or 99,
+            paces = Training.paceList(mode)
+        }
+    end
+    table.sort(out, function(a, b)
+        if a.order == b.order then return a.kind < b.kind end
+        return a.order < b.order
+    end)
+    return out
+end
+
+function Training.spec(kind, mode, pace)
+    if mode.moving then
+        local m = mode.moving
+        local speeds = {}
+        for i = 1, #(m.speeds or {}) do
+            local sp = m.speeds[i]
+            local weight = math.max(1, math.floor(tonumber(sp.weight) or 1))
+            for _ = 1, weight do
+                speeds[#speeds + 1] = {
+                    id = sp.id, label = sp.label or string.upper(sp.id or '?'),
+                    speed = tonumber(sp.speed) or 1.0
+                }
+            end
+        end
+        if #speeds == 0 then speeds[1] = { id = 'walk', label = 'WALK', speed = 1.0 } end
+        return nil, {
+            area    = tonumber(m.area) or 26.0,
+            minDist = tonumber(m.minDist) or 10.0,
+            respawn = math.max(0, tonumber(m.respawn) or 1500),
+            retask  = math.max(250, tonumber(m.retask) or 900),
+            speeds  = speeds
+        }
+    end
+
+    if mode.reflex then
+        local r = mode.reflex
+        local p = Training.paceOf(mode, pace)
+        if not p then return nil, nil end
+        return {
+            pace  = p.id,
+            label = p.label or string.upper(p.id),
+            live  = math.max(200, tonumber(p.live) or 1700),
+            gap   = math.max(0, tonumber(p.gap) or 400),
+            up    = math.max(1, math.floor(tonumber(p.up) or 1)),
+            arc   = tonumber(r.arc) or 80.0,
+            near  = tonumber(r.near) or 10.0,
+            far   = tonumber(r.far) or 26.0
+        }, nil
+    end
+
+    return nil, nil
+end
+
+function Training.start(userId, kind, pace)
     if not Config.Training.enabled then return false, 'Training is disabled.' end
     local pd = Players[userId]
     if not pd or pd.state ~= 'IDLE' then return false, 'Leave your current activity first.' end
 
-    local mode = Config.Training.modes[kind] or Config.Training.modes.range
+    local mode = Config.Training.modes[kind]
+    if not mode then
+        kind = 'range'
+        mode = Config.Training.modes.range
+    end
+    if not mode then return false, 'Training is disabled.' end
+
     local s = srcOf(userId)
     if not s then return false end
 
+    local reflex, moving = Training.spec(kind, mode, pace)
+
     pd.state = 'TRAINING'
-    Training.players[userId] = { kind = kind, startedAt = now() }
+    Training.players[userId] = {
+        kind = kind, startedAt = now(), pace = reflex and reflex.pace or nil
+    }
 
     SetPlayerRoutingBucket(s, Config.Training.bucket)
     configureBucket(Config.Training.bucket)
@@ -5836,6 +5935,7 @@ function Training.start(userId, kind)
                     z = Config.Training.spawn.z, h = Config.Training.spawn.w },
         loadout = { health = base.health, armor = base.armor, weapons = base.weapons },
         targets = mode.targets, spacing = mode.spacing, time = mode.time,
+        reflex  = reflex, moving = moving,
         headshotOneShot = Config.Headshot.enabledInTraining and Config.Headshot.oneShotKill
     })
     return true
@@ -8394,7 +8494,8 @@ function Server_BootPayload(pd)
             searching   = Matchmaker.searchingCount(),
             customGames = Config.CustomGames.enabled,
             training    = Config.Training.enabled
-        }
+        },
+        trainingModes = Config.Training.enabled and Training.modeList() or nil
     }
 end
 
@@ -8819,7 +8920,8 @@ RegisterNetEvent('m5rp:sv:action', function(action, data)
 
     elseif action == 'training' then
         if data.enable then
-            local ok, reason = Training.start(pd.userId, tostring(data.kind or 'range'))
+            local ok, reason = Training.start(pd.userId, tostring(data.kind or 'range'),
+                                              data.pace and tostring(data.pace) or nil)
             if not ok and reason then notify(src, 'error', reason, 'TRAINING') end
         else
             Training.stop(pd.userId)

@@ -494,12 +494,10 @@
 
   <div id="training" class="trainbox hidden">
     <div class="tb-title" id="training-title">TRAINING</div>
-    <div class="tb-stats">
-      <div><b id="training-hits">0</b><span>HITS</span></div>
-      <div><b id="training-hs">0</b><span>HEADSHOTS</span></div>
-      <div><b id="training-acc">0%</b><span>HS RATE</span></div>
-      <div><b id="training-time">0s</b><span>TIME</span></div>
-    </div>
+    <!-- filled from the client: each drill reports the four numbers that matter
+         to it, so a reflex run shows reaction and streak where an aim run shows
+         headshot rate -->
+    <div class="tb-stats" id="training-stats"></div>
   </div>
 
   <!-- Training exit prompt — top centre of the HUD, key comes from the config -->

@@ -429,7 +429,35 @@ Locale.ar = {
     -- ---------------------------------------------------------------- training modes
     ['AIM TRAINING']              = 'تدريب التصويب',
     ['HEADSHOT TRAINING']         = 'تدريب الهيدشوت',
+    ['MOVING TARGETS']            = 'أهداف متحركة',
+    ['REFLEX TARGETS']            = 'أهداف سريعة',
     ['FREE RANGE']                = 'ميدان حر',
+    ['Static targets at mixed ranges. Warm up tracking and flicks.'] =
+        'أهداف ثابتة على مسافات مختلفة. تسخين للتتبع والحركات السريعة.',
+    ['Long range targets. One clean head hit is always lethal — practise it.'] =
+        'أهداف بعيدة. طلقة وحدة نظيفة بالراس تقتل دايم — تمرّن عليها.',
+    ['Targets spawn around you and keep moving at mixed speeds. Lead your shots.'] =
+        'أهداف تنزل حولك وتضل تتحرك بسرعات مختلفة. صوّب قدامها.',
+    ['Aim Lab style. Targets pop up one after another — hit them before they vanish.'] =
+        'على طريقة الايم لاب. الأهداف تطلع وحدة ورا الثانية — أصبها قبل ما تختفي.',
+    ['Open range with a full loadout. No targets, no timer.'] =
+        'ميدان مفتوح بعتاد كامل. بدون أهداف ولا وقت.',
+
+    -- ---------------------------------------------------------------- training paces and readouts
+    ['SLOW']                      = 'بطيء',
+    ['NORMAL']                    = 'متوسط',
+    ['FAST']                      = 'سريع',
+    ['WALK']                      = 'مشي',
+    ['JOG']                       = 'هرولة',
+    ['SPRINT']                    = 'ركض',
+    ['HITS']                      = 'إصابات',
+    ['HEADSHOTS']                 = 'هيدشوت',
+    ['HS RATE']                   = 'نسبة الهيد',
+    ['ACCURACY']                  = 'الدقة',
+    ['MISSED']                    = 'ضايع',
+    ['REACTION']                  = 'رد الفعل',
+    ['STREAK']                    = 'متتالية',
+    ['TIME']                      = 'الوقت',
 
     [' • %d RP to %s']            = ' • %d نقطة حتى %s',
     ['%s: %s']                    = '%s: %s',

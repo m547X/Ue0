@@ -2275,6 +2275,12 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 .traincard:hover{transform:translateY(-4px);border-color:var(--red)}
 .traincard b{font-size:21px;font-weight:700;letter-spacing:.06em}
 .traincard p{margin-top:7px;font-size:12px;color:var(--dim);line-height:1.5}
+/* a drill entered by picking a pace: the card itself is not the button, the
+   paces are, so it does not lift or claim the cursor */
+.traincard.paced{cursor:default}
+.traincard.paced:hover{transform:none;border-color:var(--edge)}
+.tc-paces{display:flex;gap:8px;flex-wrap:wrap}
+.tc-paces .mini{flex:1 1 0;min-width:78px;justify-content:center}
 
 .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;align-content:start}
 .srow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;

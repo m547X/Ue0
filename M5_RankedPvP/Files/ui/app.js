@@ -1837,20 +1837,30 @@ function renderRewards(d) {
 }
 
 /* ============================================================== TRAINING */
+/* The drills, their wording and their pace options all come from the server's
+   training config, so adding one there is enough to make a card appear. The
+   list below is only what to fall back on if a server has not sent one. */
+const TRAIN_FALLBACK = [
+  { kind: 'aim', label: 'AIM TRAINING', desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
+  { kind: 'headshot', label: 'HEADSHOT TRAINING', desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
+  { kind: 'range', label: 'FREE RANGE', desc: 'Open range with a full loadout. No targets, no timer.' }
+];
+
 function renderTraining() {
   const host = $('traingrid');
   const active = S.training;
-  const modes = [
-    { kind: 'aim', label: tx('AIM TRAINING'), desc: 'Static targets at mixed ranges. Warm up tracking and flicks.' },
-    { kind: 'headshot', label: tx('HEADSHOT TRAINING'), desc: 'Long range targets. One clean head hit is always lethal — practise it.' },
-    { kind: 'range', label: tx('FREE RANGE'), desc: 'Open range with a full loadout. No targets, no timer.' }
-  ];
+  const modes = ((S.boot && S.boot.trainingModes) || TRAIN_FALLBACK).map((m) => ({
+    kind: m.kind,
+    label: tx(m.label || String(m.kind || '').toUpperCase()),
+    desc: m.desc || '',
+    paces: m.paces || null
+  }));
   host.innerHTML = '';
 
   if (active) {
     const bar = el('div', 'train-active', `
       <div style="flex:1">
-        <b>${esc(active.label || 'TRAINING')}</b>
+        <b>${esc(active.label || 'TRAINING')}${active.pace ? ' · ' + esc(tx(active.pace)) : ''}</b>
         <div><span>Session in progress${active.exit
           ? ` — press ${esc(active.exit.key)} in game${active.exit.command ? ` or ${esc(active.exit.command)}` : ''}`
           : ''}</span></div>
@@ -1863,10 +1873,28 @@ function renderTraining() {
   }
 
   modes.forEach((m) => {
-    const c = el('div', 'traincard',
-      `<div><b>${m.label}</b><p>${m.desc}</p></div>
-       <button class="btn">${esc(tx(active ? 'SWITCH' : 'ENTER'))}</button>`);
-    c.onclick = () => post('action', { action: 'training', enable: true, kind: m.kind });
+    /* A drill with paces is entered by picking one, so it gets a row of them
+       instead of a single button — the pace is the choice, not an extra step
+       behind one. */
+    const c = el('div', 'traincard' + (m.paces ? ' paced' : ''),
+      `<div><b>${esc(m.label)}</b><p>${esc(tx(m.desc))}</p></div>
+       ${m.paces
+         ? `<div class="tc-paces">${m.paces.map((p) =>
+             `<button class="mini" data-pace="${esc(p.id)}">${esc(tx(p.label || p.id))}</button>`
+           ).join('')}</div>`
+         : `<button class="btn">${esc(tx(active ? 'SWITCH' : 'ENTER'))}</button>`}`);
+
+    if (m.paces) {
+      c.querySelectorAll('[data-pace]').forEach((b) => {
+        b.onclick = (ev) => {
+          ev.stopPropagation();
+          Sfx.play('click');
+          post('action', { action: 'training', enable: true, kind: m.kind, pace: b.dataset.pace });
+        };
+      });
+    } else {
+      c.onclick = () => post('action', { action: 'training', enable: true, kind: m.kind });
+    }
     host.appendChild(c);
   });
 }
@@ -3702,17 +3730,23 @@ window.addEventListener('message', (e) => {
         // periodic updates only carry counters, so merge instead of replacing
         S.training = Object.assign({ active: true }, S.training, tr);
 
-        if (tr.label) $('training-title').textContent = tr.label;
+        if (tr.label) {
+          $('training-title').textContent =
+            tr.pace ? `${tx(tr.label)} · ${tx(tr.pace)}` : tx(tr.label);
+        }
         if (tr.exit) {
           hint.classList.remove('hidden');
           $('train-prompt-key').textContent = tr.exit.key || 'BACKSPACE';
           $('train-prompt-text').textContent = tr.exit.text || 'EXIT TRAINING';
         }
-        if (tr.hits !== undefined) {
-          $('training-hits').textContent = tr.hits;
-          $('training-hs').textContent = tr.headshots;
-          $('training-acc').textContent = tr.accuracy + '%';
-          $('training-time').textContent = tr.elapsed + 's';
+        /* Each drill names its own four numbers, so the tiles are built from
+           what arrived rather than being four fixed labels. */
+        if (tr.stats) {
+          const box = $('training-stats');
+          box.innerHTML = '';
+          tr.stats.forEach((s) => {
+            box.appendChild(el('div', '', `<b>${esc(s.v)}</b><span>${esc(tx(s.l))}</span>`));
+          });
         }
       }
 
