@@ -2911,6 +2911,12 @@ function renderShowcase(d) {
   const cfg = ((d && d.hudCfg) || {}).showcase || {};
   if (!d || cfg.enabled === false || d.ffa) { hideShowcase(); return; }
 
+  /* The map itself behind the card. The picture is already on the match
+     payload — it is the same one the lobby cards draw — and a map without one
+     falls back to its own colour plate rather than to nothing. */
+  const bg = $('sc-bg');
+  if (bg) bg.style.cssText = mapArt((d.map || {}).id, (d.map || {}).image);
+
   $('sc-map').textContent = String((d.map && d.map.name) || d.modeLabel || '').toUpperCase();
   $('sc-sub').textContent = tx('PREPARING MATCH…');
 

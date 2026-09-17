@@ -974,11 +974,6 @@ RegisterNetEvent('m5rp:cl:round', function(data)
             myTeam = State.team, scoreboard = data.scoreboard
         } })
 
-        local sbCfg = (Config.HUD and Config.HUD.scoreboard) or {}
-        if sbCfg.enabled ~= false and sbCfg.autoOnRoundEnd then
-            nui({ action = 'scoreboard', show = true })
-        end
-
         hook('onRoundEnd', {
             matchId = State.matchId, round = data.round, winner = data.winner,
             reason = data.reason, scores = data.scores

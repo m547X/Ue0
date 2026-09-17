@@ -212,6 +212,29 @@ Match.checkForfeit(m)
 check('everyone present: nobody is corrected', m.players[1].connected, true)
 check('  and the match runs on',               #ENDED, 0)
 
+-- ==========================================================================
+-- the round break belongs to the banner
+-- ==========================================================================
+-- The board used to be pushed open on its own at the end of every round, which
+-- buried the word and the score it was there to show. It only opens on the key
+-- now, so nothing in the round-end branch may ask for it.
+do
+  local CL = io.open('M5_RankedPvP/Files/Client.lua'):read('a')
+  local a = CL:find("elseif data.phase == 'end' then", 1, true)
+  local b = CL:find("RegisterNetEvent('m5rp:cl:hud'", a or 1, true)
+  check('the round-end branch was found', a ~= nil and b ~= nil, true)
+  local branch = CL:sub(a or 1, (b or 1) - 1)
+  check('  it opens no scoreboard on its own',
+        branch:find("action = 'scoreboard'", 1, true), nil)
+  check('  it still sends the round result to the interface',
+        branch:find("phase = 'end'", 1, true) ~= nil, true)
+  check('  with the score on it',
+        branch:find('scores = data.scores', 1, true) ~= nil, true)
+  check('and the setting that used to force it is gone from the config',
+        io.open('M5_RankedPvP/الاعدادات/Config_Client.lua'):read('a')
+          :find('autoOnRoundEnd', 1, true), nil)
+end
+
 print()
 print(fails == 0 and ('ALL PASS (%d checks)'):format(checks)
                  or ('%d FAILED'):format(fails))

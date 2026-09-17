@@ -112,6 +112,19 @@ const END = {
 
   check('the scoreboard is not forced open with it',
         await page.locator('#scoreboard').evaluate((n) => n.classList.contains('hidden')), true);
+  /* What is left is what the break is meant to be: the word, and the score
+     under it. The score used to be there and covered by the board. */
+  check('  and the score is on screen instead of under it',
+        await page.isVisible('#phase-score'), true);
+  check('  reading the round that was just played',
+        [await page.locator('#phase-score-a').textContent(),
+         await page.locator('#phase-score-b').textContent()], ['3', '2']);
+  check('  under the word, not behind it',
+        await page.evaluate(() => {
+          const w = document.getElementById('phase-word').getBoundingClientRect();
+          const s = document.getElementById('phase-score').getBoundingClientRect();
+          return s.top >= w.bottom - 2;
+        }), true);
 
   // ======================================================================
   // 3. FIGHT, which used to come and go
@@ -208,6 +221,57 @@ const END = {
         await page.locator('#modal-result').evaluate((n) => !n.classList.contains('hidden')), true);
   check('  and no MVP screen is shown',
         await page.locator('#modal-mvp').evaluate((n) => n.classList.contains('hidden')), true);
+
+  // ======================================================================
+  // the arena card that opens a match: the map belongs behind it
+  // ======================================================================
+  const showcase = async (map) => {
+    await page.evaluate((m) => {
+      window.__send({ action: 'matchSetup', data: {
+        matchId: 'm2', modeLabel: '1V1', team: 1, ffa: false,
+        teamNames: { 1: 'TEAM A', 2: 'TEAM B' },
+        map: m,
+        roster: [{ userId: 1, name: 'ME', team: 1, rank: 'Silver' },
+                 { userId: 2, name: 'BOT x1', team: 2, rank: 'Normal' }],
+        settings: {}, hudCfg: {} } });
+    }, map);
+    await page.waitForTimeout(200);
+    return page.evaluate(() => {
+      const bg = document.getElementById('sc-bg');
+      const cs = getComputedStyle(bg);
+      const title = document.getElementById('sc-map').getBoundingClientRect();
+      const box = bg.getBoundingClientRect();
+      return {
+        image: cs.backgroundImage,
+        size: cs.backgroundSize,
+        // it covers the screen, and the card sits over it rather than under
+        covers: box.width >= window.innerWidth - 1 && box.height >= window.innerHeight - 1,
+        behind: cs.zIndex,
+        titleOver: title.top > box.top && title.bottom < box.bottom,
+        // CEF cannot blur, so readability has to come from a scrim
+        scrim: getComputedStyle(bg, '::after').backgroundImage
+      };
+    });
+  };
+
+  let sc = await showcase({ id: 'dust', name: 'DUST', image: 'img/dust.png' });
+  check('the map picture is the background of the arena card',
+        sc.image.includes('dust.png'), true);
+  check('  it covers the screen', sc.covers, true);
+  check('  every layer scaled to cover, not tiled',
+        sc.size.split(',').every((s) => s.trim() === 'cover'), true);
+  check('  behind the card, not over it', sc.behind, '-1');
+  check('  with the map name drawn on top of it', sc.titleOver, true);
+  check('  and a scrim so white text stays readable',
+        sc.scrim.includes('gradient'), true);
+  check('  and no blur, which CEF does not have',
+        (await page.evaluate(() => getComputedStyle(document.getElementById('sc-bg')).filter)),
+        'none');
+
+  sc = await showcase({ id: 'lego', name: 'LEGO' });
+  check('a map with no picture falls back to its own colour plate',
+        sc.image.includes('gradient'), true);
+  check('  and not to nothing', sc.image === 'none', false);
 
   check('nothing threw along the way', errors, []);
 

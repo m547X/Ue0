@@ -616,8 +616,9 @@ player names facing each other. `mode = 'fixed'` uses `TEAM A` / `TEAM B`.
 
 `Config.HUD.scoreboard`. Holding the key opens the full board: both teams with
 avatars, names, rank, K / D / A, headshots, damage and ping, your own row
-highlighted, dead players dimmed and disconnected ones greyed out. It also
-appears on its own during the round break (`autoOnRoundEnd`).
+highlighted, dead players dimmed and disconnected ones greyed out. It never
+opens on its own: the round break shows the win/loss banner and the score and
+nothing else, and the board is there on the key if you want it.
 
 The key is registered through FiveM's keybinding system, so a player can rebind
 it under **Settings → Key Bindings → FiveM → M5 Ranked PvP** instead of being
