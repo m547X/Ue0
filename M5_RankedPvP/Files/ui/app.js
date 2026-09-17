@@ -728,7 +728,22 @@ function renderSlots() {
   }
   const nextSeat = seatOrder[ordered.length];
 
+  /* A row with an even number of seats has no true middle one, so the shorter
+     side is padded with an empty column and the middle seat is yours whatever
+     Config.Party.maxSize is set to. A row of five pads nothing and is drawn
+     exactly as before; the column width follows the count so a padded row still
+     fits. */
+  const padLeft  = Math.max(0, (max - 1 - mid) - mid);
+  const padRight = Math.max(0, mid - (max - 1 - mid));
+
   host.innerHTML = '';
+  host.style.setProperty('--cols', String(max + padLeft + padRight));
+  for (let i = 0; i < padLeft; i++) {
+    const pad = el('div', 'seat-pad');
+    pad.setAttribute('aria-hidden', 'true');
+    host.appendChild(pad);
+  }
+
   for (let i = 0; i < max; i++) {
     const m = seatOf[i];
 
@@ -880,6 +895,12 @@ function renderSlots() {
       slot.appendChild(leave);
     }
     host.appendChild(slot);
+  }
+
+  for (let i = 0; i < padRight; i++) {
+    const pad = el('div', 'seat-pad');
+    pad.setAttribute('aria-hidden', 'true');
+    host.appendChild(pad);
   }
 }
 

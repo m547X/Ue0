@@ -397,6 +397,37 @@ const BOOT = {
         row[2].indexOf('ME'), 0);
   check('  and everybody else is on the row', row.filter((x) => x !== '-' && x !== 'INVITE').length, 4);
 
+  /* "The middle index" is not the same thing as the middle of the row. A party
+     size with no true middle seat (any even Config.Party.maxSize) only centres
+     you if the short side of the row is padded, so the card's centre line is
+     measured against the row's rather than counted. */
+  const seatAt = async (maxParty, size) => {
+    await page.evaluate((a) => {
+      S.boot.maxParty = a.maxParty;
+      const members = [];
+      for (let i = 1; i < a.size; i++) members.push({ userId: 50 + i, name: 'P' + i, rankId: 2 });
+      members.push({ userId: 1, name: 'ME', rankId: 2 });   // you joined last
+      members[0].leader = true;
+      window.__send({ action: 'party', data: { id: 'p1', leader: members[0].userId, members } });
+    }, { maxParty, size });
+    await page.waitForTimeout(120);
+    return page.evaluate(() => {
+      const host = document.getElementById('party-slots');
+      const me = Array.from(host.querySelectorAll('.slot.filled')).find(
+        (n) => ((n.querySelector('.slot-name') || {}).textContent || '').indexOf('ME') === 0);
+      if (!me) return 999;
+      const a = me.getBoundingClientRect(), b = host.getBoundingClientRect();
+      return Math.round(Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2));
+    });
+  };
+
+  for (const mp of [2, 3, 4, 5, 6]) {
+    check(`party size ${mp}: your card is on the centre line, alone`,
+          (await seatAt(mp, 1)) <= 1, true);
+    check(`  and with the row full`, (await seatAt(mp, mp)) <= 1, true);
+  }
+  await page.evaluate(() => { S.boot.maxParty = 5; });
+
   await page.evaluate(() => window.__send({ action: 'party', data: {
     id: 'p1', leader: 2,
     members: [{ userId: 2, name: 'FRIEND', leader: true, rankId: 2 },

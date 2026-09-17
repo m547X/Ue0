@@ -1376,7 +1376,11 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 /* A seat is always at most a fifth of the row, so a 1v1 card is the same size
    as a 5v5 one; with fewer seats the row centres instead of stretching. */
 .slots{flex:1;min-height:0;display:flex;justify-content:center;gap:14px}
-.slot{flex:1 1 0;max-width:calc((100% - 56px) / 5)}
+.slot,.seat-pad{flex:1 1 0;
+  max-width:calc((100% - (var(--cols,5) - 1) * 14px) / var(--cols,5))}
+/* an empty column that only balances the row, so the middle seat is yours even
+   when the party size is an even number */
+.seat-pad{visibility:hidden;pointer-events:none}
 .slot{position:relative;display:flex;flex-direction:column;align-items:center;
   border:1px solid var(--edge-soft);border-radius:calc(var(--r) + 2px);overflow:hidden;
   background:linear-gradient(180deg,var(--panel-2),rgba(8,8,11,.6));
