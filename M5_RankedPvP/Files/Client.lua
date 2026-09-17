@@ -911,6 +911,13 @@ RegisterNetEvent('m5rp:cl:round', function(data)
 
         if data.spawn then teleport(data.spawn, data.freeze == true) end
 
+        if data.freeze ~= true then
+            State.frozen = false
+            FreezeEntityPosition(playerPed(), false)
+            DisablePlayerFiring(PlayerId(), false)
+            SetPlayerCanDoDriveBy(PlayerId(), true)
+        end
+
         do
             local ped = playerPed()
             if IsPedRagdoll(ped) or IsPedFalling(ped) or IsPedDeadOrDying(ped, true) then
@@ -967,6 +974,10 @@ RegisterNetEvent('m5rp:cl:round', function(data)
 
     elseif data.phase == 'end' then
         State.roundLive = false
+        State.frozen    = true
+        FreezeEntityPosition(playerPed(), true)
+        DisablePlayerFiring(PlayerId(), true)
+        SetPlayerCanDoDriveBy(PlayerId(), false)
         clearBoundary()
         nui({ action = 'round', data = {
             phase = 'end', round = data.round, winner = data.winner,
