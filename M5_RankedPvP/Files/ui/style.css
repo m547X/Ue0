@@ -1375,8 +1375,23 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
    ========================================================================== */
 /* A seat is always at most a fifth of the row, so a 1v1 card is the same size
    as a 5v5 one; with fewer seats the row centres instead of stretching. */
-.slots{flex:1;min-height:0;display:flex;justify-content:center;gap:14px}
+/* Past a point a wider party should scroll rather than keep thinning the cards
+   down to a strip. The floor is whatever a row of five would be given, so five
+   or fewer never scroll however small the screen is; beyond that the row
+   overflows and renderSlots() scrolls your own card to the middle.
+   Centring is done with auto margins rather than justify-content, because a
+   centred flex row clips its own overflow and the first cards become
+   unreachable. */
+.slots{flex:1;min-height:0;display:flex;justify-content:flex-start;gap:14px;
+  overflow-x:auto;overflow-y:hidden;padding-block:4px;scrollbar-width:thin}
+.slots > :first-child{margin-inline-start:auto}
+.slots > :last-child{margin-inline-end:auto}
+.slots::-webkit-scrollbar{height:6px}
+.slots::-webkit-scrollbar-track{background:transparent}
+.slots::-webkit-scrollbar-thumb{background:var(--edge);border-radius:3px}
+.slots::-webkit-scrollbar-thumb:hover{background:var(--red)}
 .slot,.seat-pad{flex:1 1 0;
+  min-width:min(160px,calc((100% - 56px) / 5));
   max-width:calc((100% - (var(--cols,5) - 1) * 14px) / var(--cols,5))}
 /* an empty column that only balances the row, so the middle seat is yours even
    when the party size is an even number */

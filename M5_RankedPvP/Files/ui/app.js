@@ -48,7 +48,7 @@ const S = {
   settings: {},
   page: 'ranked',
 
-  mode: '1v1',
+  mode: '1v1', modePin: null,
   queue: { searching: false, elapsed: 0 },
   lastQueue: null,
   found: null, foundTimer: null, invite: null,
@@ -520,6 +520,7 @@ function renderBoot(data) {
   if (data.modes && data.modes.length && !data.modes.find((m) => m.id === S.mode)) {
     S.mode = data.modes[0].id;
     S.lb.mode = data.modes[0].id;
+    S.modePin = null;                 // the pinned mode is not on offer any more
   }
 
   const d = data.customDefaults || {};
@@ -529,6 +530,9 @@ function renderBoot(data) {
   applyLanguage(S.settings.language || S.lang);
   renderModeTabs();
   renderSlots();
+  /* Whether the switch is offered at all comes from this payload, and the page
+     was drawn before it arrived — so it is only from here that it can appear. */
+  renderAutoFill();
   renderCustom();
 }
 
@@ -632,6 +636,7 @@ function renderModeTabs() {
       if (!ok) { toast('warning', why, 'QUEUE'); return; }
       Sfx.play('click');
       S.mode = m.id;
+      pinMode(m.id);
       renderModeTabs();
       renderSlots();
       // the header follows the tab: each mode is its own ladder
@@ -650,10 +655,27 @@ function renderModeTabs() {
   });
 }
 
+/* A mode the player picked from the tabs themselves. autoMode exists to walk
+   the mode up as the party grows, not to undo a deliberate choice: with AUTO
+   FILL on, one player can pick 2V2 and the search has to go to 2V2 rather than
+   snapping back to the 1V1 their party size implies. The pin is dropped the
+   moment that mode stops being searchable — a third player joining a pinned
+   2V2, or AUTO FILL being switched off. */
+function pinMode(id) { S.modePin = id || null; }
+function pinnedMode() {
+  if (!S.modePin) return null;
+  const m = ((S.boot && S.boot.modes) || []).find((x) => x.id === S.modePin);
+  if (!m || !modeAllowed(m)) { S.modePin = null; return null; }
+  return m.id;
+}
+
 /** Keeps the selected mode in step with the party size. */
 function syncModeToParty() {
   const pq = (S.boot && S.boot.partyQueue) || {};
   if (!pq.autoMode) return;
+
+  const pinned = pinnedMode();
+  if (pinned) { S.mode = pinned; return; }
 
   const suggested = (S.party && S.party.autoMode) || null;
   const size = partySize();
@@ -901,6 +923,17 @@ function renderSlots() {
     const pad = el('div', 'seat-pad');
     pad.setAttribute('aria-hidden', 'true');
     host.appendChild(pad);
+  }
+
+  /* A row too wide to fit scrolls, and it opens on you rather than on its first
+     seat. The delta is measured instead of set, because scrollLeft counts the
+     other way round once the interface is in Arabic. */
+  if (host.scrollWidth > host.clientWidth) {
+    const mine = host.children[seatOrder[0] + padLeft];
+    if (mine) {
+      const a = mine.getBoundingClientRect(), b = host.getBoundingClientRect();
+      host.scrollBy(((a.left + a.right) - (b.left + b.right)) / 2, 0);
+    }
   }
 }
 
@@ -3720,6 +3753,7 @@ $('btn-autofill').onclick = () => {
       const fit = modes.find((m) => modeAllowed(m));
       if (fit) {
         S.mode = fit.id;
+        pinMode(null);
         renderModeTabs();
         renderSlots();
         renderIdentityRank();
