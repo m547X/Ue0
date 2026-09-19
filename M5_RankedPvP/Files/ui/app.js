@@ -48,7 +48,7 @@ const S = {
   settings: {},
   page: 'ranked',
 
-  mode: '1v1', modePin: null,
+  mode: '1v1', modePin: null, customKind: 'card',
   queue: { searching: false, elapsed: 0 },
   lastQueue: null,
   found: null, foundTimer: null, invite: null,
@@ -2138,7 +2138,8 @@ function renderStore(store) {
   const tab   = TABS[S.storeTab] || TABS.cards;
   const items = d[tab.list] || [];
 
-  if (!items.length) {
+  const mine = !!(d.customAllowed && d.customAllowed[tab.kind]);
+  if (!items.length && !mine) {
     host.innerHTML = `<div class="empty">${esc(tx('NOTHING IN THE STORE'))}</div>`;
     return;
   }
@@ -2198,12 +2199,82 @@ function renderStore(store) {
       </div>`;
     }).join('')}</div>`;
 
+  /* The slot the staff unlocked. Until a picture is put in it there is nothing
+     to show in the list, so the tile itself is the way in: empty it invites
+     one, filled it offers to change it. */
+  if (mine) {
+    const worn = items.find((it) => it.id === 'custom');
+    const slot = el('div', 'sitem custom-slot' + (worn ? ' filled' : ''), `
+      <div class="si-rar" style="color:var(--gold)">${esc(tx('YOURS'))}</div>
+      <div class="ci-art${tab.kind === 'portrait' ? ' po-art' : ''} cs-art"${
+        worn && worn.image ? ` style="background-image:url('${esc(imgUrl(worn.image))}')"` : ''}>
+        ${worn && worn.image ? '' : `<span class="cs-plus"><svg><use href="#i-userplus"/></svg></span>`}
+      </div>
+      <div class="si-foot">
+        <div class="si-name">${esc(tx(worn ? 'YOUR PICTURE' : 'ADD YOUR OWN'))}</div>
+        <button class="btn si-btn" data-custom="${esc(tab.kind)}">${
+          esc(tx(worn ? 'CHANGE' : 'SET PICTURE'))}</button>
+      </div>`);
+    host.firstChild.appendChild(slot);
+  }
+
   host.querySelectorAll('[data-store]').forEach((b) => {
     b.onclick = () => {
       Sfx.play('click');
       post('store', { action: b.dataset.store, kind: b.dataset.kind, id: b.dataset.id });
     };
   });
+  host.querySelectorAll('[data-custom]').forEach((b) => {
+    b.onclick = () => { Sfx.play('click'); openCustom(b.dataset.custom); };
+  });
+}
+
+/* The box the player types their own picture into. One box, whichever of the
+   two slots they opened it from. */
+function openCustom(kind) {
+  const modal = $('modal-custom');
+  if (!modal) return;
+  const items = ((S.store || {})[kind === 'card' ? 'cards' : 'portraits']) || [];
+  const worn = items.find((it) => it.id === 'custom');
+
+  S.customKind = kind;
+  $('cst-title').textContent = tx(kind === 'card' ? 'YOUR CARD' : 'YOUR PORTRAIT');
+  $('cst-hint').textContent = tx((S.store && S.store.customHint)
+    || 'Paste a direct image link. PNG, JPG or GIF.');
+  $('cst-url').value = (worn && worn.image) || '';
+  $('cst-name').value = (worn && worn.name && worn.name !== 'CUSTOM') ? worn.name : '';
+  $('cst-clear').classList.toggle('hidden', !(worn && worn.image));
+  modal.classList.remove('hidden');
+  paintCustomPreview();
+  setTimeout(() => $('cst-url').focus(), 40);
+}
+
+/** Shows what the address actually loads, before it is saved. */
+function paintCustomPreview() {
+  const box = $('cst-preview');
+  if (!box) return;
+  const raw = $('cst-url').value.trim();
+  box.classList.toggle('po', S.customKind === 'portrait');
+  if (!raw) { box.style.backgroundImage = ''; box.classList.add('empty'); return; }
+  box.classList.remove('empty');
+  box.style.backgroundImage = `url('${raw.replace(/'/g, '%27')}')`;
+}
+
+function saveCustom() {
+  const url = $('cst-url').value.trim();
+  if (!url) {
+    toast('warning', tn('Paste an image link first.'), tn('STORE'), 3200);
+    $('cst-url').focus();
+    return;
+  }
+  post('store', { action: 'custom', kind: S.customKind, id: url,
+                  name: $('cst-name').value.trim() });
+  $('modal-custom').classList.add('hidden');
+}
+
+function clearCustom() {
+  post('store', { action: 'custom', kind: S.customKind, id: '', name: '' });
+  $('modal-custom').classList.add('hidden');
 }
 
 /* ================================================================= ADMIN */
@@ -2429,20 +2500,16 @@ function renderAdmin(d) {
         hint: 'Coins are spent in the Store on cards and titles.' })}
       ${act('takeCoins', { button: 'TAKE', danger: true, fields:
         `<input class="inp" id="adm-coins-rem" type="number" placeholder="Coins to take"/>` })}
-      ${act('grantCustom', { button: 'GRANT', fields:
-        `<select id="adm-custom-kind">
-           <option value="card">${esc(tx('Card'))}</option>
-           <option value="portrait">${esc(tx('Portrait'))}</option>
-         </select>
-         <input class="inp" id="adm-custom-img" type="text" placeholder="https://… or img/name.png"/>
-         <input class="inp" id="adm-custom-name" type="text" placeholder="Name on the item (optional)"/>`,
-        hint: 'Only this player sees it, in their own store, already owned. https links or a file under ui/img only.' })}
-      ${act('revokeCustom', { button: 'REMOVE', danger: true, fields:
-        `<select id="adm-custom-kind-del">
-           <option value="card">${esc(tx('Card'))}</option>
-           <option value="portrait">${esc(tx('Portrait'))}</option>
-         </select>`,
-        hint: 'Takes the item back. If they are wearing it they go back to the default.' })}
+      ${act('allowCard', { button: 'ALLOW', fields:
+        `<input class="inp" id="adm-card-img" type="text" placeholder="Picture to start them with (optional)"/>`,
+        hint: 'Opens a card slot in their store that they fill in themselves. Leave the box empty to let them choose.' })}
+      ${act('denyCard', { button: 'REMOVE', danger: true,
+        hint: 'Closes the slot and takes the card back. If they are wearing it they go back to the default.' })}
+      ${act('allowPortrait', { button: 'ALLOW', fields:
+        `<input class="inp" id="adm-portrait-img" type="text" placeholder="Picture to start them with (optional)"/>`,
+        hint: 'The same for their profile picture. This is a separate permission from the card one.' })}
+      ${act('denyPortrait', { button: 'REMOVE', danger: true,
+        hint: 'Closes the slot and puts them back on their Discord picture.' })}
       ${act('resetStats', { button: 'RESET', danger: true,
         hint: 'Wipes stats, rank and MMR for the current season only.' })}
     </div>`;
@@ -2567,17 +2634,10 @@ function admAction(btn) {
     case 'addXP':         admRun('addXP', { target, amount: parseInt(val('adm-xp'), 10) }); break;
     case 'giveCoins':     admRun('giveCoins', { target, amount: parseInt(val('adm-coins-add'), 10) }); break;
     case 'takeCoins':     admRun('takeCoins', { target, amount: parseInt(val('adm-coins-rem'), 10) }); break;
-    case 'grantCustom':
-      admRun('grantCustom', {
-        target,
-        kind:  val('adm-custom-kind'),
-        image: val('adm-custom-img'),
-        name:  val('adm-custom-name')
-      });
-      break;
-    case 'revokeCustom':
-      admRun('revokeCustom', { target, kind: val('adm-custom-kind-del') });
-      break;
+    case 'allowCard':     admRun('allowCard', { target, image: val('adm-card-img') }); break;
+    case 'denyCard':      admRun('denyCard', { target }); break;
+    case 'allowPortrait': admRun('allowPortrait', { target, image: val('adm-portrait-img') }); break;
+    case 'denyPortrait':  admRun('denyPortrait', { target }); break;
     case 'resetStats':    admRun('resetStats', { target }); break;
 
     case 'ban':           admRun('ban', { target, type: val('adm-bantype'), duration: parseInt(val('adm-bandur'), 10) }); break;
@@ -3974,6 +4034,10 @@ document.addEventListener('click', (e) => {
     case 'invite-cancel': $('modal-invite').classList.add('hidden'); break;
     case 'invite-send': sendInvite(); break;
 
+    case 'custom-cancel': $('modal-custom').classList.add('hidden'); break;
+    case 'custom-save':   saveCustom(); break;
+    case 'custom-clear':  clearCustom(); break;
+
     case 'cm-all': {
       const all = ((S.boot && S.boot.weaponPresets) || []).map((w) => w.id);
       S.cm.weapons = (S.cm.weapons.length === all.length) ? all.slice(0, 1) : all;
@@ -4064,6 +4128,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     if (!$('modal-invite').classList.contains('hidden')) { $('modal-invite').classList.add('hidden'); return; }
+    if (!$('modal-custom').classList.contains('hidden')) { $('modal-custom').classList.add('hidden'); return; }
     if (escLocked()) { e.preventDefault(); return; }
     if (!$('modal-result').classList.contains('hidden')) $('modal-result').classList.add('hidden');
     post('close');
@@ -4071,12 +4136,19 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     if (!$('modal-prompt').classList.contains('hidden')) return;   // handled by the dialog
     if (!$('modal-invite').classList.contains('hidden')) { sendInvite(); return; }
+    if (!$('modal-custom').classList.contains('hidden')) { saveCustom(); return; }
     /* A found match outranks an invite: it expires in seconds and costs
        you the queue. */
     if (S.found) { $('btn-accept').click(); return; }
     if (S.invite) S.invite.accept();
   }
 }, true);
+
+/* The preview follows the box as it is typed in, so a link that will not load
+   shows as an empty frame before it is ever sent. */
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'cst-url') paintCustomPreview();
+});
 
 document.addEventListener('click', (e) => {
   const tab = e.target.closest('.stab');

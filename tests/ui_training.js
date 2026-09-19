@@ -129,10 +129,10 @@ const BOOT = {
   await page.evaluate(() => window.__send({ action: 'training', data: {
     active: true, label: 'MOVING TARGETS', kind: 'moving',
     stats: [{ l: 'HITS', v: '14' }, { l: 'HEADSHOTS', v: '5' },
-            { l: 'ACCURACY', v: '61%' }, { l: 'TIME', v: '96s' }] } }));
+            { l: 'ACCURACY', v: '61%' }, { l: 'CLOCK', v: '96s' }] } }));
   await page.waitForTimeout(120);
   check('another drill reuses the tiles for its own numbers', await tiles(),
-        ['HITS=14', 'HEADSHOTS=5', 'ACCURACY=61%', 'TIME=96s']);
+        ['HITS=14', 'HEADSHOTS=5', 'ACCURACY=61%', 'CLOCK=96s']);
   check('  and drops the pace from the title',
         await page.locator('#training-title').innerText(), 'MOVING TARGETS');
 

@@ -66,13 +66,28 @@ const STORE = {
       rarityColor: '#F5C542', price: 0, image: 'https://cdn/face.png',
       owned: true, equipped: false, custom: true }
   ],
-  equippedcard: 'default', equippedportrait: 'default'
+  equippedcard: 'default', equippedportrait: 'default',
+  // the staff opened both slots for this player
+  customAllowed: { card: true, portrait: true },
+  customHint: 'Paste a direct image link. PNG, JPG or GIF.'
 };
 
+/* the card permission and the portrait permission are separate, so a staff
+   member can hold one and not the other */
 const ADMIN = {
   allowed: {
-    grantCustom:  { label: 'Grant Custom Card / Portrait', permission: 'pvp.admin.custom.item', group: 'points' },
-    revokeCustom: { label: 'Remove Custom Item', permission: 'pvp.admin.custom.item', group: 'points' }
+    allowCard:     { label: 'Allow Custom Card', permission: 'pvp.admin.custom.card', group: 'points' },
+    denyCard:      { label: 'Remove Custom Card Access', permission: 'pvp.admin.custom.card', group: 'points' },
+    allowPortrait: { label: 'Allow Custom Portrait', permission: 'pvp.admin.custom.portrait', group: 'points' },
+    denyPortrait:  { label: 'Remove Custom Portrait Access', permission: 'pvp.admin.custom.portrait', group: 'points' }
+  },
+  matches: [], queues: [], rooms: []
+};
+
+const CARD_ONLY = {
+  allowed: {
+    allowCard: { label: 'Allow Custom Card', permission: 'pvp.admin.custom.card', group: 'points' },
+    denyCard:  { label: 'Remove Custom Card Access', permission: 'pvp.admin.custom.card', group: 'points' }
   },
   matches: [], queues: [], rooms: []
 };
@@ -159,7 +174,8 @@ const ADMIN = {
         await page.locator('.stab[data-stab="portraits"]').count(), 1);
 
   const gifted = page.locator('.sitem.gifted').first();
-  check('the granted card is in the card list', await page.locator('.sitem').count(), 3);
+  check('the granted card is in the card list',
+        await page.locator('.sitem:not(.custom-slot)').count(), 3);
   check('  marked as a gift',                   await gifted.count(), 1);
   check('  with a gift badge on it',            await gifted.locator('.si-gift').count(), 1);
   check('  showing the picture it was given',
@@ -177,9 +193,10 @@ const ADMIN = {
 
   await page.locator('.stab[data-stab="portraits"]').click();
   await page.waitForTimeout(160);
-  check('the portraits tab lists both', await page.locator('.sitem').count(), 2);
+  check('the portraits tab lists both',
+        await page.locator('.sitem:not(.custom-slot)').count(), 2);
   check('  the default one previews the picture the player has',
-        await page.locator('.sitem').first().locator('.ci-art').evaluate(
+        await page.locator('.sitem:not(.custom-slot)').first().locator('.ci-art').evaluate(
           (n) => getComputedStyle(n).backgroundImage.indexOf('data:image/png') >= 0), true);
   check('  a portrait is drawn square, not as a card',
         await page.locator('.po-art').first().evaluate((n) => {
@@ -195,6 +212,74 @@ const ADMIN = {
         { name: 'store', body: { action: 'equip', kind: 'portrait', id: 'custom' } });
 
   // ======================================================================
+  // 3b. the slot the player fills in themselves
+  // ======================================================================
+  check('an unlocked slot has its own tile', await page.locator('.custom-slot').count(), 1);
+  check('  offering to change the picture that is in it',
+        (await page.locator('.custom-slot .si-btn').innerText()).trim(), 'CHANGE');
+
+  await page.locator('.custom-slot .si-btn').click();
+  await page.waitForTimeout(160);
+  check('  and it opens the box to type one into',
+        await page.isVisible('#modal-custom'), true);
+  check('  titled for the slot it was opened from',
+        await page.locator('#cst-title').innerText(), 'YOUR PORTRAIT');
+  check('  carrying the hint the server sent',
+        (await page.locator('#cst-hint').innerText()).indexOf('direct image link') >= 0, true);
+  check('  prefilled with the picture already in it',
+        await page.locator('#cst-url').inputValue(), 'https://cdn/face.png');
+
+  await page.fill('#cst-url', PNG2);
+  await page.waitForTimeout(120);
+  check('  the preview follows what is typed',
+        await page.locator('#cst-preview').evaluate(
+          (n) => getComputedStyle(n).backgroundImage.indexOf('data:image/png') >= 0), true);
+
+  await page.fill('#cst-name', 'MY FACE');
+  await page.evaluate(() => { window.__posted = []; });
+  await page.locator('[data-action="custom-save"]').click();
+  await page.waitForTimeout(160);
+  check('  saving sends the picture and the name',
+        await page.evaluate(() => {
+          const p = window.__posted.find((x) => x.name === 'store');
+          return p && { a: p.body.action, k: p.body.kind, n: p.body.name, has: !!p.body.id };
+        }),
+        { a: 'custom', k: 'portrait', n: 'MY FACE', has: true });
+  check('  and closes the box', await page.isVisible('#modal-custom'), false);
+
+  // an empty address is refused in the page rather than sent
+  await page.locator('.custom-slot .si-btn').click();
+  await page.waitForTimeout(140);
+  await page.fill('#cst-url', '   ');
+  await page.evaluate(() => { window.__posted = []; });
+  await page.locator('[data-action="custom-save"]').click();
+  await page.waitForTimeout(140);
+  check('  an empty box is not sent',
+        await page.evaluate(() => window.__posted.filter((x) => x.name === 'store').length), 0);
+  check('  and the box stays open to be fixed',
+        await page.isVisible('#modal-custom'), true);
+
+  await page.evaluate(() => { window.__posted = []; });
+  await page.locator('[data-action="custom-clear"]').click();
+  await page.waitForTimeout(140);
+  check('  emptying the slot sends an empty picture',
+        await page.evaluate(() => window.__posted.find((x) => x.name === 'store')),
+        { name: 'store', body: { action: 'custom', kind: 'portrait', id: '', name: '' } });
+
+  // a player with no slot is offered nothing
+  await page.evaluate((st) => {
+    const shut = JSON.parse(JSON.stringify(st));
+    delete shut.customAllowed;
+    window.__send({ action: 'data', data: { what: 'store', store: shut } });
+  }, STORE);
+  await page.waitForTimeout(180);
+  check('a player with no slot is offered none',
+        await page.locator('.custom-slot').count(), 0);
+  await page.evaluate((st) => window.__send({ action: 'data',
+    data: { what: 'store', store: st } }), STORE);
+  await page.waitForTimeout(160);
+
+  // ======================================================================
   // 4. the form the staff grants it from
   // ======================================================================
   await page.locator('.ft .tab[data-page="admin"]').click();
@@ -202,47 +287,58 @@ const ADMIN = {
     data: { what: 'admin', action: 'dashboard', result: a } }), ADMIN);
   await page.waitForTimeout(200);
 
-  check('the grant control is on the admin panel',
-        await page.locator('[data-adm="grantCustom"]').count(), 1);
-  check('  with a kind to pick',  await page.locator('#adm-custom-kind option').count(), 2);
-  check('  a box for the image',  await page.locator('#adm-custom-img').count(), 1);
-  check('  and one for the name', await page.locator('#adm-custom-name').count(), 1);
+  check('the card control is on the admin panel',
+        await page.locator('[data-adm="allowCard"]').count(), 1);
+  check('  and the portrait one beside it',
+        await page.locator('[data-adm="allowPortrait"]').count(), 1);
+  check('  each with a way to take it back',
+        [await page.locator('[data-adm="denyCard"]').count(),
+         await page.locator('[data-adm="denyPortrait"]').count()], [1, 1]);
+  check('  and each names its own permission',
+        await page.locator('.act .act-name span').allInnerTexts(),
+        ['pvp.admin.custom.card', 'pvp.admin.custom.card',
+         'pvp.admin.custom.portrait', 'pvp.admin.custom.portrait']);
 
   await page.fill('#adm-target', '42');
-  /* The native <select> is replaced by a styled widget, so the pick is made
-     through that rather than on the hidden element behind it. */
-  const pick = async (id, label) => {
-    await page.locator(`#${id}`).evaluate((sel) => sel.parentNode.querySelector('.xsel-btn').click());
-    await page.locator(`#${id}`).evaluate((sel, want) => {
-      const rows = sel.parentNode.querySelectorAll('.xsel-opt');
-      for (const r of rows) if (r.textContent.trim() === want) { r.click(); return; }
-      throw new Error('no option ' + want);
-    }, label);
-  };
-  await pick('adm-custom-kind', 'Portrait');
-  await page.fill('#adm-custom-img', 'https://cdn/gift.png');
-  await page.fill('#adm-custom-name', 'WINNER');
   await page.evaluate(() => { window.__posted = []; });
-  await page.locator('[data-adm="grantCustom"]').click();
+  await page.locator('[data-adm="allowCard"]').click();
   await page.waitForTimeout(160);
-  check('granting sends the player, the kind, the picture and the name',
+  check('opening a card slot names the player and nothing else',
         await page.evaluate(() => {
           const p = window.__posted.find((x) => x.name === 'admin');
           return p && p.body;
         }),
-        { action: 'grantCustom', target: '42', kind: 'portrait',
-          image: 'https://cdn/gift.png', name: 'WINNER' });
+        { action: 'allowCard', target: '42', image: '' });
+
+  await page.fill('#adm-portrait-img', 'https://cdn/start.png');
+  await page.evaluate(() => { window.__posted = []; });
+  await page.locator('[data-adm="allowPortrait"]').click();
+  await page.waitForTimeout(160);
+  check('a slot can be opened with a picture already in it',
+        await page.evaluate(() => {
+          const p = window.__posted.find((x) => x.name === 'admin');
+          return p && p.body;
+        }),
+        { action: 'allowPortrait', target: '42', image: 'https://cdn/start.png' });
 
   await page.evaluate(() => { window.__posted = []; });
-  await pick('adm-custom-kind-del', 'Card');
-  await page.locator('[data-adm="revokeCustom"]').click();
+  await page.locator('[data-adm="denyPortrait"]').click();
   await page.waitForTimeout(160);
-  check('taking one back names the player and the kind',
+  check('closing one names the player',
         await page.evaluate(() => {
           const p = window.__posted.find((x) => x.name === 'admin');
           return p && p.body;
         }),
-        { action: 'revokeCustom', target: '42', kind: 'card' });
+        { action: 'denyPortrait', target: '42' });
+
+  /* The two permissions are separate, so staff who hold only the card one see
+     only the card controls. */
+  await page.evaluate((a) => window.__send({ action: 'data',
+    data: { what: 'admin', action: 'dashboard', result: a } }), CARD_ONLY);
+  await page.waitForTimeout(200);
+  check('staff with only the card permission see only the card controls',
+        [await page.locator('[data-adm="allowCard"]').count(),
+         await page.locator('[data-adm="allowPortrait"]').count()], [1, 0]);
 
   check('no script error the whole way through', errors, []);
 

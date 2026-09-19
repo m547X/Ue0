@@ -453,13 +453,12 @@ Locale.ar = {
     ['JOG']                       = 'هرولة',
     ['SPRINT']                    = 'ركض',
     ['HITS']                      = 'إصابات',
-    ['HEADSHOTS']                 = 'هيدشوت',
     ['HS RATE']                   = 'نسبة الهيد',
     ['ACCURACY']                  = 'الدقة',
     ['MISSED']                    = 'ضايع',
     ['REACTION']                  = 'رد الفعل',
     ['STREAK']                    = 'متتالية',
-    ['TIME']                      = 'الوقت',
+    ['CLOCK']                     = 'الوقت',
 
     [' • %d RP to %s']            = ' • %d نقطة حتى %s',
     ['%s: %s']                    = '%s: %s',
@@ -488,14 +487,36 @@ Locale.ar = {
     ['Portrait'] = 'صورة شخصية',
     ['Card'] = 'بطاقة',
     ['Given to you by the staff'] = 'الإدارة عطتك إياه',
-    ['Grant Custom Card / Portrait'] = 'إعطاء بطاقة أو صورة خاصة',
-    ['Remove Custom Item'] = 'سحب الغرض الخاص',
-    ['Only this player sees it, in their own store, already owned. https links or a file under ui/img only.'] =
-        'يطلع لهذا اللاعب وحده داخل متجره وهو يملكه. روابط https أو ملف تحت ui/img فقط.',
-    ['Takes the item back. If they are wearing it they go back to the default.'] =
-        'يسحب الغرض. وإذا كان لابسه يرجع للافتراضي.',
-    ['A custom card was added to your store — %s'] = 'انضافت لك بطاقة خاصة بالمتجر — %s',
-    ['A custom portrait was added to your store — %s'] = 'انضافت لك صورة شخصية خاصة بالمتجر — %s',
+    ['Allow Custom Card'] = 'فتح البطاقة الخاصة',
+    ['Remove Custom Card Access'] = 'قفل البطاقة الخاصة',
+    ['Allow Custom Portrait'] = 'فتح الصورة الشخصية الخاصة',
+    ['Remove Custom Portrait Access'] = 'قفل الصورة الشخصية الخاصة',
+    ['Opens a card slot in their store that they fill in themselves. Leave the box empty to let them choose.'] =
+        'يفتح له خانة بطاقة بالمتجر يعبّيها بنفسه. خلّ المربع فاضي عشان هو يختار.',
+    ['Closes the slot and takes the card back. If they are wearing it they go back to the default.'] =
+        'يقفل الخانة ويسحب البطاقة. وإذا كان لابسها يرجع للافتراضية.',
+    ['The same for their profile picture. This is a separate permission from the card one.'] =
+        'نفس الشي لصورته الشخصية. وهذي صلاحية مستقلة عن صلاحية البطاقة.',
+    ['Closes the slot and puts them back on their Discord picture.'] =
+        'يقفل الخانة ويرجّعه لصورة الديسكورد حقته.',
+    ['YOURS'] = 'حقك',
+    ['YOUR PICTURE'] = 'صورتك',
+    ['ADD YOUR OWN'] = 'ضيف صورتك',
+    ['SET PICTURE'] = 'حط صورة',
+    ['CHANGE'] = 'غيّر',
+    ['YOUR CARD'] = 'بطاقتك',
+    ['YOUR PORTRAIT'] = 'صورتك الشخصية',
+    ['REMOVE'] = 'حذف',
+    ['Paste a direct image link. PNG, JPG or GIF.'] = 'الصق رابط صورة مباشر. PNG أو JPG أو GIF.',
+    ['Paste an image link first.'] = 'الصق رابط الصورة أول.',
+    ['Your picture was saved.'] = 'انحفظت صورتك.',
+    ['You do not have a custom slot for that.'] = 'ما عندك خانة خاصة لهذا.',
+    ['Wait %d seconds before changing it again.'] = 'انتظر %d ثانية قبل ما تغيّرها مرة ثانية.',
+    ['That player does not have that unlocked.'] = 'هذا اللاعب ما عنده هذي مفتوحة.',
+    ['You can set your own card picture in the Store — %s'] =
+        'تقدر تحط صورة بطاقتك من المتجر — %s',
+    ['You can set your own portrait in the Store — %s'] =
+        'تقدر تحط صورتك الشخصية من المتجر — %s',
     ['Your custom card was removed — %s'] = 'انسحبت بطاقتك الخاصة — %s',
     ['Your custom portrait was removed — %s'] = 'انسحبت صورتك الشخصية الخاصة — %s',
     ['Pick a card or a portrait.'] = 'اختر بطاقة أو صورة شخصية.',
@@ -505,7 +526,6 @@ Locale.ar = {
     ['Only http and https images are accepted.'] = 'ما نقبل إلا صور http و https.',
     ['Use a file name under the ui/img folder, or a full https link.'] =
         'استخدم اسم ملف تحت مجلد ui/img، أو رابط https كامل.',
-    ['That player has no custom item of that kind.'] = 'هذا اللاعب ما عنده غرض خاص من هذا النوع.',
     ['BUY'] = 'شراء', ['EQUIP'] = 'تجهيز', ['EQUIPPED'] = 'مُجهّز',
     ['COINS'] = 'العملات',
     ['NOTHING IN THE STORE'] = 'لا توجد عناصر في المتجر',

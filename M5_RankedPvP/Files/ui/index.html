@@ -520,6 +520,36 @@
 <div id="modals">
 
   <!-- Invite by ID -->
+  <!-- The picture a player puts in the slot the staff unlocked for them. The
+       preview is the address itself, so a link that does not load is obvious
+       before it is saved. -->
+  <div id="modal-custom" class="modal hidden">
+    <div class="dlg">
+      <div class="dlg-head"><span class="dlg-dot"></span><span id="cst-title">YOUR PICTURE</span></div>
+      <div class="dlg-body">
+        <div class="dlg-text" id="cst-hint"></div>
+        <div class="cst-row">
+          <div class="cst-preview empty" id="cst-preview"></div>
+          <div class="cst-fields">
+            <div class="dlg-input">
+              <svg class="dlg-ico"><use href="#i-store"/></svg>
+              <input id="cst-url" placeholder="https://i.imgur.com/example.png" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="dlg-input">
+              <svg class="dlg-ico"><use href="#i-user"/></svg>
+              <input id="cst-name" maxlength="24" placeholder="Name under it (optional)" autocomplete="off" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn ghost hidden" id="cst-clear" data-action="custom-clear" data-i18n="REMOVE">REMOVE</button>
+        <button class="btn ghost" data-action="custom-cancel" data-i18n="CANCEL">CANCEL</button>
+        <button class="btn" data-action="custom-save" data-i18n="SAVE">SAVE</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-invite" class="modal hidden">
     <div class="dlg">
       <div class="dlg-head"><span class="dlg-dot"></span><span data-i18n="INVITE PLAYER">INVITE PLAYER</span></div>

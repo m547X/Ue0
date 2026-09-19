@@ -1874,7 +1874,7 @@ local function trainingStatRows(kind, st)
             { l = 'HITS',      v = tostring(st.hits) },
             { l = 'HEADSHOTS', v = tostring(st.headshots) },
             { l = 'ACCURACY',  v = acc .. '%' },
-            { l = 'TIME',      v = st.clock }
+            { l = 'CLOCK',     v = st.clock }
         }
     end
 
@@ -1883,7 +1883,7 @@ local function trainingStatRows(kind, st)
         { l = 'HITS',      v = tostring(st.hits) },
         { l = 'HEADSHOTS', v = tostring(st.headshots) },
         { l = 'HS RATE',   v = rate .. '%' },
-        { l = 'TIME',      v = st.clock }
+        { l = 'CLOCK',     v = st.clock }
     }
 end
 

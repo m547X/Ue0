@@ -647,7 +647,7 @@ local SCHEMA = {
   `user_id` INT UNSIGNED NOT NULL,
   `kind` VARCHAR(16) NOT NULL,
   `name` VARCHAR(64) NOT NULL DEFAULT '',
-  `image` VARCHAR(512) NOT NULL,
+  `image` VARCHAR(512) NOT NULL DEFAULT '',
   `granted_by` INT UNSIGNED NULL,
   `granted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`,`kind`)
@@ -6411,21 +6411,27 @@ end
 
 Store.customs = {}
 
+function Store.customAllowed(userId, kind)
+    return (Store.customs[userId] or {})[kind] ~= nil
+end
+
 function Store.customImage(userId, kind)
     local c = (Store.customs[userId] or {})[kind]
-    return c and c.image or nil
+    local img = c and c.image or ''
+    return img ~= '' and img or nil
 end
 
 function Store.customDef(userId, kind)
-    local c = (Store.customs[userId] or {})[kind]
-    if not c then return nil end
+    local image = Store.customImage(userId, kind)
+    if not image then return nil end
+    local c = Store.customs[userId][kind]
     local cfg = Config.Store.custom or {}
     return {
         id      = CUSTOM_ID,
         name    = c.name or cfg.name or 'CUSTOM',
         rarity  = cfg.rarity or 'legendary',
         price   = 0,
-        image   = c.image,
+        image   = image,
         custom  = true
     }
 end
@@ -6442,11 +6448,13 @@ function Store.loadCustom(userId)
     local rows = DB.query('SELECT kind, name, image FROM m5_player_custom WHERE user_id = ?',
         { userId }) or {}
     for i = 1, #rows do
-        local kind  = tostring(rows[i].kind or '')
-        local image = tostring(rows[i].image or '')
-        if CUSTOM_KINDS[kind] and image ~= '' then
+        local kind = tostring(rows[i].kind or '')
+        if CUSTOM_KINDS[kind] then
             local name = tostring(rows[i].name or '')
-            out[kind] = { image = image, name = name ~= '' and name or nil }
+            out[kind] = {
+                image = tostring(rows[i].image or ''),
+                name  = name ~= '' and name or nil
+            }
         end
     end
     Store.customs[userId] = out
@@ -6479,9 +6487,11 @@ function Store.load(userId)
         end
     end
 
-    local customs = Store.loadCustom(userId)
+    Store.loadCustom(userId)
     for kind in pairs(CUSTOM_KINDS) do
-        if customs[kind] and owned[kind] then owned[kind][CUSTOM_ID] = true end
+        if owned[kind] and Store.customImage(userId, kind) then
+            owned[kind][CUSTOM_ID] = true
+        end
     end
 
     local data = { coins = math.max(0, tonumber(row.coins) or 0), owned = owned }
@@ -6547,6 +6557,14 @@ function Store.payload(userId)
         out[k.list]     = pack(k.kind)
         out['equipped' .. k.kind] = d[k.kind]
     end
+
+    local unlocked, any = {}, false
+    for kind in pairs(CUSTOM_KINDS) do
+        if Store.customAllowed(userId, kind) then unlocked[kind] = true; any = true end
+    end
+    out.customAllowed = any and unlocked or nil
+    out.customHint    = (Config.Store.custom or {}).hint
+
     return out
 end
 
@@ -6638,40 +6656,55 @@ function Store.imageAllowed(url)
     return s
 end
 
-function Store.grantCustom(userId, kind, image, name)
-    if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
-
-    local url, why = Store.imageAllowed(image)
-    if not url then return false, why end
-
-    local label = tostring(name or ''):gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 64)
-
+local function customWrite(userId, kind, image, name)
     DB.write([[INSERT INTO m5_player_custom (user_id, kind, name, image)
                VALUES (?,?,?,?)
                ON DUPLICATE KEY UPDATE name = VALUES(name), image = VALUES(image),
                                        granted_at = CURRENT_TIMESTAMP]],
-        { userId, kind, label, url })
+        { userId, kind, name, image })
 
     local customs = Store.customs[userId] or {}
-    customs[kind] = { image = url, name = label ~= '' and label or nil }
+    customs[kind] = { image = image, name = name ~= '' and name or nil }
     Store.customs[userId] = customs
 
     local d = Store.cache[userId]
     if d then
         d.owned[kind] = d.owned[kind] or {}
-        d.owned[kind][CUSTOM_ID] = true
+        if image ~= '' then
+            d.owned[kind][CUSTOM_ID] = true
+        else
+            d.owned[kind][CUSTOM_ID] = nil
+            if d[kind] == CUSTOM_ID then
+                d[kind] = StoreKind[kind] and StoreKind[kind].fallback or 'default'
+                storeSave(userId)
+            end
+        end
+    end
+end
+
+function Store.allowCustom(userId, kind, image, name)
+    if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
+
+    local url = ''
+    if image ~= nil and tostring(image) ~= '' then
+        local ok, why = Store.imageAllowed(image)
+        if not ok then return false, why end
+        url = ok
     end
 
+    local label = tostring(name or ''):gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 64)
+    customWrite(userId, kind, url, label)
     return true, { kind = kind, image = url, name = label }
 end
 
-function Store.revokeCustom(userId, kind)
+function Store.denyCustom(userId, kind)
     if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
-
-    local customs = Store.customs[userId] or {}
-    if not customs[kind] then return false, 'That player has no custom item of that kind.' end
+    if not Store.customAllowed(userId, kind) then
+        return false, 'That player does not have that unlocked.'
+    end
 
     DB.write('DELETE FROM m5_player_custom WHERE user_id = ? AND kind = ?', { userId, kind })
+    local customs = Store.customs[userId] or {}
     customs[kind] = nil
     Store.customs[userId] = customs
 
@@ -6684,6 +6717,46 @@ function Store.revokeCustom(userId, kind)
         end
     end
 
+    return true, { kind = kind }
+end
+
+Store.customSetAt = {}
+
+function Store.setCustom(userId, kind, image, name)
+    if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
+
+    Store.load(userId)
+    if not Store.customAllowed(userId, kind) then
+        return false, 'You do not have a custom slot for that.'
+    end
+
+    local cfg  = Config.Store.custom or {}
+    local wait = math.max(0, tonumber(cfg.cooldown) or 10)
+    local at   = Store.customSetAt[userId] or 0
+    if wait > 0 and (now() - at) < wait then
+        return false, _Lf('Wait %d seconds before changing it again.', wait - (now() - at))
+    end
+
+    local url, why = Store.imageAllowed(image)
+    if not url then return false, why end
+
+    local label = tostring(name or ''):gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 64)
+    if cfg.playerNames == false then
+        label = (Store.customs[userId][kind] or {}).name or ''
+    end
+
+    customWrite(userId, kind, url, label)
+    Store.customSetAt[userId] = now()
+    log('store: user %d set their own %s image', userId, kind)
+    return true, { kind = kind, image = url, name = label }
+end
+
+function Store.clearCustom(userId, kind)
+    if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
+    if not Store.customAllowed(userId, kind) then
+        return false, 'You do not have a custom slot for that.'
+    end
+    customWrite(userId, kind, '', '')
     return true, { kind = kind }
 end
 
@@ -8258,32 +8331,31 @@ function Admin.handle(adminPd, action, data)
         Player.pushCosmetics(id)
         return true, { coins = after, delta = delta }
 
-    elseif action == 'grantCustom' or action == 'revokeCustom' then
+    elseif action == 'allowCard' or action == 'denyCard'
+        or action == 'allowPortrait' or action == 'denyPortrait' then
         local id, who = target()
         if not id then return false, 'No player with that ID.' end
 
-        local kind = tostring(data.kind or '')
-        if kind ~= 'card' and kind ~= 'portrait' then
-            return false, 'Pick a card or a portrait.'
-        end
+        local kind  = (action == 'allowCard' or action == 'denyCard') and 'card' or 'portrait'
+        local allow = action == 'allowCard' or action == 'allowPortrait'
 
         Store.load(id)
 
         local ok, res
-        if action == 'grantCustom' then
-            ok, res = Store.grantCustom(id, kind, data.image, data.name)
+        if allow then
+            ok, res = Store.allowCustom(id, kind, data.image, data.name)
         else
-            ok, res = Store.revokeCustom(id, kind)
+            ok, res = Store.denyCustom(id, kind)
         end
         if not ok then return false, res end
 
         Admin.audit(adminPd, action, who,
             { reason = reason, details = { kind = kind, image = res.image, name = res.name } })
 
-        if action == 'grantCustom' then
+        if allow then
             notifyUser(id, 'success',
-                kind == 'card' and 'A custom card was added to your store — %s'
-                                or 'A custom portrait was added to your store — %s',
+                kind == 'card' and 'You can set your own card picture in the Store — %s'
+                                or 'You can set your own portrait in the Store — %s',
                 'STORE', reason)
         else
             notifyUser(id, 'warning',
@@ -8931,13 +9003,14 @@ RegisterNetEvent('m5rp:sv:bot', function(action, data)
     end
 end)
 
-RegisterNetEvent('m5rp:sv:store', function(action, kind, id)
+RegisterNetEvent('m5rp:sv:store', function(action, kind, id, name)
     local pd, src = caller('default')
     if not pd then return end
 
     action = tostring(action or '')
     kind   = tostring(kind or '')
     id     = tostring(id or '')
+    name   = name ~= nil and tostring(name) or nil
 
     local ok, res
     if action == 'buy' then
@@ -8950,6 +9023,17 @@ RegisterNetEvent('m5rp:sv:store', function(action, kind, id)
     elseif action == 'equip' then
         ok, res = Store.equip(pd.userId, kind, id)
         if not ok then notify(src, 'error', res, 'STORE') end
+    elseif action == 'custom' then
+        if id == '' then
+            ok, res = Store.clearCustom(pd.userId, kind)
+        else
+            ok, res = Store.setCustom(pd.userId, kind, id, name)
+        end
+        if ok then
+            notify(src, 'success', 'Your picture was saved.', 'STORE')
+        else
+            notify(src, 'error', res, 'STORE')
+        end
     else
         return
     end

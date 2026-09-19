@@ -605,24 +605,36 @@ token stays in `Config_Server.lua`. If an image fails to load in game, the
 player's initial shows in its place; the letter is always drawn underneath, so
 there is no broken-image state.
 
-### Custom cards and portraits — one player at a time
+### Custom cards and portraits — the player brings the picture
 
-Staff can hand a single player a card picture or a profile picture of their
-own, from **Admin → Points → Grant Custom Card / Portrait**: a player id, which
-of the two, the image, and optionally the name to print under it.
+Staff open a slot, the player fills it in. From **Admin → Points**:
 
-It arrives in that player's store, in **Cards** or in **Portraits**, already
-owned and marked with a gift badge. Nobody else's store has it. They equip and
-unequip it like anything they bought, and **Portraits → Default** puts them
-back on their Discord picture, which the tile previews so they can see what
-they are going back to. Taking the item away with **Remove Custom Item** also
-takes it off them if they are wearing it.
+- **Allow Custom Card** — `pvp.admin.custom.card`
+- **Allow Custom Portrait** — `pvp.admin.custom.portrait`
 
-The image is either an `https://` link or a file under `Files/ui/img/`. Nothing
-else is stored — a `data:` or `javascript:` address is refused at the point the
-form is submitted, because the value ends up inside a CSS `url()` in the
-interface. Both are kept in `m5_player_custom`, which the resource creates on
-start; `Config.Store.custom` sets the fallback name and the rarity badge.
+The two are **separate permissions on purpose**: you can let someone set their
+own card without letting them change their profile picture, or the other way
+round. Each has a **Remove … Access** beside it. The optional box on the allow
+row starts them off with a picture; leave it empty and the choice is theirs.
+
+The player then sees a dashed slot at the end of **Cards** or **Portraits** in
+their store — `ADD YOUR OWN` — which opens a box for a link, with a live
+preview of what that link actually loads and an optional name. Once set it is
+an ordinary item in their list: equip it, unequip it, change it, or empty the
+slot and leave it. Nobody else's store has it. **Portraits → Default** puts
+them back on their Discord picture, which that tile previews.
+
+The address is checked on the server every time, whether it came from a staff
+member or from the player: only an `https://` link or a file under
+`Files/ui/img/` is stored, because the value ends up inside a CSS `url()` in
+the interface. `data:`, `javascript:`, `file:` and anything climbing out of the
+folder are refused with a reason. Players are also rate limited between
+changes.
+
+`Config.Store.custom` holds the fallback name, the rarity badge, the cooldown,
+the hint shown in the box, and `playerNames = false` if the name under the item
+should stay the staff's to set. The slots live in `m5_player_custom`, which the
+resource creates on start.
 
 ### Team names — `Config.TeamNames`
 

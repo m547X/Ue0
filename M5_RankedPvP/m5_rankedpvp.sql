@@ -452,7 +452,7 @@ CREATE TABLE IF NOT EXISTS `m5_player_custom` (
   `user_id`    INT UNSIGNED NOT NULL,
   `kind`       VARCHAR(16) NOT NULL,
   `name`       VARCHAR(64) NOT NULL DEFAULT '',
-  `image`      VARCHAR(512) NOT NULL,
+  `image`      VARCHAR(512) NOT NULL DEFAULT '',
   `granted_by` INT UNSIGNED NULL,
   `granted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`,`kind`)

@@ -310,14 +310,14 @@ run({ kind = 'aim', label = 'AIM TRAINING', targets = 2, spacing = 8.0, time = 3
     { maxTicks = 5000 })
 check('a drill with a time limit stops when it runs out', W.exited, 1)
 check('  at the time it was given, not later', W.T < 3600, true)
-check('  and the clock counts down to zero', stat('TIME'), '0s')
+check('  and the clock counts down to zero', stat('CLOCK'), '0s')
 check('  leaving no targets behind', #ENV.State.trainingProps, 0)
 
 -- a drill with no limit keeps going
 run({ kind = 'aim', label = 'AIM TRAINING', targets = 2, spacing = 8.0, time = 0 },
     { maxTicks = 400 })
 check('a drill with no limit is never ended for the player', W.exited, 0)
-check('  and its clock counts up instead', stat('TIME') ~= '0s', true)
+check('  and its clock counts up instead', stat('CLOCK') ~= '0s', true)
 
 print(fails > 0 and ('\n%d FAILED of %d'):format(fails, checks)
                 or ('\nALL PASS (%d checks)'):format(checks))

@@ -1,13 +1,15 @@
--- A card picture or a portrait the staff hands to one player.
+-- The custom card and the custom portrait: the staff open the slot, the player
+-- fills it in.
 --
 --   lua5.4 tests/store_custom.lua
 --
--- Two things are worth pinning down. One is that the item really is that one
--- player's: it has to appear in their store already owned, be equippable, and
--- never leak into anyone else's list. The other is the image address itself —
--- it comes from a text box and ends up inside a CSS url(), so anything that is
--- not a plain http(s) link or a file under ui/img has to be refused before it
--- is ever stored.
+-- Three things are worth pinning down. That the slot is really that one
+-- player's, and appears in their store owned and equippable without leaking
+-- into anyone else's list. That a player cannot set a picture in a slot nobody
+-- opened for them — the address arrives over the network from the interface,
+-- so being unlocked is checked on the server, not in the page. And the address
+-- itself, which ends up inside a CSS url(): anything that is not a plain
+-- http(s) link or a file under ui/img is refused before it is stored.
 local SV = io.open('M5_RankedPvP/Files/Server.lua'):read('a')
 
 local fails, checks = 0, 0
@@ -36,7 +38,7 @@ ENV.Config = {
       common    = { label = 'COMMON', color = '#8B93A3' },
       legendary = { label = 'LEGENDARY', color = '#F5C542' }
     },
-    custom = { name = 'CUSTOM', rarity = 'legendary' },
+    custom = { name = 'CUSTOM', rarity = 'legendary', cooldown = 0, playerNames = true },
     cards = {
       { id = 'default', name = 'Default', rarity = 'common', price = 0, image = '', default = true },
       { id = 'thorn',   name = 'Thorn',   rarity = 'common', price = 200, image = 'https://x/t.png' }
@@ -62,7 +64,9 @@ ENV.DB = {
 
 ENV.log = function() end
 ENV.dbg = function() end
-ENV.now = function() return 1000 end
+local CLOCK = 1000
+ENV.now = function() return CLOCK end
+ENV._Lf = function(fmt, ...) return string.format(fmt, ...) end
 ENV.Players = {}
 ENV.clamp = function(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 -- the picture the player already had, which the default portrait tile previews
@@ -112,10 +116,23 @@ check('  and the portrait list is just the default', #Store.payload(ME).portrait
 check('  which previews the picture the player already has',
       Store.payload(ME).portraits[1].image, 'https://cdn/discord.png')
 
-ok, why = Store.grantCustom(ME, 'card', 'https://cdn/mine.gif', 'M547')
-check('a card grant is accepted', ok, true)
-check('  and is written to the database',
+-- a player nobody unlocked cannot set one, however well formed the address is
+check('a player with no slot cannot set a picture',
+      select(2, Store.setCustom(ME, 'card', 'https://cdn/mine.gif')),
+      'You do not have a custom slot for that.')
+
+ok, why = Store.allowCustom(ME, 'card')
+check('the staff can open a card slot', ok, true)
+check('  which is written to the database',
       WRITES[#WRITES].sql:find('m5_player_custom', 1, true) ~= nil, true)
+check('  the store tells the interface the slot is open',
+      Store.payload(ME).customAllowed.card, true)
+check('  but an empty slot puts nothing in the list', #Store.payload(ME).cards, 2)
+check('  and the portrait slot is still shut',
+      Store.payload(ME).customAllowed.portrait, nil)
+
+ok = Store.setCustom(ME, 'card', 'https://cdn/mine.gif', 'M547')
+check('the player fills it in themselves', ok, true)
 
 local mine = Store.payload(ME)
 check('the card now appears in that player\'s store', #mine.cards, 3)
@@ -131,12 +148,13 @@ check('  and the name the staff gave it', custom.name, 'M547')
 
 check('nobody else gets it', #Store.payload(YOU).cards, 2)
 
--- a grant with no name falls back to the configured word
-Store.grantCustom(YOU, 'card', 'https://cdn/yours.png')
+-- a slot opened with a picture already in it, for a staff member who wants to
+-- set one rather than leave the choice
+Store.allowCustom(YOU, 'card', 'https://cdn/yours.png')
 local yours = Store.payload(YOU)
 for i = 1, #yours.cards do
   if yours.cards[i].id == 'custom' then
-    check('a grant with no name uses the configured one', yours.cards[i].name, 'CUSTOM')
+    check('a picture with no name uses the configured word', yours.cards[i].name, 'CUSTOM')
   end
 end
 
@@ -161,8 +179,9 @@ check('and a player with no grant cannot equip one',
 -- ==========================================================================
 -- 4. a portrait is a picture of the player, not a card
 -- ==========================================================================
-ok = Store.grantCustom(ME, 'portrait', 'img/face.png', 'MY FACE')
-check('a portrait can be granted too', ok, true)
+Store.allowCustom(ME, 'portrait')
+ok = Store.setCustom(ME, 'portrait', 'img/face.png', 'MY FACE')
+check('a portrait slot works the same way', ok, true)
 local pp = Store.payload(ME)
 check('  and joins the portrait list', #pp.portraits, 2)
 check('  without touching the cards',  #pp.cards, 3)
@@ -174,19 +193,63 @@ check('  and the server hands that picture out for the player',
 -- ==========================================================================
 -- 5. taking it back
 -- ==========================================================================
-ok = Store.revokeCustom(ME, 'card')
-check('the staff can take it back', ok, true)
-check('  it leaves the store',      #Store.payload(ME).cards, 2)
+-- the player can empty their own slot without losing it
+ok = Store.clearCustom(ME, 'card')
+check('the player can clear their own picture', ok, true)
+check('  the item leaves the list',   #Store.payload(ME).cards, 2)
+check('  but the slot stays open',    Store.payload(ME).customAllowed.card, true)
+check('  and they are back on the default card',
+      Store.cosmetics(ME).cardImage, '')
+Store.setCustom(ME, 'card', 'https://cdn/again.png')
+check('  and they can put another one in', #Store.payload(ME).cards, 3)
+
+ok = Store.denyCustom(ME, 'card')
+check('the staff can close the slot', ok, true)
+check('  it leaves the store',        #Store.payload(ME).cards, 2)
+check('  the slot is gone with it',   Store.payload(ME).customAllowed.card, nil)
+check('  and the portrait slot is left alone',
+      Store.payload(ME).customAllowed.portrait, true)
 check('  the player is put back on the default card',
       Store.cosmetics(ME).cardImage, '')
-check('  taking back one they do not have says so',
-      select(2, Store.revokeCustom(ME, 'card')),
-      'That player has no custom item of that kind.')
-check('  and the portrait they still have is untouched',
+check('  and they cannot set one any more',
+      select(2, Store.setCustom(ME, 'card', 'https://cdn/sneak.png')),
+      'You do not have a custom slot for that.')
+check('  closing one that was never open says so',
+      select(2, Store.denyCustom(ME, 'card')),
+      'That player does not have that unlocked.')
+
+-- the portrait slot was a separate grant and is untouched by any of that
+Store.allowCustom(ME, 'portrait')
+Store.setCustom(ME, 'portrait', 'img/face.png')
+check('the portrait slot is independent of the card one',
       #Store.payload(ME).portraits, 2)
 
 check('a kind that is not customisable is refused',
-      select(2, Store.grantCustom(ME, 'title', 'https://x/a.png')), 'Unknown item.')
+      select(2, Store.allowCustom(ME, 'title', 'https://x/a.png')), 'Unknown item.')
+check('  and cannot be set by a player either',
+      select(2, Store.setCustom(ME, 'title', 'https://x/a.png')), 'Unknown item.')
+
+-- ==========================================================================
+-- 6. the address a player sends is checked as hard as the staff's
+-- ==========================================================================
+check('a player cannot slip a script url through',
+      select(2, Store.setCustom(ME, 'portrait', 'javascript:alert(1)')) ~= nil, true)
+check('  nor a data url',
+      select(2, Store.setCustom(ME, 'portrait', 'data:image/png;base64,AAA')) ~= nil, true)
+check('  nor climb out of the image folder',
+      select(2, Store.setCustom(ME, 'portrait', '../../secret.png')) ~= nil, true)
+check('  and the picture they had is still the one in place',
+      Store.customImage(ME, 'portrait'), 'img/face.png')
+
+-- and they cannot change it as fast as they like
+ENV.Config.Store.custom.cooldown = 30
+Store.customSetAt[ME] = CLOCK
+check('a change too soon after the last one is refused',
+      select(2, Store.setCustom(ME, 'portrait', 'https://cdn/spam.png')) ~= nil, true)
+CLOCK = CLOCK + 31
+check('  and allowed once the wait is over',
+      Store.setCustom(ME, 'portrait', 'https://cdn/later.png'), true)
+ENV.Config.Store.custom.cooldown = 0
 
 print(fails > 0 and ('\n%d FAILED of %d'):format(fails, checks)
                 or ('\nALL PASS (%d checks)'):format(checks))

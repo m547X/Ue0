@@ -372,6 +372,25 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
   color:var(--gold)}
 .si-gift svg{width:12px;height:12px;fill:currentColor}
 .sitem.gifted{border-color:rgba(245,197,66,.45)}
+
+/* the slot the staff unlocked: empty it asks for a picture, filled it shows
+   the one that is in it */
+.sitem.custom-slot{border-style:dashed;border-color:rgba(245,197,66,.4)}
+.sitem.custom-slot.filled{border-style:solid}
+.cs-art{background-color:rgba(245,197,66,.05)}
+.cs-plus{display:grid;place-items:center;width:52px;height:52px;border-radius:15px;
+  background:rgba(245,197,66,.12);color:var(--gold)}
+.cs-plus svg{width:24px;height:24px;fill:currentColor}
+
+/* the box it is typed into */
+.cst-row{display:flex;gap:14px;align-items:flex-start}
+.cst-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+.cst-preview{flex:none;width:104px;height:139px;border-radius:10px;
+  border:1px solid var(--edge);background:var(--panel-deep);
+  background-size:cover;background-position:center}
+.cst-preview.po{width:120px;height:120px;border-radius:14px}
+.cst-preview.empty{border-style:dashed}
+html[dir="rtl"] .cst-row{flex-direction:row-reverse}
 html[dir="rtl"] .si-rar{left:auto;right:8px}
 html[dir="rtl"] .si-gift{right:auto;left:8px}
 .ci-blank{font-size:11px;letter-spacing:.16em;color:var(--dim-2);text-align:center;padding:0 12px}

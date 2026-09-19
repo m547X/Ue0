@@ -131,8 +131,12 @@ Config.AdminActions     = {
     addXP         = { permission = 'pvp.admin.xp', label = 'Grant XP', group = 'points', reason = true },
     giveCoins     = { permission = 'pvp.admin.coins', label = 'Give Coins', group = 'points', reason = true },
     takeCoins     = { permission = 'pvp.admin.coins', label = 'Take Coins', group = 'points', reason = true },
-    grantCustom   = { permission = 'pvp.admin.custom.item', label = 'Grant Custom Card / Portrait', group = 'points', reason = true },
-    revokeCustom  = { permission = 'pvp.admin.custom.item', label = 'Remove Custom Item', group = 'points', confirm = true, reason = true },
+    -- فتح وقفل الأغراض الخاصة. الصلاحيتين منفصلتين بقصد: تقدر تعطي لاعب
+    -- يحط بطاقته بدون ما تعطيه يغيّر صورته الشخصية، أو العكس.
+    allowCard     = { permission = 'pvp.admin.custom.card', label = 'Allow Custom Card', group = 'points', reason = true },
+    denyCard      = { permission = 'pvp.admin.custom.card', label = 'Remove Custom Card Access', group = 'points', confirm = true, reason = true },
+    allowPortrait = { permission = 'pvp.admin.custom.portrait', label = 'Allow Custom Portrait', group = 'points', reason = true },
+    denyPortrait  = { permission = 'pvp.admin.custom.portrait', label = 'Remove Custom Portrait Access', group = 'points', confirm = true, reason = true },
     resetStats    = { permission = 'pvp.admin.stats.reset', label = 'Reset Season Stats', group = 'points', confirm = true, reason = true },
 
     -- ---- العقوبات -------------------------------------------------------
@@ -1939,16 +1943,23 @@ Config.Store            = {
         legendary = { label = 'LEGENDARY', color = '#F5C542' }
     },
 
-    -- ---- الأغراض الخاصة (الي يعطيها الأدمن) -----------------------------
-    -- الأدمن يقدر يعطي لاعب معيّن بطاقة بصورة يختارها، أو صورة شخصية خاصة،
-    -- من لوحة الإدارة > النقاط. الغرض يطلع لذاك اللاعب وحده داخل متجره
-    -- كأنه يملكه، ويقدر يلبسه ويشيله وقت ما يبي. وما ينباع ولا يكلف كوينز.
+    -- ---- الأغراض الخاصة --------------------------------------------------
+    -- الأدمن يفتح للاعب "خانة خاصة" من لوحة الإدارة > النقاط، واللاعب بعدها
+    -- يحط صورته بنفسه من متجره ويغيّرها وقت ما بغى. والخانتين منفصلتين:
+    -- بطاقة (Cards) وصورة شخصية (Portraits)، وكل وحدة لها صلاحية إدارية
+    -- مستقلة — شوف allowCard و allowPortrait بـ Config.AdminActions.
     --
     -- الصورة تقبل رابط https أو اسم ملف تحت Files/ui/img/ (سجّله بقائمة
-    -- `files` بملف fxmanifest.lua). أي شي ثاني مرفوض.
+    -- `files` بملف fxmanifest.lua). أي شي ثاني مرفوض، لأن الرابط ينتهي داخل
+    -- الواجهة.
     custom = {
-        name   = 'CUSTOM',   -- الاسم الي يطلع تحت الغرض إذا الأدمن ما كتب اسم
-        rarity = 'legendary' -- شارة الندرة عليه
+        name        = 'CUSTOM',   -- الاسم الي يطلع تحت الغرض إذا ما فيه اسم
+        rarity      = 'legendary', -- شارة الندرة عليه
+        cooldown    = 10,         -- ثواني بين تغيير وتغيير، عشان ما ينسبم
+        playerNames = true,       -- خلّه false إذا الاسم للأدمن وحده
+
+        -- سطر صغير يطلع للاعب بخانة الصورة داخل المتجر
+        hint = 'Paste a direct image link. PNG, JPG or GIF.'
     },
 
     -- ---- الصور الشخصية --------------------------------------------------
