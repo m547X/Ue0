@@ -134,8 +134,10 @@ Config.AdminActions     = {
     -- فتح وقفل الأغراض الخاصة. الصلاحيتين منفصلتين بقصد: تقدر تعطي لاعب
     -- يحط بطاقته بدون ما تعطيه يغيّر صورته الشخصية، أو العكس.
     allowCard     = { permission = 'pvp.admin.custom.card', label = 'Allow Custom Card', group = 'points', reason = true },
+    resetCard     = { permission = 'pvp.admin.custom.card', label = 'Reset Custom Card', group = 'points', reason = true },
     denyCard      = { permission = 'pvp.admin.custom.card', label = 'Remove Custom Card Access', group = 'points', confirm = true, reason = true },
     allowPortrait = { permission = 'pvp.admin.custom.portrait', label = 'Allow Custom Portrait', group = 'points', reason = true },
+    resetPortrait = { permission = 'pvp.admin.custom.portrait', label = 'Reset Custom Portrait', group = 'points', reason = true },
     denyPortrait  = { permission = 'pvp.admin.custom.portrait', label = 'Remove Custom Portrait Access', group = 'points', confirm = true, reason = true },
     resetStats    = { permission = 'pvp.admin.stats.reset', label = 'Reset Season Stats', group = 'points', confirm = true, reason = true },
 

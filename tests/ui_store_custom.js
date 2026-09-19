@@ -77,8 +77,10 @@ const STORE = {
 const ADMIN = {
   allowed: {
     allowCard:     { label: 'Allow Custom Card', permission: 'pvp.admin.custom.card', group: 'points' },
+    resetCard:     { label: 'Reset Custom Card', permission: 'pvp.admin.custom.card', group: 'points' },
     denyCard:      { label: 'Remove Custom Card Access', permission: 'pvp.admin.custom.card', group: 'points' },
     allowPortrait: { label: 'Allow Custom Portrait', permission: 'pvp.admin.custom.portrait', group: 'points' },
+    resetPortrait: { label: 'Reset Custom Portrait', permission: 'pvp.admin.custom.portrait', group: 'points' },
     denyPortrait:  { label: 'Remove Custom Portrait Access', permission: 'pvp.admin.custom.portrait', group: 'points' }
   },
   matches: [], queues: [], rooms: []
@@ -87,6 +89,7 @@ const ADMIN = {
 const CARD_ONLY = {
   allowed: {
     allowCard: { label: 'Allow Custom Card', permission: 'pvp.admin.custom.card', group: 'points' },
+    resetCard: { label: 'Reset Custom Card', permission: 'pvp.admin.custom.card', group: 'points' },
     denyCard:  { label: 'Remove Custom Card Access', permission: 'pvp.admin.custom.card', group: 'points' }
   },
   matches: [], queues: [], rooms: []
@@ -294,10 +297,13 @@ const CARD_ONLY = {
   check('  each with a way to take it back',
         [await page.locator('[data-adm="denyCard"]').count(),
          await page.locator('[data-adm="denyPortrait"]').count()], [1, 1]);
-  check('  and each names its own permission',
+  check('  and a way to wipe the picture without closing the slot',
+        [await page.locator('[data-adm="resetCard"]').count(),
+         await page.locator('[data-adm="resetPortrait"]').count()], [1, 1]);
+  check('  each naming its own permission',
         await page.locator('.act .act-name span').allInnerTexts(),
-        ['pvp.admin.custom.card', 'pvp.admin.custom.card',
-         'pvp.admin.custom.portrait', 'pvp.admin.custom.portrait']);
+        ['pvp.admin.custom.card', 'pvp.admin.custom.card', 'pvp.admin.custom.card',
+         'pvp.admin.custom.portrait', 'pvp.admin.custom.portrait', 'pvp.admin.custom.portrait']);
 
   await page.fill('#adm-target', '42');
   await page.evaluate(() => { window.__posted = []; });
@@ -322,6 +328,16 @@ const CARD_ONLY = {
         { action: 'allowPortrait', target: '42', image: 'https://cdn/start.png' });
 
   await page.evaluate(() => { window.__posted = []; });
+  await page.locator('[data-adm="resetCard"]').click();
+  await page.waitForTimeout(160);
+  check('wiping a picture names the player and nothing else',
+        await page.evaluate(() => {
+          const p = window.__posted.find((x) => x.name === 'admin');
+          return p && p.body;
+        }),
+        { action: 'resetCard', target: '42' });
+
+  await page.evaluate(() => { window.__posted = []; });
   await page.locator('[data-adm="denyPortrait"]').click();
   await page.waitForTimeout(160);
   check('closing one names the player',
@@ -338,7 +354,9 @@ const CARD_ONLY = {
   await page.waitForTimeout(200);
   check('staff with only the card permission see only the card controls',
         [await page.locator('[data-adm="allowCard"]').count(),
-         await page.locator('[data-adm="allowPortrait"]').count()], [1, 0]);
+         await page.locator('[data-adm="resetCard"]').count(),
+         await page.locator('[data-adm="allowPortrait"]').count(),
+         await page.locator('[data-adm="resetPortrait"]').count()], [1, 1, 0, 0]);
 
   check('no script error the whole way through', errors, []);
 

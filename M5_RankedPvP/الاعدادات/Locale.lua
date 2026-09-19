@@ -499,6 +499,18 @@ Locale.ar = {
         'نفس الشي لصورته الشخصية. وهذي صلاحية مستقلة عن صلاحية البطاقة.',
     ['Closes the slot and puts them back on their Discord picture.'] =
         'يقفل الخانة ويرجّعه لصورة الديسكورد حقته.',
+    ['Reset Custom Card'] = 'تصفير البطاقة الخاصة',
+    ['Reset Custom Portrait'] = 'تصفير الصورة الشخصية',
+    ['RESET'] = 'تصفير',
+    ['Wipes the picture they chose and leaves the slot open for a new one.'] =
+        'يمسح الصورة الي اختارها ويخلي الخانة مفتوحة لوحدة جديدة.',
+    ['Puts them back on their Discord picture, with the slot still open.'] =
+        'يرجّعه لصورة الديسكورد حقته، والخانة تبقى مفتوحة.',
+    ['That player has not set a picture yet.'] = 'هذا اللاعب ما حط صورة أصلاً.',
+    ['Your card picture was reset. You can set a new one — %s'] =
+        'انمسحت صورة بطاقتك. تقدر تحط وحدة جديدة — %s',
+    ['Your portrait was reset. You can set a new one — %s'] =
+        'انمسحت صورتك الشخصية. تقدر تحط وحدة جديدة — %s',
     ['YOURS'] = 'حقك',
     ['YOUR PICTURE'] = 'صورتك',
     ['ADD YOUR OWN'] = 'ضيف صورتك',

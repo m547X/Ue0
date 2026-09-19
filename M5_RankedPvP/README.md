@@ -614,8 +614,16 @@ Staff open a slot, the player fills it in. From **Admin → Points**:
 
 The two are **separate permissions on purpose**: you can let someone set their
 own card without letting them change their profile picture, or the other way
-round. Each has a **Remove … Access** beside it. The optional box on the allow
-row starts them off with a picture; leave it empty and the choice is theirs.
+round. The optional box on the allow row starts them off with a picture; leave
+it empty and the choice is theirs.
+
+Each kind also has two more controls under the same permission:
+
+- **Reset** — wipes the picture they chose and leaves the slot open, so they
+  can set another. This is the moderation one: a picture that should not be on
+  screen goes now without taking away what they were given. It also clears
+  their change cooldown, so they are not locked out of replacing it.
+- **Remove … Access** — closes the slot entirely.
 
 The player then sees a dashed slot at the end of **Cards** or **Portraits** in
 their store — `ADD YOUR OWN` — which opens a box for a link, with a live

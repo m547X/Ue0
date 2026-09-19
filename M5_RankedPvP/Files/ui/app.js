@@ -2504,11 +2504,15 @@ function renderAdmin(d) {
       ${act('allowCard', { button: 'ALLOW', fields:
         `<input class="inp" id="adm-card-img" type="text" placeholder="Picture to start them with (optional)"/>`,
         hint: 'Opens a card slot in their store that they fill in themselves. Leave the box empty to let them choose.' })}
+      ${act('resetCard', { button: 'RESET',
+        hint: 'Wipes the picture they chose and leaves the slot open for a new one.' })}
       ${act('denyCard', { button: 'REMOVE', danger: true,
         hint: 'Closes the slot and takes the card back. If they are wearing it they go back to the default.' })}
       ${act('allowPortrait', { button: 'ALLOW', fields:
         `<input class="inp" id="adm-portrait-img" type="text" placeholder="Picture to start them with (optional)"/>`,
         hint: 'The same for their profile picture. This is a separate permission from the card one.' })}
+      ${act('resetPortrait', { button: 'RESET',
+        hint: 'Puts them back on their Discord picture, with the slot still open.' })}
       ${act('denyPortrait', { button: 'REMOVE', danger: true,
         hint: 'Closes the slot and puts them back on their Discord picture.' })}
       ${act('resetStats', { button: 'RESET', danger: true,
@@ -2636,8 +2640,10 @@ function admAction(btn) {
     case 'giveCoins':     admRun('giveCoins', { target, amount: parseInt(val('adm-coins-add'), 10) }); break;
     case 'takeCoins':     admRun('takeCoins', { target, amount: parseInt(val('adm-coins-rem'), 10) }); break;
     case 'allowCard':     admRun('allowCard', { target, image: val('adm-card-img') }); break;
+    case 'resetCard':     admRun('resetCard', { target }); break;
     case 'denyCard':      admRun('denyCard', { target }); break;
     case 'allowPortrait': admRun('allowPortrait', { target, image: val('adm-portrait-img') }); break;
+    case 'resetPortrait': admRun('resetPortrait', { target }); break;
     case 'denyPortrait':  admRun('denyPortrait', { target }); break;
     case 'resetStats':    admRun('resetStats', { target }); break;
 

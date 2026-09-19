@@ -218,6 +218,46 @@ check('  closing one that was never open says so',
       select(2, Store.denyCustom(ME, 'card')),
       'That player does not have that unlocked.')
 
+-- ==========================================================================
+-- 5b. the staff wiping a picture without closing the slot
+-- ==========================================================================
+-- The reason this exists is moderation: a picture that should not be on screen
+-- has to go now, without also taking away something the player was given.
+Store.allowCustom(ME, 'card')
+Store.setCustom(ME, 'card', 'https://cdn/rude.png', 'RUDE')
+check('the player has a picture up', #Store.payload(ME).cards, 3)
+
+ok, why = Store.resetCustom(ME, 'card')
+check('the staff can wipe it', ok, true)
+check('  and are told what it was',   why.was, 'https://cdn/rude.png')
+check('  the item leaves the list',   #Store.payload(ME).cards, 2)
+check('  the slot stays open',        Store.payload(ME).customAllowed.card, true)
+check('  the name goes with it', (function()
+  local c = Store.customs[ME].card
+  return c and (c.name == nil)
+end)(), true)
+check('  and the player can set another straight away',
+      Store.setCustom(ME, 'card', 'https://cdn/polite.png'), true)
+
+-- wiping the same slot twice, or one that was never filled, says so rather
+-- than reporting a success that did nothing
+Store.resetCustom(ME, 'card')
+check('wiping an empty slot says there is nothing to wipe',
+      select(2, Store.resetCustom(ME, 'card')), 'That player has not set a picture yet.')
+check('  and wiping a slot nobody opened says that instead',
+      select(2, Store.resetCustom(YOU, 'portrait')),
+      'That player does not have that unlocked.')
+
+-- a wipe clears the player's cooldown too, so they are not locked out of
+-- replacing the picture the staff just took
+ENV.Config.Store.custom.cooldown = 30
+Store.setCustom(ME, 'card', 'https://cdn/one.png')
+Store.resetCustom(ME, 'card')
+check('a wipe does not leave the player waiting out a cooldown',
+      Store.setCustom(ME, 'card', 'https://cdn/two.png'), true)
+ENV.Config.Store.custom.cooldown = 0
+Store.denyCustom(ME, 'card')
+
 -- the portrait slot was a separate grant and is untouched by any of that
 Store.allowCustom(ME, 'portrait')
 Store.setCustom(ME, 'portrait', 'img/face.png')

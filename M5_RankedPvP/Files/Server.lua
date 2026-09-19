@@ -6760,6 +6760,21 @@ function Store.clearCustom(userId, kind)
     return true, { kind = kind }
 end
 
+function Store.resetCustom(userId, kind)
+    if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
+    if not Store.customAllowed(userId, kind) then
+        return false, 'That player does not have that unlocked.'
+    end
+    if not Store.customImage(userId, kind) then
+        return false, 'That player has not set a picture yet.'
+    end
+
+    local had = Store.customImage(userId, kind)
+    customWrite(userId, kind, '', '')
+    Store.customSetAt[userId] = nil
+    return true, { kind = kind, was = had }
+end
+
 function Store.cosmetics(userId)
     local d = Store.cache[userId]
     if not d then return nil end
@@ -8331,36 +8346,44 @@ function Admin.handle(adminPd, action, data)
         Player.pushCosmetics(id)
         return true, { coins = after, delta = delta }
 
-    elseif action == 'allowCard' or action == 'denyCard'
-        or action == 'allowPortrait' or action == 'denyPortrait' then
+    elseif action == 'allowCard' or action == 'resetCard' or action == 'denyCard'
+        or action == 'allowPortrait' or action == 'resetPortrait' or action == 'denyPortrait' then
         local id, who = target()
         if not id then return false, 'No player with that ID.' end
 
-        local kind  = (action == 'allowCard' or action == 'denyCard') and 'card' or 'portrait'
-        local allow = action == 'allowCard' or action == 'allowPortrait'
+        local card = action:sub(-4) == 'Card'
+        local kind = card and 'card' or 'portrait'
+        local what = action:sub(1, 5)
 
         Store.load(id)
 
         local ok, res
-        if allow then
+        if what == 'allow' then
             ok, res = Store.allowCustom(id, kind, data.image, data.name)
+        elseif what == 'reset' then
+            ok, res = Store.resetCustom(id, kind)
         else
             ok, res = Store.denyCustom(id, kind)
         end
         if not ok then return false, res end
 
-        Admin.audit(adminPd, action, who,
-            { reason = reason, details = { kind = kind, image = res.image, name = res.name } })
+        Admin.audit(adminPd, action, who, { reason = reason, details = {
+            kind = kind, image = res.image, name = res.name, was = res.was } })
 
-        if allow then
+        if what == 'allow' then
             notifyUser(id, 'success',
-                kind == 'card' and 'You can set your own card picture in the Store — %s'
-                                or 'You can set your own portrait in the Store — %s',
+                card and 'You can set your own card picture in the Store — %s'
+                      or 'You can set your own portrait in the Store — %s',
+                'STORE', reason)
+        elseif what == 'reset' then
+            notifyUser(id, 'warning',
+                card and 'Your card picture was reset. You can set a new one — %s'
+                      or 'Your portrait was reset. You can set a new one — %s',
                 'STORE', reason)
         else
             notifyUser(id, 'warning',
-                kind == 'card' and 'Your custom card was removed — %s'
-                                or 'Your custom portrait was removed — %s',
+                card and 'Your custom card was removed — %s'
+                      or 'Your custom portrait was removed — %s',
                 'STORE', reason)
         end
 
