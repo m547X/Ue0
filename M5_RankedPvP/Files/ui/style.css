@@ -383,6 +383,13 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
 .cs-plus svg{width:24px;height:24px;fill:currentColor}
 
 /* the box it is typed into */
+/* three buttons, so the dialog is wider than the others and REMOVE is pushed
+   away from the pair that closes it */
+#modal-custom .dlg{width:min(580px,92vw);max-width:none}
+/* the shared footer is a two-up grid; this one has three, and REMOVE is the
+   odd one out so it sits apart from the pair that closes the box */
+#modal-custom .dlg-foot{display:flex;justify-content:flex-end}
+#cst-clear{margin-inline-end:auto}
 .cst-row{display:flex;gap:14px;align-items:flex-start}
 .cst-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
 .cst-preview{flex:none;width:104px;height:139px;border-radius:10px;

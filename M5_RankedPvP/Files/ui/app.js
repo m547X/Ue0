@@ -2257,7 +2257,8 @@ function paintCustomPreview() {
   box.classList.toggle('po', S.customKind === 'portrait');
   if (!raw) { box.style.backgroundImage = ''; box.classList.add('empty'); return; }
   box.classList.remove('empty');
-  box.style.backgroundImage = `url('${raw.replace(/'/g, '%27')}')`;
+  // through imgUrl, so a bare file name previews the file it will really load
+  box.style.backgroundImage = `url('${String(imgUrl(raw)).replace(/'/g, '%27')}')`;
 }
 
 function saveCustom() {
