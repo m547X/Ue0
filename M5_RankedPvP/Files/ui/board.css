@@ -42,7 +42,10 @@ html, body {
 .board {
   width: 100%; height: 100%;
   display: grid;
-  grid-template-columns: 32% 1fr;
+  grid-template-columns: 34% 1fr;
+  /* the row is pinned to the board's height: an auto row grows to fit its
+     content instead, and a tall card would push both panels off the texture */
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
   padding: 22px;
   background:
@@ -58,8 +61,16 @@ html, body {
   border-radius: 16px;
   background: linear-gradient(170deg, var(--panel) 0%, rgba(6,7,10,.9) 100%);
   border: 1px solid var(--line);
-  padding: 20px 18px;
+  padding: 20px 18px; min-height: 0; overflow: hidden;
+  position: relative;
 }
+/* the same wash the standings panel has, in the podium's own metal */
+.podium::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 150px;
+  background: linear-gradient(180deg, rgba(245,197,66,.10), transparent);
+  pointer-events: none;
+}
+.podium > * { position: relative; }
 
 /* The mark. A crest, then the name leaning forward out of it — the shape a
    team badge has, rather than a word with a cup next to it. */
@@ -105,7 +116,7 @@ html, body {
 .stand {
   flex: 1; display: grid; grid-template-columns: 1fr 1.16fr 1fr;
   align-items: end; gap: 10px;
-  margin-top: auto; padding-top: 34px; min-width: 0;
+  margin-top: auto; padding-top: 30px; min-width: 0; min-height: 0;
   border-bottom: 2px solid rgba(255,255,255,.11);
 }
 .col {
@@ -120,32 +131,35 @@ html, body {
   border: 1px solid var(--line); border-bottom: none;
 }
 .col.c1 .base {
-  height: 176px; font-size: 48px; color: var(--gold);
+  height: 132px; font-size: 44px; color: var(--gold);
   background: linear-gradient(180deg, rgba(245,197,66,.26), rgba(245,197,66,.03));
   border-color: rgba(245,197,66,.34);
 }
 .col.c2 .base {
-  height: 126px; font-size: 38px; color: var(--silver);
+  height: 92px; font-size: 36px; color: var(--silver);
   background: linear-gradient(180deg, rgba(200,208,218,.18), rgba(200,208,218,.02));
   border-color: rgba(200,208,218,.22);
 }
 .col.c3 .base {
-  height: 94px; font-size: 33px; color: var(--bronze);
+  height: 66px; font-size: 31px; color: var(--bronze);
   background: linear-gradient(180deg, rgba(199,123,60,.20), rgba(199,123,60,.02));
   border-color: rgba(199,123,60,.26);
 }
 
 .pod {
   position: relative; min-width: 0;
-  border-radius: 14px; padding: 20px 8px 16px;
+  border-radius: 14px; padding: 18px 7px 14px;
   background: linear-gradient(180deg, var(--panel-2), rgba(8,10,14,.9));
   border: 1px solid var(--line);
   text-align: center;
 }
-.pod.p1 { padding: 34px 8px 22px; border-color: rgba(245,197,66,.4);
-  box-shadow: 0 0 0 1px rgba(245,197,66,.14), 0 -18px 46px -28px var(--gold) inset; }
-.pod.p2 { border-color: rgba(200,208,218,.26); }
-.pod.p3 { border-color: rgba(199,123,60,.30); }
+.pod.p1 { padding: 32px 7px 18px; border-color: rgba(245,197,66,.45);
+  background: linear-gradient(180deg, rgba(40,32,10,.95), rgba(8,10,14,.92));
+  box-shadow: 0 0 0 1px rgba(245,197,66,.16), 0 0 40px -18px var(--gold); }
+.pod.p2 { border-color: rgba(200,208,218,.28);
+  background: linear-gradient(180deg, rgba(26,30,36,.95), rgba(8,10,14,.92)); }
+.pod.p3 { border-color: rgba(199,123,60,.32);
+  background: linear-gradient(180deg, rgba(36,26,18,.95), rgba(8,10,14,.92)); }
 
 .pod-crown {
   position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
@@ -153,27 +167,40 @@ html, body {
 }
 
 .pod-av {
-  width: 66px; height: 66px; border-radius: 50%; margin: 0 auto;
+  width: 62px; height: 62px; border-radius: 50%; margin: 0 auto;
   overflow: hidden; position: relative; flex: none;
   background: linear-gradient(145deg, #253040, #131922);
   display: grid; place-items: center;
   font-size: 26px; font-weight: 800; color: #fff;
   border: 2px solid var(--line);
 }
-.pod.p1 .pod-av { width: 80px; height: 80px; font-size: 32px; border-color: rgba(245,197,66,.55); }
-.pod.p2 .pod-av { border-color: rgba(200,208,218,.4); }
-.pod.p3 .pod-av { border-color: rgba(199,123,60,.45); }
+.pod.p1 .pod-av { width: 76px; height: 76px; font-size: 30px; border-color: var(--gold);
+  box-shadow: 0 0 0 4px rgba(245,197,66,.13); }
+.pod.p2 .pod-av { border-color: rgba(200,208,218,.6); box-shadow: 0 0 0 4px rgba(200,208,218,.09); }
+.pod.p3 .pod-av { border-color: rgba(199,123,60,.7); box-shadow: 0 0 0 4px rgba(199,123,60,.10); }
 .pod-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
 .pod-name {
-  margin-top: 13px; font-size: 15px; font-weight: 700; letter-spacing: .05em;
+  margin-top: 11px; font-size: 15px; font-weight: 700; letter-spacing: .05em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* The size here is a starting point — board.js measures the name and steps it
    down from this until it fits the card, because cutting somebody's name off
    with an ellipsis on a board people walk up to read is worse than a smaller
    name. */
-.pod-score { margin-top: 8px; font-size: 26px; font-weight: 800; line-height: 1; }
+/* the rank, in its own colour, the way the table shows it */
+.pod-rank {
+  margin: 7px auto 0; display: inline-flex; align-items: center; gap: 5px;
+  max-width: 100%; padding: 3px 7px; border-radius: 6px;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07);
+}
+.pod-rank svg { width: 15px; height: 15px; flex: none; }
+.pod-rank span {
+  font-size: 9px; font-weight: 800; letter-spacing: .04em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.pod-score { margin-top: 9px; font-size: 26px; font-weight: 800; line-height: 1; }
 .pod.p1 .pod-score { font-size: 31px; color: var(--gold); }
 .pod.p2 .pod-score { color: var(--silver); }
 .pod.p3 .pod-score { color: var(--bronze); }
@@ -184,34 +211,45 @@ html, body {
 .pod-unit { font-size: 9px; letter-spacing: .24em; color: var(--dim-2); margin-top: 3px; }
 
 .pod-stats {
-  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
-  display: grid; grid-template-columns: 1fr; gap: 4px;
-  font-size: 10.5px; color: var(--dim);
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr; gap: 3px;
+  font-size: 11px; font-weight: 700; color: var(--dim);
 }
-.pod-stats b { color: var(--text); font-weight: 700; }
-.pod-stats span { display: flex; justify-content: space-between; gap: 6px; }
+.pod-stats b { color: var(--text); font-weight: 800; }
+.pod-stats span {
+  display: flex; justify-content: space-between; gap: 6px;
+  padding: 2px 4px; border-radius: 4px; background: rgba(255,255,255,.028);
+}
 
 /* ------------------------------------------------------------ right panel */
 .table {
+  position: relative; overflow: hidden;
   display: flex; flex-direction: column; min-width: 0;
   border-radius: 16px;
   background: linear-gradient(170deg, var(--panel) 0%, rgba(6,7,10,.92) 100%);
   border: 1px solid var(--line);
-  padding: 18px 20px 14px;
+  padding: 18px 20px 16px;
 }
+/* a wash of the accent behind the heading, so the panel has a top to it */
+.table::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 130px;
+  background: linear-gradient(180deg, rgba(var(--accent-rgb),.13), transparent);
+  pointer-events: none;
+}
+.table > * { position: relative; }
 
 .table-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  gap: 16px; padding-bottom: 12px;
+  gap: 16px; padding-bottom: 14px;
 }
 .th-title {
-  position: relative; font-size: 17px; font-weight: 800; letter-spacing: .2em;
-  padding-left: 13px;
+  position: relative; font-size: 19px; font-weight: 900; letter-spacing: .2em;
+  padding-left: 15px;
 }
-/* the accent tick that marks the heading, the same one the top row wears */
+/* the accent tick that marks the heading */
 .th-title::before {
-  content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 4px;
-  border-radius: 2px; background: var(--accent);
+  content: ''; position: absolute; left: 0; top: 1px; bottom: 1px; width: 5px;
+  border-radius: 3px; background: var(--accent);
 }
 .th-sub { font-size: 11px; font-weight: 700; letter-spacing: .28em; color: var(--dim-2); }
 
@@ -220,72 +258,123 @@ html, body {
 .grid {
   display: grid; column-gap: 6px;
   grid-template-columns:
-    40px 104px minmax(120px,1fr) 44px 56px 62px 52px 64px 50px 72px;
+    44px 104px minmax(146px,1fr) 42px 52px 60px 50px 60px 48px 82px;
   align-items: center;
 }
 
 .head {
-  padding: 0 10px 9px;
-  font-size: 10px; font-weight: 700; letter-spacing: .18em; color: var(--dim-2);
-  border-bottom: 1px solid var(--line);
+  padding: 0 13px 10px;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; color: var(--dim-2);
+  border-bottom: 1px solid rgba(255,255,255,.10);
 }
 .head .c-num, .head .c-lvl { text-align: right; }
+/* The header shares the row's grid, not its type or its jewellery — the
+   column rules set a size of their own and would otherwise blow the headings
+   up until DEATHS ran into WINS. */
+.head > span {
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; color: var(--dim-2);
+  padding: 0; background: none; border: none;
+}
+.head .c-rank { display: block; }
+.head .c-score { color: var(--accent); }
 
-.rows { flex: 1; display: flex; flex-direction: column; gap: 5px; padding-top: 8px;
+.rows { flex: 1; display: flex; flex-direction: column; gap: 5px; padding-top: 9px;
   overflow: hidden; }
 
-/* The rows share out whatever height the panel has left, so seven of them fill
-   it the same way twelve would. The cap keeps a board with three names on it
-   from turning each one into a banner. */
+/* The rows share out whatever height the panel has left, so ten of them fill it
+   the same way six would. The cap keeps a board with three names on it from
+   turning each one into a banner. */
 .row {
+  position: relative;
   flex: 1 1 0; min-height: 34px; max-height: 84px;
   padding: 8px 12px; border-radius: 10px;
-  background: rgba(255,255,255,.015);
-  border: 1px solid transparent;
-  font-size: 14px;
+  background: rgba(255,255,255,.022);
+  border: 1px solid rgba(255,255,255,.04);
+  font-size: 15px;
 }
-.row:nth-child(2n) { background: rgba(255,255,255,.035); }
-.row.top1 { background: linear-gradient(90deg, rgba(245,197,66,.13), rgba(255,255,255,.02));
-  border-color: rgba(245,197,66,.28); }
-.row.top2 { background: linear-gradient(90deg, rgba(200,208,218,.10), rgba(255,255,255,.02)); }
-.row.top3 { background: linear-gradient(90deg, rgba(199,123,60,.10), rgba(255,255,255,.02)); }
+.row:nth-child(2n) { background: rgba(255,255,255,.045); }
 
-.c-top { font-size: 14px; font-weight: 800; color: var(--dim); }
-.row.top1 .c-top { color: var(--gold); }
-.row.top2 .c-top { color: var(--silver); }
-.row.top3 .c-top { color: var(--bronze); }
+/* the medal rows: a tint, a firmer edge, and a bar down the left so the top of
+   the ladder reads at a glance from across the street */
+.row.top1, .row.top2, .row.top3 { padding-left: 16px; }
+.row.top1::before, .row.top2::before, .row.top3::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px;
+  border-radius: 0 3px 3px 0;
+}
+.row.top1 {
+  background: linear-gradient(90deg, rgba(245,197,66,.18), rgba(255,255,255,.02) 55%);
+  border-color: rgba(245,197,66,.34);
+  box-shadow: 0 0 22px -12px var(--gold);
+}
+.row.top1::before { background: var(--gold); }
+.row.top2 {
+  background: linear-gradient(90deg, rgba(200,208,218,.13), rgba(255,255,255,.02) 55%);
+  border-color: rgba(200,208,218,.20);
+}
+.row.top2::before { background: var(--silver); }
+.row.top3 {
+  background: linear-gradient(90deg, rgba(199,123,60,.13), rgba(255,255,255,.02) 55%);
+  border-color: rgba(199,123,60,.22);
+}
+.row.top3::before { background: var(--bronze); }
 
-.c-rank { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.c-rank svg { width: 22px; height: 22px; flex: none; }
+.c-top { font-size: 16px; font-weight: 900; color: var(--dim); }
+.row.top1 .c-top { color: var(--gold); font-size: 18px; }
+.row.top2 .c-top { color: var(--silver); font-size: 17px; }
+.row.top3 .c-top { color: var(--bronze); font-size: 17px; }
+
+/* the rank as a chip in its own colour, rather than loose text */
+.c-rank {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  padding: 4px 8px 4px 5px; border-radius: 7px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.07);
+}
+.c-rank svg { width: 21px; height: 21px; flex: none; }
 .c-rank span {
-  font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  font-size: 10px; font-weight: 800; letter-spacing: .05em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.c-player { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.c-player { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .av {
-  width: 32px; height: 32px; border-radius: 50%; flex: none;
+  width: 34px; height: 34px; border-radius: 10px; flex: none;
   overflow: hidden; position: relative;
-  background: linear-gradient(145deg, #253040, #131922);
-  display: grid; place-items: center; font-size: 13px; font-weight: 700;
+  background: linear-gradient(145deg, #2A3547, #131922);
+  border: 1px solid rgba(255,255,255,.09);
+  display: grid; place-items: center; font-size: 14px; font-weight: 800;
 }
+.row.top1 .av { border-color: rgba(245,197,66,.5); }
+.row.top2 .av { border-color: rgba(200,208,218,.38); }
+.row.top3 .av { border-color: rgba(199,123,60,.4); }
 .av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .who { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
-.who b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.who i { font-style: normal; font-size: 10px; color: var(--dim-2); }
+.who b { font-size: 15px; font-weight: 800; letter-spacing: .01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who i { font-style: normal; font-size: 10.5px; color: var(--dim-2); }
 
 .c-lvl { text-align: right; }
 .lvl {
-  display: inline-block; min-width: 30px; padding: 2px 7px; border-radius: 6px;
-  background: rgba(255,255,255,.07); color: var(--dim);
-  font-size: 10px; font-weight: 800; letter-spacing: .06em;
+  display: inline-block; min-width: 32px; padding: 3px 8px; border-radius: 6px;
+  background: rgba(255,255,255,.08); color: var(--dim);
+  font-size: 11px; font-weight: 800; letter-spacing: .06em;
 }
 
-.c-num { text-align: right; font-weight: 700; }
+.c-num { text-align: right; font-weight: 800; font-size: 15px; }
 .c-num.win  { color: var(--good); }
 .c-num.loss { color: var(--bad); }
 .c-num.kd   { color: var(--gold); }
-.c-score { color: var(--accent); font-size: 15px; font-weight: 800; }
+
+/* the score is what everybody is looking for, so it is the loudest thing in
+   the row and sits in its own slab */
+.c-score {
+  color: var(--accent); font-size: 16px; font-weight: 900;
+  padding: 4px 8px; border-radius: 7px;
+  background: rgba(var(--accent-rgb),.10);
+  border: 1px solid rgba(var(--accent-rgb),.20);
+}
+.head .c-score { background: none; border-color: transparent; padding: 0;
+  font-size: 11px; font-weight: 800; }
 
 .empty {
   flex: 1; display: grid; place-items: center;

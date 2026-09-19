@@ -2500,7 +2500,7 @@ local function wbLayout()
             pitch    = tonumber(spot.pitch) or 0.0,
             width    = tonumber(spot.width) or 6.0,
             height   = tonumber(spot.height),
-            rows     = tonumber(sc.rows) or 7,
+            rows     = tonumber(sc.rows) or 10,
             opacity  = tonumber(sc.opacity) or 255,
             distance = tonumber(sc.distance) or 35.0
         }
@@ -2574,8 +2574,8 @@ local function duiPush()
 
     local sc  = (Config.WorldBoard or {}).screens or {}
     local rows = {}
-    local max  = math.floor(tonumber(sc.rows) or 7)
-    for i = 1, math.min(#WB.rows, max + 3) do rows[i] = WB.rows[i] end
+    local max  = math.floor(tonumber(sc.rows) or 10)
+    for i = 1, math.min(#WB.rows, max) do rows[i] = WB.rows[i] end
 
     local key = tostring(#rows) .. '|' .. tostring(WB.season)
     for i = 1, #rows do
@@ -2598,7 +2598,6 @@ local function duiPush()
         title  = sc.podiumTitle,
         subtitle = sc.subtitle,
         emptyText = sc.emptyText,
-        fewText   = sc.fewText,
         theme  = { accent = col.accent, gold = col.gold, text = col.text,
                    dim = col.dim, bg = col.bgDeep or col.bg, panel = col.panel },
         brand  = { name = brand.name, accent = brand.accent }
@@ -2967,7 +2966,7 @@ local function wbEditSnapshot()
             title = s.title or '', enabled = s.enabled ~= false,
             h = tonumber(s.h) or 0.0, pitch = tonumber(s.pitch) or 0.0,
             width = tonumber(s.width) or 6.0,
-            rows = tonumber(s.rows) or 7, opacity = tonumber(s.opacity) or 255,
+            rows = tonumber(s.rows) or 10, opacity = tonumber(s.opacity) or 255,
             distance = tonumber(s.distance) or 35.0
         }
     end

@@ -50,7 +50,7 @@ const ROWS = [];
 for (let i = 1; i <= 12; i++) ROWS.push(player(i));
 
 const PAYLOAD = {
-  action: 'board', rows: ROWS, max: 7, season: 'SEASON 3 STANDINGS',
+  action: 'board', rows: ROWS, max: 10, season: 'SEASON 3 STANDINGS',
   title: 'LEADERBOARD TOP 3', subtitle: 'LEADERBOARD OVERVIEW',
   theme: { accent: '#25D0A0', gold: '#FFC93C' },
   brand: { name: 'M5', accent: 'RANKED' }
@@ -58,7 +58,15 @@ const PAYLOAD = {
 
 /** Everything that is inside the board, and by how much it is not. */
 const spill = (page) => page.evaluate((size) => {
-  const b = document.getElementById('board').getBoundingClientRect();
+  const board = document.getElementById('board');
+  const r0 = board.getBoundingClientRect();
+  const cs = getComputedStyle(board);
+  const pad = (s) => parseFloat(cs[s]) || 0;
+  // the board's own padding is the margin of the printed page: a panel that
+  // grows into it is already off the edge of what anyone can read
+  const b = { left: r0.left + pad('paddingLeft'), top: r0.top + pad('paddingTop'),
+              right: r0.right - pad('paddingRight'),
+              bottom: r0.bottom - pad('paddingBottom') };
   const out = [];
   document.querySelectorAll('.pod, .col, .base, .row, .grid, .brand, .stand, .table, .podium')
     .forEach((n) => {
@@ -72,7 +80,7 @@ const spill = (page) => page.evaluate((size) => {
         }));
       }
     });
-  return { out, w: Math.round(b.width), h: Math.round(b.height), page: size };
+  return { out, w: Math.round(r0.width), h: Math.round(r0.height), page: size };
 }, { w: W, h: H });
 
 (async () => {
@@ -103,9 +111,18 @@ const spill = (page) => page.evaluate((size) => {
   check('the empty line goes once there is something to show',
         await page.locator('#bd-empty').evaluate((n) => n.classList.contains('hidden')), true);
   check('  it lists as many as it was told to, not all twelve',
-        await page.locator('#bd-rows .row').count(), 7);
+        await page.locator('#bd-rows .row').count(), 10);
   check('  the header names ten columns',
         await page.locator('.grid.head > span').count(), 10);
+  // a heading wider than its column silently runs into its neighbour, which is
+  // the one layout fault a screenshot hides and a board shows
+  check('  and no heading runs into the next one',
+        await page.locator('.grid.head > span').evaluateAll(
+          (ns) => ns.filter((n) => n.scrollWidth > n.clientWidth + 1)
+                    .map((n) => n.textContent.trim())), []);
+  check('  nor does any number in a row',
+        await page.locator('#bd-rows .row .c-num, #bd-rows .row .c-lvl').evaluateAll(
+          (ns) => ns.filter((n) => n.scrollWidth > n.clientWidth + 1).length), 0);
   check('  and a row fills every one of them',
         await page.locator('#bd-rows .row').first().locator('> span').count(), 10);
 
@@ -114,20 +131,20 @@ const spill = (page) => page.evaluate((size) => {
   check('  and the brand is the one from the config',
         await page.locator('#bd-name').textContent(), 'M5');
 
-  // the top three are standing on the podium already, so the table carries on
-  // from fourth rather than printing the same three names twice
+  // the table is the whole ladder from first down, in order
   const places = await page.locator('#bd-rows .row .c-top').evaluateAll(
     (ns) => ns.map((n) => n.textContent.trim()));
-  check('the table starts where the podium stopped',
-        places, ['#4', '#5', '#6', '#7', '#8', '#9', '#10']);
-  check('  so nobody on the podium is listed again',
+  check('the table runs from first place down',
+        places, ['#1', '#2', '#3', '#4', '#5', '#6', '#7', '#8', '#9', '#10']);
+  check('  and the medals go to the first three of them',
         await page.locator('#bd-rows .row').evaluateAll(
-          (ns) => ns.filter((n) => /PLAYER [123]\b/.test(n.innerText)).length), 0);
+          (ns) => ns.map((n) => n.className.replace('grid row', '').trim())
+                    .filter((c) => c)), ['top1', 'top2', 'top3']);
 
   const first = await page.locator('#bd-rows .row').first().innerText();
-  check('  fourth place leads it',   /PLAYER 4/.test(first), true);
+  check('  the leader heads it',   /PLAYER 1\b/.test(first), true);
   check('  and their score is grouped, not a wall of digits',
-        /8,452/.test(first), true);
+        /8,863/.test(first), true);
 
   // ======================================================================
   // 3. the podium: the winner in the middle, and taller

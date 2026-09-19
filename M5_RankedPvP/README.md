@@ -677,9 +677,8 @@ DUI and stretched over a flat panel out in the world, so it looks exactly like
 the menu does: the top three on a podium on the left, the season standings as a
 ten-column table on the right, ranks, avatars, K/D and score.
 
-The two halves do not repeat each other: the top three are standing on the
-podium on the left, so the table on the right **carries on from fourth place**.
-With `rows = 7` and `Config.WorldBoard.top = 10` that is #4 down to #10.
+The table is the whole ladder from first place down, medal tints and all; the
+podium on the left is the same top three again, shown large.
 
 Alongside it, three peds stand as the top three, wearing those players' real
 appearance.
@@ -725,9 +724,9 @@ Each entry under `screens.spots` is one panel:
 | `enabled` | switch one panel off without deleting it |
 
 `screens.distance` is how far off it is visible, `screens.rows` how many rows
-the table shows **below the top three**, `screens.emptyText` / `fewText` what
-stands in for the table when there is nobody to list, `screens.opacity` how
-solid it is, and
+the table shows (from first place down, capped by `Config.WorldBoard.top` on
+the server), `screens.emptyText` what stands in for the table when there is
+nobody to list, `screens.opacity` how solid it is, and
 `screens.textureWidth` / `textureHeight` the size it is rendered at — 1280×720
 is right for a panel of four to six metres, and the two must stay 16:9.
 

@@ -60,6 +60,9 @@ function drawPodium(rows) {
           <path d="M3 7l4.5 3.2L12 4l4.5 6.2L21 7l-1.6 11H4.6L3 7z"/></svg>` : ''}
         ${avatar(r, 'pod-av')}
         <div class="pod-name">${esc(r.name)}</div>
+        <div class="pod-rank" style="color:${esc(tint(r.color))}">
+          <svg><use href="#crest"/></svg><span>${esc(String(r.rank || '').toUpperCase())}</span>
+        </div>
         <div class="pod-score${score.length > 5 ? ' long' : ''}">${score}</div>
         <div class="pod-unit">POINTS</div>
         <div class="pod-stats">
@@ -179,13 +182,11 @@ function render(d) {
   if (key === lastKey) return;
   lastKey = key;
 
-  /* The first three are the podium on the left, so the table on the right
-     carries on from where the podium stopped — fourth place down — instead of
-     repeating the same three names twice on one board. */
+  /* The table is the whole ladder from first down, medals and all. The podium
+     on the left is the same three names again, shown large. */
   drawPodium(rows);
-  drawRows(rows.slice(3, 3 + Math.max(1, d.max || 7)),
-           rows.length ? (d.fewText || 'ONLY THE TOP THREE SO FAR')
-                       : (d.emptyText || 'NO RANKED PLAYERS YET'));
+  drawRows(rows.slice(0, Math.max(1, d.max || 10)),
+           d.emptyText || 'NO RANKED PLAYERS YET');
 }
 
 window.addEventListener('message', (e) => {

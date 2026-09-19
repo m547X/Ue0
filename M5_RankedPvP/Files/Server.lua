@@ -7682,7 +7682,7 @@ function WorldBoard.sanitiseLayout(raw)
                 pitch   = clampNum(s.pitch, -60.0, 60.0, 0.0),
                 width   = clampNum(s.width, 0.5, 40.0, 4.0),
                 height  = s.height ~= nil and clampNum(s.height, 0.3, 24.0, 2.25) or nil,
-                rows    = math.floor(clampNum(s.rows, 1, 25, 7)),
+                rows    = math.floor(clampNum(s.rows, 1, 25, 10)),
                 opacity = math.floor(clampNum(s.opacity, 20, 255, 255)),
                 distance = clampNum(s.distance, 3.0, 200.0, 35.0)
             }
