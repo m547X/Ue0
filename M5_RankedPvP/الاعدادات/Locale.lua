@@ -418,6 +418,7 @@ Locale.ar = {
     ['Training']                  = 'التدريب',
     ['Admin']                     = 'الإدارة',
     ['ADMIN CONTROL']             = 'لوحة الإدارة',
+    ['BOARD EDITOR']              = 'محرّر اللوحة',
     ['MATCH HISTORY']             = 'سجل المباريات',
     ['YOUR STATISTICS']           = 'إحصائياتك',
     ['PAGE']                      = 'صفحة',

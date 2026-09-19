@@ -431,7 +431,7 @@ const PAGE_TITLES = {
   ranked: 'MATCHMAKING', leaderboard: 'LEADERBOARD', custom: 'CUSTOM MATCH',
   profile: 'PROFILE', history: 'MATCH HISTORY', rewards: 'REWARDS',
   training: 'TRAINING', store: 'STORE', settings: 'SETTINGS',
-  admin: 'ADMIN CONTROL'
+  admin: 'ADMIN CONTROL', board: 'BOARD EDITOR'
 };
 
 function showPage(page) {
