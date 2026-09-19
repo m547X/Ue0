@@ -486,6 +486,34 @@ function playerForMode(mode) {
   return e ? Object.assign({}, p, e) : p;
 }
 
+/* The portrait on the identity card. It is either the picture the server
+   resolved for this player — their Discord one, or a custom one an admin
+   granted and they equipped — or the initial that was always there. The image
+   is kept as a node rather than rewritten, so a redraw does not make the
+   browser fetch it again. */
+function renderIdentityAvatar() {
+  const host = $('id-avatar');
+  if (!host) return;
+  const src = imgUrl((S.boot && S.boot.player && S.boot.player.avatar) || '');
+  let img = host.querySelector('img');
+
+  if (!src) {
+    if (img) img.remove();
+    host.classList.remove('has-img');
+    return;
+  }
+  if (!img) {
+    img = document.createElement('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    // a picture that will not load falls back to the initial underneath
+    img.onerror = () => { img.remove(); host.classList.remove('has-img'); };
+    host.insertBefore(img, host.firstChild);
+  }
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  host.classList.add('has-img');
+}
+
 /** Redraws the header for whichever mode is selected now. */
 function renderIdentityRank() {
   const p = playerForMode();
@@ -501,6 +529,7 @@ function renderBoot(data) {
   $('id-name').textContent = p.name || '—';
   $('id-initial').textContent = initial(p.name);
   $('id-levelbadge').textContent = p.level || 1;
+  renderIdentityAvatar();
   renderIdentityRank();
 
   // the title bought in the store sits under the name on the identity card
@@ -546,6 +575,12 @@ function applyCosmetics(p) {
   const pl = S.boot.player;
   if (typeof p.coins === 'number') pl.coins = p.coins;
   pl.cosmetics = p.cosmetics || null;
+  /* A portrait is not part of the worn set — it is the player's picture — so
+     it arrives beside the cosmetics and is applied the same way. */
+  if (p.avatar !== undefined) {
+    pl.avatar = p.avatar;
+    renderIdentityAvatar();
+  }
 
   const cos = pl.cosmetics;
   const idTitle = $('id-title');
@@ -2094,7 +2129,11 @@ function renderStore(store) {
     titles:  { list: 'titles',  kind: 'title',  grid: 'title-grid' },
     effects: { list: 'effects', kind: 'effect', grid: 'card-grid'  },
     frames:  { list: 'frames',  kind: 'frame',  grid: 'card-grid'  },
-    avatars: { list: 'avatars', kind: 'avatar', grid: 'card-grid'  }
+    avatars: { list: 'avatars', kind: 'avatar', grid: 'card-grid'  },
+    /* The picture itself, as opposed to the decoration wrapped round it. The
+       list is one entry — your Discord picture — until an admin grants you a
+       custom one, which the server adds to it for you alone. */
+    portraits: { list: 'portraits', kind: 'portrait', grid: 'card-grid' }
   };
   const tab   = TABS[S.storeTab] || TABS.cards;
   const items = d[tab.list] || [];
@@ -2140,13 +2179,17 @@ function renderStore(store) {
                   <span class="ci-blank">${esc(it.name)}</span>
                 </div>`;
       } else {
-        face = `<div class="ci-art"${it.image ? ` style="background-image:url('${esc(imgUrl(it.image))}')"` : ''}>
+        // a portrait is a picture of a face, so it is shown as one
+        const art = it.image ? ` style="background-image:url('${esc(imgUrl(it.image))}')"` : '';
+        face = `<div class="ci-art${tab.kind === 'portrait' ? ' po-art' : ''}"${art}>
              ${it.image ? '' : `<span class="ci-blank">${esc(it.name)}</span>`}
            </div>`;
       }
 
-      return `<div class="sitem ${it.rarity}${it.equipped ? ' on' : ''}">
+      return `<div class="sitem ${it.rarity}${it.equipped ? ' on' : ''}${it.custom ? ' gifted' : ''}">
         <div class="si-rar" style="color:${esc(it.rarityColor)}">${esc(it.rarityLabel)}</div>
+        ${it.custom ? `<div class="si-gift" title="${esc(tx('Given to you by the staff'))}">
+             <svg><use href="#i-gift"/></svg></div>` : ''}
         ${face}
         <div class="si-foot">
           ${tab.kind === 'title' ? '' : `<div class="si-name">${esc(it.name)}</div>`}
@@ -2386,6 +2429,20 @@ function renderAdmin(d) {
         hint: 'Coins are spent in the Store on cards and titles.' })}
       ${act('takeCoins', { button: 'TAKE', danger: true, fields:
         `<input class="inp" id="adm-coins-rem" type="number" placeholder="Coins to take"/>` })}
+      ${act('grantCustom', { button: 'GRANT', fields:
+        `<select id="adm-custom-kind">
+           <option value="card">${esc(tx('Card'))}</option>
+           <option value="portrait">${esc(tx('Portrait'))}</option>
+         </select>
+         <input class="inp" id="adm-custom-img" type="text" placeholder="https://… or img/name.png"/>
+         <input class="inp" id="adm-custom-name" type="text" placeholder="Name on the item (optional)"/>`,
+        hint: 'Only this player sees it, in their own store, already owned. https links or a file under ui/img only.' })}
+      ${act('revokeCustom', { button: 'REMOVE', danger: true, fields:
+        `<select id="adm-custom-kind-del">
+           <option value="card">${esc(tx('Card'))}</option>
+           <option value="portrait">${esc(tx('Portrait'))}</option>
+         </select>`,
+        hint: 'Takes the item back. If they are wearing it they go back to the default.' })}
       ${act('resetStats', { button: 'RESET', danger: true,
         hint: 'Wipes stats, rank and MMR for the current season only.' })}
     </div>`;
@@ -2510,6 +2567,17 @@ function admAction(btn) {
     case 'addXP':         admRun('addXP', { target, amount: parseInt(val('adm-xp'), 10) }); break;
     case 'giveCoins':     admRun('giveCoins', { target, amount: parseInt(val('adm-coins-add'), 10) }); break;
     case 'takeCoins':     admRun('takeCoins', { target, amount: parseInt(val('adm-coins-rem'), 10) }); break;
+    case 'grantCustom':
+      admRun('grantCustom', {
+        target,
+        kind:  val('adm-custom-kind'),
+        image: val('adm-custom-img'),
+        name:  val('adm-custom-name')
+      });
+      break;
+    case 'revokeCustom':
+      admRun('revokeCustom', { target, kind: val('adm-custom-kind-del') });
+      break;
     case 'resetStats':    admRun('resetStats', { target }); break;
 
     case 'ban':           admRun('ban', { target, type: val('adm-bantype'), duration: parseInt(val('adm-bandur'), 10) }); break;

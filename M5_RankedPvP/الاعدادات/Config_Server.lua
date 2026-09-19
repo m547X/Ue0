@@ -131,6 +131,8 @@ Config.AdminActions     = {
     addXP         = { permission = 'pvp.admin.xp', label = 'Grant XP', group = 'points', reason = true },
     giveCoins     = { permission = 'pvp.admin.coins', label = 'Give Coins', group = 'points', reason = true },
     takeCoins     = { permission = 'pvp.admin.coins', label = 'Take Coins', group = 'points', reason = true },
+    grantCustom   = { permission = 'pvp.admin.custom.item', label = 'Grant Custom Card / Portrait', group = 'points', reason = true },
+    revokeCustom  = { permission = 'pvp.admin.custom.item', label = 'Remove Custom Item', group = 'points', confirm = true, reason = true },
     resetStats    = { permission = 'pvp.admin.stats.reset', label = 'Reset Season Stats', group = 'points', confirm = true, reason = true },
 
     -- ---- العقوبات -------------------------------------------------------
@@ -1935,6 +1937,25 @@ Config.Store            = {
         rare      = { label = 'RARE', color = '#3FA9FF' },
         epic      = { label = 'EPIC', color = '#C158FF' },
         legendary = { label = 'LEGENDARY', color = '#F5C542' }
+    },
+
+    -- ---- الأغراض الخاصة (الي يعطيها الأدمن) -----------------------------
+    -- الأدمن يقدر يعطي لاعب معيّن بطاقة بصورة يختارها، أو صورة شخصية خاصة،
+    -- من لوحة الإدارة > النقاط. الغرض يطلع لذاك اللاعب وحده داخل متجره
+    -- كأنه يملكه، ويقدر يلبسه ويشيله وقت ما يبي. وما ينباع ولا يكلف كوينز.
+    --
+    -- الصورة تقبل رابط https أو اسم ملف تحت Files/ui/img/ (سجّله بقائمة
+    -- `files` بملف fxmanifest.lua). أي شي ثاني مرفوض.
+    custom = {
+        name   = 'CUSTOM',   -- الاسم الي يطلع تحت الغرض إذا الأدمن ما كتب اسم
+        rarity = 'legendary' -- شارة الندرة عليه
+    },
+
+    -- ---- الصور الشخصية --------------------------------------------------
+    -- 'default' = صورة الديسكورد (أو Config.Avatars.default). الصورة الخاصة
+    -- الي يعطيها الأدمن تنضاف هنا لصاحبها وحده باسم 'custom'.
+    portraits = {
+        { id = 'default', name = 'Default', rarity = 'common', price = 0, default = true }
     },
 
     -- ---- البطايق -------------------------------------------------------

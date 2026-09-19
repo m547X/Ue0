@@ -432,6 +432,7 @@ CREATE TABLE IF NOT EXISTS `m5_player_store` (
   `effect`     VARCHAR(48) NOT NULL DEFAULT 'none',
   `frame`      VARCHAR(48) NOT NULL DEFAULT 'none',
   `avatar`     VARCHAR(48) NOT NULL DEFAULT 'none',
+  `portrait`   VARCHAR(48) NOT NULL DEFAULT 'default',
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -442,6 +443,20 @@ CREATE TABLE IF NOT EXISTS `m5_player_store` (
 -- ALTER TABLE `m5_player_store` ADD COLUMN `effect` VARCHAR(48) NOT NULL DEFAULT 'none';
 -- ALTER TABLE `m5_player_store` ADD COLUMN `frame`  VARCHAR(48) NOT NULL DEFAULT 'none';
 -- ALTER TABLE `m5_player_store` ADD COLUMN `avatar` VARCHAR(48) NOT NULL DEFAULT 'none';
+-- ALTER TABLE `m5_player_store` ADD COLUMN `portrait` VARCHAR(48) NOT NULL DEFAULT 'default';
+
+-- A card picture or a portrait the staff gave to one player. It is theirs
+-- alone: it shows up in their store already owned, and they equip it like
+-- anything else.
+CREATE TABLE IF NOT EXISTS `m5_player_custom` (
+  `user_id`    INT UNSIGNED NOT NULL,
+  `kind`       VARCHAR(16) NOT NULL,
+  `name`       VARCHAR(64) NOT NULL DEFAULT '',
+  `image`      VARCHAR(512) NOT NULL,
+  `granted_by` INT UNSIGNED NULL,
+  `granted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`,`kind`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `m5_player_items` (
   `user_id`     INT UNSIGNED NOT NULL,

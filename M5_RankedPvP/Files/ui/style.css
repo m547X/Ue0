@@ -364,6 +364,16 @@ html[dir="rtl"] .sr-text{letter-spacing:normal}
 
 .ci-art{position:relative;aspect-ratio:3/4;max-height:230px;background:var(--panel-deep);
   background-size:cover;background-position:center;display:grid;place-items:center}
+/* a portrait is a face, not a card: square, so it is not cropped to a strip */
+.po-art{aspect-ratio:1/1;max-height:190px}
+/* an item the staff gave this one player, rather than one the store sells */
+.si-gift{position:absolute;top:8px;right:8px;z-index:5;width:22px;height:22px;
+  display:grid;place-items:center;border-radius:6px;background:rgba(0,0,0,.75);
+  color:var(--gold)}
+.si-gift svg{width:12px;height:12px;fill:currentColor}
+.sitem.gifted{border-color:rgba(245,197,66,.45)}
+html[dir="rtl"] .si-rar{left:auto;right:8px}
+html[dir="rtl"] .si-gift{right:auto;left:8px}
 .ci-blank{font-size:11px;letter-spacing:.16em;color:var(--dim-2);text-align:center;padding:0 12px}
 .ti-face{display:grid;place-items:center;min-height:74px;padding:22px 14px 12px;
   font-size:19px;font-weight:700;letter-spacing:.12em;text-align:center;
@@ -1266,10 +1276,12 @@ body.no-decor .ab-grain,body.no-decor .ab-vignette,body.no-decor .ab-glow{displa
   font-size:27px;font-weight:700;letter-spacing:.16em;line-height:1.1}
 .hd-name i{font-style:normal;color:var(--red);
   text-shadow:0 0 26px var(--red-glow)}
-.hd-title{font-size:11px;font-weight:600;letter-spacing:.44em;color:var(--dim);
-  white-space:nowrap}
+/* The line under the name says where you are, so it is read as often as the
+   name is and is sized to be read rather than noticed. */
+.hd-title{font-size:16px;font-weight:700;letter-spacing:.38em;color:var(--dim);
+  white-space:nowrap;transition:color .2s var(--ease)}
 /* with the name hidden the page line takes the old, larger treatment */
-.hd-name.hidden + .hd-title{font-size:26px;font-weight:700;letter-spacing:.42em;color:var(--text)}
+.hd-name.hidden + .hd-title{font-size:26px;letter-spacing:.42em;color:var(--text)}
 html[dir="rtl"] .hd-name{letter-spacing:normal}
 html[dir="rtl"] .hd-title{letter-spacing:.2em}
 
@@ -1277,6 +1289,11 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
   background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--edge);border-radius:11px}
 .id-av{position:relative;width:46px;height:46px;border-radius:11px;display:grid;place-items:center;
   font-size:19px;font-weight:700;background:linear-gradient(145deg,var(--avatar-from),var(--avatar-to));color:#fff;flex:none}
+/* the portrait, when there is one: the initial underneath is the fallback for
+   a picture that never loads, so it stays in the markup and is only hidden */
+.id-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  border-radius:inherit}
+.id-av.has-img > #id-initial{visibility:hidden}
 .id-lvl{position:absolute;left:-6px;bottom:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:50%;
   display:grid;place-items:center;font-size:10px;font-style:normal;font-weight:700;
   background:var(--level);border:2px solid var(--panel)}
@@ -2370,7 +2387,8 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
   .invite-ico{width:60px;height:60px;border-radius:17px}
   .invite-ico svg{width:28px;height:28px}
   .idcard{padding:8px 12px;min-width:360px}
-  .hd-title{font-size:22px;letter-spacing:.34em}
+  .hd-title{font-size:14px;letter-spacing:.3em}
+  .hd-name.hidden + .hd-title{font-size:22px;letter-spacing:.34em}
 }
 @media (max-width:1400px){
   .cm{grid-template-columns:255px 1fr 270px}
@@ -2379,7 +2397,8 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 }
 @media (max-width:1200px){
   .shell{width:97vw}
-  .hd-title{font-size:19px;letter-spacing:.26em}
+  .hd-title{font-size:13px;letter-spacing:.24em}
+  .hd-name.hidden + .hd-title{font-size:19px;letter-spacing:.26em}
   .idcard{min-width:300px}
   .id-xp-row{display:none}
   .tab.more{display:none}
@@ -2392,7 +2411,8 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 }
 @media (min-width:2100px){
   .shell{width:min(1760px,92vw);height:min(1000px,90vh)}
-  .hd-title{font-size:30px}
+  .hd-title{font-size:19px}
+  .hd-name.hidden + .hd-title{font-size:30px}
   .slot-av{width:88px;height:88px;font-size:34px}
   .invite-ico{width:86px;height:86px;border-radius:24px}
   .invite-ico svg{width:40px;height:40px}

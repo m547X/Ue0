@@ -638,8 +638,19 @@ local SCHEMA = {
   `effect` VARCHAR(48) NOT NULL DEFAULT 'none',
   `frame` VARCHAR(48) NOT NULL DEFAULT 'none',
   `avatar` VARCHAR(48) NOT NULL DEFAULT 'none',
+  `portrait` VARCHAR(48) NOT NULL DEFAULT 'default',
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
+
+[[CREATE TABLE IF NOT EXISTS `m5_player_custom` (
+  `user_id` INT UNSIGNED NOT NULL,
+  `kind` VARCHAR(16) NOT NULL,
+  `name` VARCHAR(64) NOT NULL DEFAULT '',
+  `image` VARCHAR(512) NOT NULL,
+  `granted_by` INT UNSIGNED NULL,
+  `granted_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`user_id`,`kind`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]],
 
 [[CREATE TABLE IF NOT EXISTS `m5_player_items` (
@@ -771,7 +782,9 @@ local function migrateRankPools()
     local pools = Config.RankPools or {}
     local legacy = pools.legacy or pools.default or '1v1'
 
-    for _, col in ipairs({ 'effect', 'frame', 'avatar' }) do
+    for _, c in ipairs({ { 'effect', 'none' }, { 'frame', 'none' },
+                         { 'avatar', 'none' }, { 'portrait', 'default' } }) do
+        local col, fallback = c[1], c[2]
         local there = tonumber(DB.scalar(
             [[SELECT COUNT(*) FROM information_schema.TABLES
               WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'm5_player_store']], { db }) or 0) or 0
@@ -781,8 +794,8 @@ local function migrateRankPools()
                 AND COLUMN_NAME = ?]], { db, col }) or 0) or 0
         if there > 0 and has == 0 then
             log('^3adding m5_player_store.%s', col)
-            DB.query(("ALTER TABLE `m5_player_store` ADD COLUMN `%s` VARCHAR(48) NOT NULL DEFAULT 'none'")
-                :format(col))
+            DB.query(("ALTER TABLE `m5_player_store` ADD COLUMN `%s` VARCHAR(48) NOT NULL DEFAULT '%s'")
+                :format(col, fallback))
         end
     end
 
@@ -3053,7 +3066,18 @@ local function fetchDiscordAvatar(userId, discordId)
         end, 'GET', '', { Authorization = 'Bot ' .. cfg.botToken })
 end
 
-local function avatarFor(userId)
+local function customPortraitFor(userId)
+    local d = Store and Store.cache and Store.cache[userId]
+    if not d or d.portrait ~= 'custom' then return nil end
+    return Store.customImage(userId, 'portrait')
+end
+
+local function avatarFor(userId, plain)
+    if not plain then
+        local granted = customPortraitFor(userId)
+        if granted then return granted end
+    end
+
     if not Config.Avatars.enabled then return nil end
 
     local cached = AvatarCache[userId]
@@ -6350,12 +6374,16 @@ end
 Store = { cache = {} }
 
 local STORE_KINDS = {
-    { kind = 'card',   list = 'cards',   column = 'card',   fallback = 'default' },
-    { kind = 'title',  list = 'titles',  column = 'title',  fallback = 'none' },
-    { kind = 'effect', list = 'effects', column = 'effect', fallback = 'none' },
-    { kind = 'frame',  list = 'frames',  column = 'frame',  fallback = 'none' },
-    { kind = 'avatar', list = 'avatars', column = 'avatar', fallback = 'none' }
+    { kind = 'card',     list = 'cards',     column = 'card',     fallback = 'default' },
+    { kind = 'title',    list = 'titles',    column = 'title',    fallback = 'none' },
+    { kind = 'effect',   list = 'effects',   column = 'effect',   fallback = 'none' },
+    { kind = 'frame',    list = 'frames',    column = 'frame',    fallback = 'none' },
+    { kind = 'avatar',   list = 'avatars',   column = 'avatar',   fallback = 'none' },
+    { kind = 'portrait', list = 'portraits', column = 'portrait', fallback = 'default' }
 }
+
+local CUSTOM_ID    = 'custom'
+local CUSTOM_KINDS = { card = true, portrait = true }
 
 local StoreById = {}
 local StoreKind = {}
@@ -6379,6 +6407,50 @@ end
 
 local function isFree(def)
     return def and (def.default == true or (tonumber(def.price) or 0) <= 0)
+end
+
+Store.customs = {}
+
+function Store.customImage(userId, kind)
+    local c = (Store.customs[userId] or {})[kind]
+    return c and c.image or nil
+end
+
+function Store.customDef(userId, kind)
+    local c = (Store.customs[userId] or {})[kind]
+    if not c then return nil end
+    local cfg = Config.Store.custom or {}
+    return {
+        id      = CUSTOM_ID,
+        name    = c.name or cfg.name or 'CUSTOM',
+        rarity  = cfg.rarity or 'legendary',
+        price   = 0,
+        image   = c.image,
+        custom  = true
+    }
+end
+
+local function defFor(userId, kind, id)
+    if id == CUSTOM_ID and CUSTOM_KINDS[kind] then
+        return Store.customDef(userId, kind)
+    end
+    return storeDef(kind, id)
+end
+
+function Store.loadCustom(userId)
+    local out = {}
+    local rows = DB.query('SELECT kind, name, image FROM m5_player_custom WHERE user_id = ?',
+        { userId }) or {}
+    for i = 1, #rows do
+        local kind  = tostring(rows[i].kind or '')
+        local image = tostring(rows[i].image or '')
+        if CUSTOM_KINDS[kind] and image ~= '' then
+            local name = tostring(rows[i].name or '')
+            out[kind] = { image = image, name = name ~= '' and name or nil }
+        end
+    end
+    Store.customs[userId] = out
+    return out
 end
 
 function Store.load(userId)
@@ -6407,10 +6479,15 @@ function Store.load(userId)
         end
     end
 
+    local customs = Store.loadCustom(userId)
+    for kind in pairs(CUSTOM_KINDS) do
+        if customs[kind] and owned[kind] then owned[kind][CUSTOM_ID] = true end
+    end
+
     local data = { coins = math.max(0, tonumber(row.coins) or 0), owned = owned }
     for _, k in ipairs(STORE_KINDS) do
         local want = row[k.column]
-        data[k.kind] = storeDef(k.kind, want) and want or k.fallback
+        data[k.kind] = defFor(userId, k.kind, want) and want or k.fallback
     end
     Store.cache[userId] = data
     return data
@@ -6418,6 +6495,7 @@ end
 
 function Store.forget(userId)
     Store.cache[userId] = nil
+    Store.customs[userId] = nil
 end
 
 function Store.payload(userId)
@@ -6425,16 +6503,29 @@ function Store.payload(userId)
 
     local function pack(kind)
         local out = {}
-        for _, def in ipairs(storeList(kind)) do
+        local defs = {}
+        for _, def in ipairs(storeList(kind)) do defs[#defs + 1] = def end
+
+        local mine = Store.customDef(userId, kind)
+        if mine then defs[#defs + 1] = mine end
+
+        for _, def in ipairs(defs) do
             local rarity = Config.Store.rarities[def.rarity or 'common']
                         or Config.Store.rarities.common
+
+            local image = def.image or ''
+            if kind == 'portrait' and image == '' and not def.custom then
+                image = avatarFor(userId, true) or ''
+            end
+
             out[#out + 1] = {
+                custom = def.custom or nil,
                 id = def.id, name = def.name,
                 rarity = def.rarity or 'common',
                 rarityLabel = rarity and rarity.label or 'COMMON',
                 rarityColor = rarity and rarity.color or '#8B93A3',
                 price = tonumber(def.price) or 0,
-                image = def.image or '',
+                image = image,
                 color = def.color,
                 color2 = def.color2,
                 anim = def.anim, speed = def.speed,
@@ -6489,7 +6580,7 @@ function Store.buy(userId, kind, id)
     if not Config.Store.enabled then return false, 'The store is closed.' end
     if not StoreKind[kind] then return false, 'Unknown item.' end
 
-    local def = storeDef(kind, id)
+    local def = defFor(userId, kind, id)
     if not def then return false, 'Unknown item.' end
 
     local d = Store.load(userId)
@@ -6513,7 +6604,7 @@ end
 function Store.equip(userId, kind, id)
     if not StoreKind[kind] then return false, 'Unknown item.' end
 
-    local def = storeDef(kind, id)
+    local def = defFor(userId, kind, id)
     if not def then return false, 'Unknown item.' end
 
     local d = Store.load(userId)
@@ -6526,11 +6617,81 @@ function Store.equip(userId, kind, id)
     return true, { kind = kind, id = id }
 end
 
+function Store.imageAllowed(url)
+    local s = tostring(url or ''):gsub('^%s+', ''):gsub('%s+$', '')
+    if s == '' then return nil, 'Enter an image URL.' end
+    if #s > 512 then return nil, 'That image address is too long.' end
+    if s:find('%s') then return nil, 'An image address cannot contain spaces.' end
+
+    local scheme = s:match('^(%a[%w+.-]*):')
+    if scheme then
+        scheme = scheme:lower()
+        if scheme ~= 'http' and scheme ~= 'https' then
+            return nil, 'Only http and https images are accepted.'
+        end
+        return s
+    end
+
+    if s:find('%.%.') or s:sub(1, 1) == '/' then
+        return nil, 'Use a file name under the ui/img folder, or a full https link.'
+    end
+    return s
+end
+
+function Store.grantCustom(userId, kind, image, name)
+    if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
+
+    local url, why = Store.imageAllowed(image)
+    if not url then return false, why end
+
+    local label = tostring(name or ''):gsub('^%s+', ''):gsub('%s+$', ''):sub(1, 64)
+
+    DB.write([[INSERT INTO m5_player_custom (user_id, kind, name, image)
+               VALUES (?,?,?,?)
+               ON DUPLICATE KEY UPDATE name = VALUES(name), image = VALUES(image),
+                                       granted_at = CURRENT_TIMESTAMP]],
+        { userId, kind, label, url })
+
+    local customs = Store.customs[userId] or {}
+    customs[kind] = { image = url, name = label ~= '' and label or nil }
+    Store.customs[userId] = customs
+
+    local d = Store.cache[userId]
+    if d then
+        d.owned[kind] = d.owned[kind] or {}
+        d.owned[kind][CUSTOM_ID] = true
+    end
+
+    return true, { kind = kind, image = url, name = label }
+end
+
+function Store.revokeCustom(userId, kind)
+    if not CUSTOM_KINDS[kind] then return false, 'Unknown item.' end
+
+    local customs = Store.customs[userId] or {}
+    if not customs[kind] then return false, 'That player has no custom item of that kind.' end
+
+    DB.write('DELETE FROM m5_player_custom WHERE user_id = ? AND kind = ?', { userId, kind })
+    customs[kind] = nil
+    Store.customs[userId] = customs
+
+    local d = Store.cache[userId]
+    if d then
+        if d.owned[kind] then d.owned[kind][CUSTOM_ID] = nil end
+        if d[kind] == CUSTOM_ID then
+            d[kind] = StoreKind[kind] and StoreKind[kind].fallback or 'default'
+            storeSave(userId)
+        end
+    end
+
+    return true, { kind = kind }
+end
+
 function Store.cosmetics(userId)
     local d = Store.cache[userId]
     if not d then return nil end
 
-    local card   = storeDef('card',   d.card)
+    local card   = defFor(userId, 'card', d.card)
     local title  = storeDef('title',  d.title)
     local effect = storeDef('effect', d.effect)
     local frame  = storeDef('frame',  d.frame)
@@ -7766,7 +7927,8 @@ function Player.pushCosmetics(userId)
     TriggerClientEvent('m5rp:cl:data', s, {
         what      = 'cosmetics',
         coins     = Store.load(userId).coins,
-        cosmetics = Store.cosmetics(userId)
+        cosmetics = Store.cosmetics(userId),
+        avatar    = avatarFor(userId)
     })
     return true
 end
@@ -8095,6 +8257,48 @@ function Admin.handle(adminPd, action, data)
         end
         Player.pushCosmetics(id)
         return true, { coins = after, delta = delta }
+
+    elseif action == 'grantCustom' or action == 'revokeCustom' then
+        local id, who = target()
+        if not id then return false, 'No player with that ID.' end
+
+        local kind = tostring(data.kind or '')
+        if kind ~= 'card' and kind ~= 'portrait' then
+            return false, 'Pick a card or a portrait.'
+        end
+
+        Store.load(id)
+
+        local ok, res
+        if action == 'grantCustom' then
+            ok, res = Store.grantCustom(id, kind, data.image, data.name)
+        else
+            ok, res = Store.revokeCustom(id, kind)
+        end
+        if not ok then return false, res end
+
+        Admin.audit(adminPd, action, who,
+            { reason = reason, details = { kind = kind, image = res.image, name = res.name } })
+
+        if action == 'grantCustom' then
+            notifyUser(id, 'success',
+                kind == 'card' and 'A custom card was added to your store — %s'
+                                or 'A custom portrait was added to your store — %s',
+                'STORE', reason)
+        else
+            notifyUser(id, 'warning',
+                kind == 'card' and 'Your custom card was removed — %s'
+                                or 'Your custom portrait was removed — %s',
+                'STORE', reason)
+        end
+
+        local s2 = srcOf(id)
+        if s2 then
+            TriggerClientEvent('m5rp:cl:data', s2, { what = 'store', store = Store.payload(id) })
+        end
+        Player.pushCosmetics(id)
+        log('store: %s %s for user %d by %s', action, kind, id, adminPd.name)
+        return true, res
 
     elseif action == 'addXP' then
         local id, who = target()
@@ -8437,7 +8641,8 @@ function Server_BootPayload(pd)
             settings  = pd.settings,
             position  = Board.myPosition(pd.userId),
             coins     = Store.load(pd.userId).coins,
-            cosmetics = Store.cosmetics(pd.userId)
+            cosmetics = Store.cosmetics(pd.userId),
+            avatar    = avatarFor(pd.userId)
         },
         stats   = Board.profile(pd.userId, showMMR),
 
