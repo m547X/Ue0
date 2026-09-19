@@ -40,6 +40,12 @@ BeginTextCommandDisplayText, AddTextComponentSubstringPlayerName = counted, coun
 local VISIBLE = true
 function World3dToScreen2d() return VISIBLE end
 
+-- where the eye is, so the client can drop the face pointing away from it
+CAM = { x = 0.0, y = -10.0, z = 30.0 }
+local CAM_CALLS = 0
+function GetGameplayCamCoord() CAM_CALLS = CAM_CALLS + 1; return CAM end
+function camCalls() local n = CAM_CALLS; CAM_CALLS = 0; return n end
+
 -- GTA's text alignment flags survive the draw that set them, so a right
 -- justified column leaks into the next left one unless every draw states its
 -- own alignment. That is invisible in code review and obvious on screen, so
@@ -175,6 +181,14 @@ check('further out than that it goes back to sleep',   sleep, 2000)
 sleep = tick(5)
 check('standing in front of it runs at frame rate', sleep, 0)
 check('  and that is when it draws',                DRAWS > 0, true)
+
+-- what a player standing in front of it pays, every frame, for as long as
+-- they stand there: two triangles and one question about where the eye is
+camCalls()
+DRAWS = 0
+tick(5)
+check('  which costs two triangles, not four',  DRAWS, 2)
+check('  and asks for the camera once a frame', camCalls(), 1)
 
 -- facing away is as good as being far away: the distance check alone would
 -- have kept drawing a board behind the player's head

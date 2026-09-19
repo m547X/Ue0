@@ -677,6 +677,10 @@ DUI and stretched over a flat panel out in the world, so it looks exactly like
 the menu does: the top three on a podium on the left, the season standings as a
 ten-column table on the right, ranks, avatars, K/D and score.
 
+The two halves do not repeat each other: the top three are standing on the
+podium on the left, so the table on the right **carries on from fourth place**.
+With `rows = 7` and `Config.WorldBoard.top = 10` that is #4 down to #10.
+
 Alongside it, three peds stand as the top three, wearing those players' real
 appearance.
 
@@ -695,9 +699,16 @@ at — it only costs something when it *changes*. So:
   network call, and it compares each payload against the last one and drops it
   if the rows are identical. A repaint is paid for by every machine that can
   see the board, so it does not happen for nothing.
-* **Two triangles.** The panel is four `DrawSpritePoly` calls — two for the
-  front and two for the back, so it reads from either side. No prop is spawned
-  and no game texture is replaced.
+* **Two triangles.** The panel is a quad drawn with `DrawSpritePoly`. You can
+  only stand on one side of a flat panel, so the side facing away from your
+  camera is not drawn at all: standing in front of a board costs **two**
+  triangles per frame, not four. It still reads from behind — walk round it and
+  you get the other two instead. No prop is spawned and no game texture is
+  replaced.
+* **The corner maths runs once.** Turning a heading and a tilt into four world
+  corners is eight sines and cosines, and none of it changes while the board
+  hangs there, so the result is kept and only worked out again when the board
+  actually moves.
 
 ### Where it goes — `Config.WorldBoard` (Config_Client.lua)
 
@@ -714,7 +725,9 @@ Each entry under `screens.spots` is one panel:
 | `enabled` | switch one panel off without deleting it |
 
 `screens.distance` is how far off it is visible, `screens.rows` how many rows
-the table shows, `screens.opacity` how solid it is, and
+the table shows **below the top three**, `screens.emptyText` / `fewText` what
+stands in for the table when there is nobody to list, `screens.opacity` how
+solid it is, and
 `screens.textureWidth` / `textureHeight` the size it is rendered at — 1280×720
 is right for a panel of four to six metres, and the two must stay 16:9.
 

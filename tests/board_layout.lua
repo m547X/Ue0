@@ -85,7 +85,7 @@ check('a heading past a full turn wraps', out.podium[1].h, 5)
 -- a value that is not a number at all falls back rather than propagating nil
 out = sanitise(layout({ screens = { screen({ width = 'wide', rows = {} }) } }))
 check('text where a number belongs falls back', out.screens[1].width, 4.0)
-check('  and so does a table',                  out.screens[1].rows, 9)
+check('  and so does a table',                  out.screens[1].rows, 7)
 
 -- ==========================================================================
 -- 3. positions have to be real places

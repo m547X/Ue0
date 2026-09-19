@@ -45,6 +45,11 @@ ENV.SendDuiMessage = function() end
 ENV.SetDuiUrl = function() end
 ENV.DestroyDui = function() end
 
+-- the corner maths is the only trigonometry in the hot path, so it is counted
+local TRIG = 0
+ENV.math = setmetatable({ rad = function(d) TRIG = TRIG + 1; return math.rad(d) end },
+                        { __index = math })
+
 ENV.DrawSpritePoly = function(x1,y1,z1, x2,y2,z2, x3,y3,z3, r,g,b,a, txd, tex,
                               u1,v1,w1, u2,v2,w2, u3,v3,w3)
   POLY[#POLY + 1] = {
@@ -158,6 +163,46 @@ end
 check('the back face is the same quad, wound the other way', sharedBack, 3)
 check('  and it is not the same winding as the front',
       POLY[1].p[1][1] ~= POLY[3].p[1][1] or POLY[1].p[1][3] ~= POLY[3].p[1][3], true)
+
+-- ==========================================================================
+-- 2b. what the player in front of it actually pays
+-- ==========================================================================
+-- A flat panel has two sides and you can only be on one of them, so drawing
+-- both is half the work thrown away, every frame, for everyone standing there.
+-- At heading 0 the board reads from the south, so an eye to the south gets the
+-- front pair and an eye to the north gets the back pair — never four.
+POLY = {}
+M.draw(spot, 5.0, 100.0, 190.0, 30.0)
+check('standing in front of it draws one side only', #POLY, 2)
+check('  and it is the readable one',
+      cornerOf(POLY[1], 0.0, 0.0) ~= nil, true)
+
+POLY = {}
+M.draw(spot, 5.0, 100.0, 210.0, 30.0)
+check('standing behind it draws the other side', #POLY, 2)
+check('  which is the same quad wound the other way',
+      POLY[1].p[1][1] == 100.0 + 4.0 or POLY[1].p[1][1] == 100.0 - 4.0, true)
+
+POLY = {}
+M.draw(spot, 5.0)
+check('with no eye given, both sides are drawn', #POLY, 4)
+
+-- the corners are eight sines and cosines; they do not change while the board
+-- hangs there, so they are worked out once and kept
+local moving = { pos = { x = 5.0, y = 6.0, z = 7.0 }, h = 41.0, pitch = 3.0,
+                 width = 5.0, opacity = 255 }
+TRIG = 0
+M.corners(moving)
+check('the corner maths runs the first time', TRIG > 0, true)
+local firstRun = TRIG
+for _ = 1, 50 do M.corners(moving) end
+check('  and not again while nothing has moved', TRIG, firstRun)
+
+local before = { M.corners(moving) }
+moving.h = 42.0
+local after = { M.corners(moving) }
+check('  but moving it works them out afresh', TRIG > firstRun, true)
+check('  and the board really did turn', before[1] ~= after[1], true)
 
 -- ==========================================================================
 -- 3. the texture is given back

@@ -50,7 +50,7 @@ const ROWS = [];
 for (let i = 1; i <= 12; i++) ROWS.push(player(i));
 
 const PAYLOAD = {
-  action: 'board', rows: ROWS, max: 9, season: 'SEASON 3 STANDINGS',
+  action: 'board', rows: ROWS, max: 7, season: 'SEASON 3 STANDINGS',
   title: 'LEADERBOARD TOP 3', subtitle: 'LEADERBOARD OVERVIEW',
   theme: { accent: '#25D0A0', gold: '#FFC93C' },
   brand: { name: 'M5', accent: 'RANKED' }
@@ -103,7 +103,7 @@ const spill = (page) => page.evaluate((size) => {
   check('the empty line goes once there is something to show',
         await page.locator('#bd-empty').evaluate((n) => n.classList.contains('hidden')), true);
   check('  it lists as many as it was told to, not all twelve',
-        await page.locator('#bd-rows .row').count(), 9);
+        await page.locator('#bd-rows .row').count(), 7);
   check('  the header names ten columns',
         await page.locator('.grid.head > span').count(), 10);
   check('  and a row fills every one of them',
@@ -114,11 +114,20 @@ const spill = (page) => page.evaluate((size) => {
   check('  and the brand is the one from the config',
         await page.locator('#bd-name').textContent(), 'M5');
 
+  // the top three are standing on the podium already, so the table carries on
+  // from fourth rather than printing the same three names twice
+  const places = await page.locator('#bd-rows .row .c-top').evaluateAll(
+    (ns) => ns.map((n) => n.textContent.trim()));
+  check('the table starts where the podium stopped',
+        places, ['#4', '#5', '#6', '#7', '#8', '#9', '#10']);
+  check('  so nobody on the podium is listed again',
+        await page.locator('#bd-rows .row').evaluateAll(
+          (ns) => ns.filter((n) => /PLAYER [123]\b/.test(n.innerText)).length), 0);
+
   const first = await page.locator('#bd-rows .row').first().innerText();
-  check('the leader is at the top with a place on them',
-        /#1/.test(first) && /PLAYER 1/.test(first), true);
+  check('  fourth place leads it',   /PLAYER 4/.test(first), true);
   check('  and their score is grouped, not a wall of digits',
-        /8,863/.test(first), true);
+        /8,452/.test(first), true);
 
   // ======================================================================
   // 3. the podium: the winner in the middle, and taller

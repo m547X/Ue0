@@ -99,19 +99,23 @@ function fitNames(host) {
 }
 
 /* ------------------------------------------------------------------- table */
-function drawRows(rows) {
+function drawRows(rows, note) {
   const host = $('bd-rows');
   const empty = $('bd-empty');
 
   if (!rows.length) {
     host.innerHTML = '';
+    empty.textContent = note;
     empty.classList.remove('hidden');
     return;
   }
   empty.classList.add('hidden');
 
   host.innerHTML = rows.map((r, i) => {
-    const top = i < 3 ? ` top${i + 1}` : '';
+    /* The medal tints belong to the actual top three, who are on the podium —
+       not to whoever happens to be first in this table. */
+    const place = Number(r.position);
+    const top = place >= 1 && place <= 3 ? ` top${place}` : '';
     const col = tint(r.color);
     return `<div class="grid row${top}">
       <span class="c-top">#${esc(r.position || i + 1)}</span>
@@ -175,8 +179,13 @@ function render(d) {
   if (key === lastKey) return;
   lastKey = key;
 
+  /* The first three are the podium on the left, so the table on the right
+     carries on from where the podium stopped — fourth place down — instead of
+     repeating the same three names twice on one board. */
   drawPodium(rows);
-  drawRows(rows.slice(0, Math.max(1, d.max || 9)));
+  drawRows(rows.slice(3, 3 + Math.max(1, d.max || 7)),
+           rows.length ? (d.fewText || 'ONLY THE TOP THREE SO FAR')
+                       : (d.emptyText || 'NO RANKED PLAYERS YET'));
 }
 
 window.addEventListener('message', (e) => {

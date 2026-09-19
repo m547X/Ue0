@@ -2500,7 +2500,7 @@ local function wbLayout()
             pitch    = tonumber(spot.pitch) or 0.0,
             width    = tonumber(spot.width) or 6.0,
             height   = tonumber(spot.height),
-            rows     = tonumber(sc.rows) or 9,
+            rows     = tonumber(sc.rows) or 7,
             opacity  = tonumber(sc.opacity) or 255,
             distance = tonumber(sc.distance) or 35.0
         }
@@ -2574,8 +2574,8 @@ local function duiPush()
 
     local sc  = (Config.WorldBoard or {}).screens or {}
     local rows = {}
-    local max  = math.floor(tonumber(sc.rows) or 9)
-    for i = 1, math.min(#WB.rows, max) do rows[i] = WB.rows[i] end
+    local max  = math.floor(tonumber(sc.rows) or 7)
+    for i = 1, math.min(#WB.rows, max + 3) do rows[i] = WB.rows[i] end
 
     local key = tostring(#rows) .. '|' .. tostring(WB.season)
     for i = 1, #rows do
@@ -2597,6 +2597,8 @@ local function duiPush()
         season = WB.season,
         title  = sc.podiumTitle,
         subtitle = sc.subtitle,
+        emptyText = sc.emptyText,
+        fewText   = sc.fewText,
         theme  = { accent = col.accent, gold = col.gold, text = col.text,
                    dim = col.dim, bg = col.bgDeep or col.bg, panel = col.panel },
         brand  = { name = brand.name, accent = brand.accent }
@@ -2642,46 +2644,74 @@ local function screenSize(spot)
 end
 
 local function screenCorners(spot)
-    local p    = vec3(spot.pos)
-    local yaw  = math.rad(tonumber(spot.h) or 0.0)
-    local tilt = math.rad(tonumber(spot.pitch) or 0.0)
+    local p  = spot.pos
+    local px, py, pz = p.x + 0.0, p.y + 0.0, p.z + 0.0
+    local yd = tonumber(spot.h) or 0.0
+    local td = tonumber(spot.pitch) or 0.0
     local w, h = screenSize(spot)
 
-    local rx, ry = math.cos(yaw), math.sin(yaw)
-    local ux, uy, uz = -math.sin(yaw) * math.sin(tilt),
-                        math.cos(yaw) * math.sin(tilt),
-                        math.cos(tilt)
+    local c = spot.__quad
+    if c and c.px == px and c.py == py and c.pz == pz
+         and c.yd == yd and c.td == td and c.w == w and c.h == h then
+        return c[1], c[2], c[3], c[4],  c[5],  c[6],
+               c[7], c[8], c[9], c[10], c[11], c[12]
+    end
+
+    local yaw, tilt = math.rad(yd), math.rad(td)
+    local sy, cy = math.sin(yaw), math.cos(yaw)
+    local st, ct = math.sin(tilt), math.cos(tilt)
+
+    local rx, ry = cy, sy
+    local ux, uy, uz = -sy * st, cy * st, ct
 
     local hw, hh = w * 0.5, h * 0.5
-    local ax, ay, az = rx * hw, ry * hw, 0.0
+    local ax, ay = rx * hw, ry * hw
     local bx, by, bz = ux * hh, uy * hh, uz * hh
 
-    return
-        p.x - ax + bx, p.y - ay + by, p.z - az + bz,
-        p.x + ax + bx, p.y + ay + by, p.z + az + bz,
-        p.x + ax - bx, p.y + ay - by, p.z + az - bz,
-        p.x - ax - bx, p.y - ay - by, p.z - az - bz
+    c = {
+        px - ax + bx, py - ay + by, pz + bz,
+        px + ax + bx, py + ay + by, pz + bz,
+        px + ax - bx, py + ay - by, pz - bz,
+        px - ax - bx, py - ay - by, pz - bz,
+        px = px, py = py, pz = pz, yd = yd, td = td, w = w, h = h,
+        nx = ry * uz, ny = -rx * uz, nz = rx * uy - ry * ux
+    }
+    spot.__quad = c
+
+    return c[1], c[2], c[3], c[4],  c[5],  c[6],
+           c[7], c[8], c[9], c[10], c[11], c[12]
 end
 
-local function drawScreen(spot, dist)
+local function drawScreen(spot, dist, ex, ey, ez)
     if not DUI.ready then return end
 
     local a = math.floor(tonumber(spot.opacity) or 255)
     local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(spot)
 
-    DrawSpritePoly(tlx, tly, tlz, trx, try, trz, brx, bry, brz,
-                   255, 255, 255, a, DUI.txd, DUI.tex,
-                   0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0)
-    DrawSpritePoly(tlx, tly, tlz, brx, bry, brz, blx, bly, blz,
-                   255, 255, 255, a, DUI.txd, DUI.tex,
-                   0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
+    local side = 0
+    if ex then
+        local c = spot.__quad
+        local d = (ex - c.px) * c.nx + (ey - c.py) * c.ny + (ez - c.pz) * c.nz
+        side = d >= 0.0 and 1 or -1
+    end
 
-    DrawSpritePoly(brx, bry, brz, trx, try, trz, tlx, tly, tlz,
-                   255, 255, 255, a, DUI.txd, DUI.tex,
-                   1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    DrawSpritePoly(blx, bly, blz, brx, bry, brz, tlx, tly, tlz,
-                   255, 255, 255, a, DUI.txd, DUI.tex,
-                   0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+    if side >= 0 then
+        DrawSpritePoly(tlx, tly, tlz, trx, try, trz, brx, bry, brz,
+                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0)
+        DrawSpritePoly(tlx, tly, tlz, brx, bry, brz, blx, bly, blz,
+                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
+    end
+
+    if side <= 0 then
+        DrawSpritePoly(brx, bry, brz, trx, try, trz, tlx, tly, tlz,
+                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        DrawSpritePoly(blx, bly, blz, brx, bry, brz, tlx, tly, tlz,
+                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+    end
 end
 
 local function wbDespawn()
@@ -2797,6 +2827,7 @@ function wbTick(me, podiumAcc)
 
     local screens = wbScreens()
     local anyNear = false
+    local eyeX, eyeY, eyeZ
     if screens then
         for i = 1, #screens do
             local spot = screens[i]
@@ -2807,7 +2838,13 @@ function wbTick(me, podiumAcc)
                     anyNear = true
                     if World3dToScreen2d(spot.pos.x, spot.pos.y, spot.pos.z) then
                         sleep = 0
-                        if duiCreate() then drawScreen(spot, d) end
+                        if duiCreate() then
+                            if not eyeX then
+                                local cam = GetGameplayCamCoord()
+                                eyeX, eyeY, eyeZ = cam.x, cam.y, cam.z
+                            end
+                            drawScreen(spot, d, eyeX, eyeY, eyeZ)
+                        end
                     elseif sleep > WB_NEAR then
                         sleep = WB_NEAR
                     end
@@ -2930,7 +2967,7 @@ local function wbEditSnapshot()
             title = s.title or '', enabled = s.enabled ~= false,
             h = tonumber(s.h) or 0.0, pitch = tonumber(s.pitch) or 0.0,
             width = tonumber(s.width) or 6.0,
-            rows = tonumber(s.rows) or 9, opacity = tonumber(s.opacity) or 255,
+            rows = tonumber(s.rows) or 7, opacity = tonumber(s.opacity) or 255,
             distance = tonumber(s.distance) or 35.0
         }
     end
