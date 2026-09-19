@@ -41,8 +41,10 @@ ENV.CreateDui = function() return 1 end
 ENV.GetDuiHandle = function() return 'handle' end
 ENV.CreateRuntimeTxd = function() return 1 end
 ENV.CreateRuntimeTextureFromDuiHandle = function() return 1 end
-ENV.SendDuiMessage = function() end
-ENV.SetDuiUrl = function() end
+SENT, URLS, AVAIL = {}, {}, false
+ENV.IsDuiAvailable = function() return AVAIL end
+ENV.SendDuiMessage = function(_, m) SENT[#SENT + 1] = m end
+ENV.SetDuiUrl = function(_, u) URLS[#URLS + 1] = u end
 ENV.DestroyDui = function() end
 
 -- the corner maths is the only trigonometry in the hot path, so it is counted
@@ -65,7 +67,8 @@ do
   assert(a and b, 'could not slice the board drawing')
   local chunk = CL:sub(a, b - 1)
     .. '\nreturn { corners = screenCorners, size = screenSize, draw = drawScreen,'
-    .. '         create = duiCreate, destroy = duiDestroy, push = duiPush, dui = DUI }'
+    .. '         create = duiCreate, destroy = duiDestroy, push = duiPush,'
+    .. '         flush = duiFlush, park = duiPark, dui = DUI }'
   M = assert(load(chunk, 'board', 't', ENV))()
 end
 
@@ -123,6 +126,21 @@ M.draw(spot, 5.0)
 check('nothing is drawn before the texture exists', #POLY, 0)
 
 check('the board is built on demand', M.create(), true)
+
+-- CEF takes a moment to open the page. Anything sent before it is there is
+-- lost, and a texture drawn before it is there is whatever was in memory.
+POLY = {}
+M.flush()
+M.draw(spot, 5.0)
+check('nothing is drawn while the page is still opening', #POLY, 0)
+check('  and nothing is sent to it either',                #SENT, 0)
+
+AVAIL = true
+M.flush()
+check('the rows are sent once the page is open', #SENT, 1)
+M.flush(); M.flush()
+check('  and only once',                         #SENT, 1)
+
 POLY = {}
 M.draw(spot, 5.0)
 
@@ -207,12 +225,27 @@ check('  and the board really did turn', before[1] ~= after[1], true)
 -- ==========================================================================
 -- 3. the texture is given back
 -- ==========================================================================
+-- walking away parks the page on a blank one rather than tearing the texture
+-- out from under the handle it was built from
+M.park()
+check('walking away blanks the page', URLS[#URLS], 'about:blank')
+POLY = {}
+M.draw(spot, 5.0)
+check('  and nothing is drawn while it is parked', #POLY, 0)
+
+SENT = {}
+M.create()
+check('coming back points it at the board again',
+      URLS[#URLS]:find('board.html', 1, true) ~= nil, true)
+check('  and nothing is sent until it has opened', #SENT, 0)
+M.flush()
+check('  then the rows go out once more',          #SENT, 1)
+
 M.destroy()
-check('destroying it forgets the page', M.dui.ready, false)
+check('stopping the resource forgets the page', M.dui.ready, false)
 POLY = {}
 M.draw(spot, 5.0)
 check('  and nothing is drawn after that', #POLY, 0)
-check('  it can be built again',           M.create(), true)
 
 print(fails > 0 and ('\n%d FAILED of %d'):format(fails, checks)
                 or ('\nALL PASS (%d checks)'):format(checks))

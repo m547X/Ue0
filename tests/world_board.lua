@@ -92,12 +92,16 @@ function GetCurrentResourceName() return 'M5_RankedPvP' end
 -- the board is a web page painted onto a texture; the page itself is checked
 -- in the browser by tests/ui_world_board.js, so here it is only counted
 DUIS, PUSHED, DESTROYED = 0, 0, 0
+-- CEF opens the page a moment after it is asked to; the client has to wait for
+-- that before it sends anything or draws anything
+PAGE_OPEN, BLANKED = true, 0
 function CreateDui() DUIS = DUIS + 1; return 100 + DUIS end
 function GetDuiHandle() return 'handle' end
 function CreateRuntimeTxd() return 1 end
 function CreateRuntimeTextureFromDuiHandle() return 1 end
+function IsDuiAvailable() return PAGE_OPEN end
 function SendDuiMessage(_, payload) PUSHED = PUSHED + 1; LAST_PUSH = payload end
-function SetDuiUrl() end
+function SetDuiUrl(_, url) if url == 'about:blank' then BLANKED = BLANKED + 1 end end
 function DestroyDui() DESTROYED = DESTROYED + 1 end
 function DrawSpritePoly() DRAWS = DRAWS + 1 end
 json = { encode = function(t) return t end }
@@ -280,6 +284,39 @@ WBPUSH = PUSHED
 WB.rows = rows(10)
 tick(5)
 check('rows that say the same thing are not repainted', PUSHED, WBPUSH)
+
+-- CEF does not open the page the instant it is asked to. A message sent before
+-- it is there is dropped on the floor, and a texture drawn before it is there
+-- is whatever happened to be in that memory — so neither happens until the
+-- page says it is open.
+DUI.made, DUI.ready, DUI.live, DUI.avail = false, false, false, false
+DUI.dirty, DUI.msg, DUI.lastKey = false, nil, ''
+DUIS, PUSHED, DESTROYED, BLANKED = 0, 0, 0, 0
+PAGE_OPEN = false
+
+tick(5)
+check('a page that has not opened yet is not painted', PUSHED, 0)
+check('  and nothing is drawn onto it',                DRAWS, 0)
+
+PAGE_OPEN = true
+tick(5)
+check('once it opens the rows go on',       PUSHED, 1)
+check('  and that is when the board draws', DRAWS > 0, true)
+
+-- walking away blanks the page rather than tearing the texture out from under
+-- the handle it was built from: destroying the browser would leave the runtime
+-- texture pointing at nothing, and the name it was made under cannot be reused
+tick(500)
+advance(61000)
+tick(500)
+check('walking away for a minute blanks the page', BLANKED, 1)
+check('  but the browser itself is kept',           DESTROYED, 0)
+check('  and nothing is drawn while it is parked',  DRAWS, 0)
+
+tick(5)
+check('coming back does not build a second one', DUIS, 1)
+check('  and the rows are put back on it',       PUSHED, 2)
+check('  and it draws again',                    DRAWS > 0, true)
 
 -- ==========================================================================
 -- ==========================================================================

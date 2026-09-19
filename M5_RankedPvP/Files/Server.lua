@@ -4,6 +4,19 @@ local RES = "M5_RankedPvP"
 local function now()  return os.time() end
 local function ms()   return GetGameTimer() end
 
+do
+    local d = Config.Database or {}
+    Config.Database = {
+        autoCreateTables     = d.autoCreateTables ~= false,
+        flushInterval        = tonumber(d.flushInterval)        or 30000,
+        leaderboardCacheTime = tonumber(d.leaderboardCacheTime) or 60000,
+        profileCacheTime     = tonumber(d.profileCacheTime)     or 30000,
+        pageSize             = tonumber(d.pageSize)             or 25,
+        historyPageSize      = tonumber(d.historyPageSize)      or 12,
+        maxKillRowsPerMatch  = tonumber(d.maxKillRowsPerMatch)  or 800
+    }
+end
+
 Perf = {}
 
 function Perf.reset()
@@ -176,7 +189,7 @@ vRPclient = Tunnel.getInterface('vRP', RES)
 local PERM_TTL   = 20000
 local PermCache  = {}
 
-local function hasPerm(userId, perm)
+local function vrpPerm(userId, perm)
     if not userId or not perm then return false end
 
     local c = PermCache[userId]
@@ -195,6 +208,25 @@ local function hasPerm(userId, perm)
         c.map[perm] = v
     end
     return v
+end
+
+local function permAll(userId)
+    local P = Config.Permissions or {}
+    if P.superAdmin and vrpPerm(userId, P.superAdmin) then return true end
+    if P.adminGrantsAll and P.admin and vrpPerm(userId, P.admin) then return true end
+    return false
+end
+
+local function hasPerm(userId, perm)
+    if not userId or not perm then return false end
+
+    local P = Config.Permissions or {}
+    if perm ~= P.superAdmin and perm ~= P.admin and perm ~= P.moderator
+       and permAll(userId) then
+        return true
+    end
+
+    return vrpPerm(userId, perm)
 end
 
 local function forgetPerms(userId)
@@ -7820,22 +7852,12 @@ function Admin.level(userId)
 end
 
 local function grantsEverything(userId)
-    if hasPerm(userId, Config.Permissions.superAdmin) then return true end
-    return Config.Permissions.adminGrantsAll
-       and hasPerm(userId, Config.Permissions.admin)
+    return permAll(userId)
 end
 
 function Admin.can(userId, action)
-    if hasPerm(userId, Config.Permissions.superAdmin) then return true end
-
     local def = Config.AdminActions[action]
     if not def then return false end
-
-    if Config.Permissions.adminGrantsAll
-       and hasPerm(userId, Config.Permissions.admin) then
-        return true
-    end
-
     return hasPerm(userId, def.permission)
 end
 

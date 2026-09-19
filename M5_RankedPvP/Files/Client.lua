@@ -2447,7 +2447,7 @@ local WB = {
     sent    = false,
     layout  = nil,
     edit    = nil,
-    awayAt  = 0
+    awayAt  = nil
 }
 
 local function vec3(p)
@@ -2551,10 +2551,15 @@ end
 local DUI = {
     obj     = nil,
     handle  = nil,
+    txdObj  = nil,
     txd     = 'm5rp_board_txd',
     tex     = 'm5rp_board',
     made    = false,
     ready   = false,
+    live    = false,
+    avail   = false,
+    dirty   = false,
+    msg     = nil,
     w       = 1280,
     h       = 720,
     lastKey = ''
@@ -2569,9 +2574,11 @@ local function duiSize()
     return w, h
 end
 
-local function duiPush()
-    if not DUI.ready then return end
+local function duiUrl()
+    return ('nui://%s/Files/ui/board.html'):format(GetCurrentResourceName())
+end
 
+local function duiPush()
     local sc  = (Config.WorldBoard or {}).screens or {}
     local rows = {}
     local max  = math.floor(tonumber(sc.rows) or 10)
@@ -2590,7 +2597,7 @@ local function duiPush()
     local col   = ui.colors or {}
     local brand = Config.Brand or {}
 
-    SendDuiMessage(DUI.obj, json.encode({
+    DUI.msg = json.encode({
         action = 'board',
         rows   = rows,
         max    = max,
@@ -2601,37 +2608,78 @@ local function duiPush()
         theme  = { accent = col.accent, gold = col.gold, text = col.text,
                    dim = col.dim, bg = col.bgDeep or col.bg, panel = col.panel },
         brand  = { name = brand.name, accent = brand.accent }
-    }))
+    })
+    DUI.dirty = true
+end
+
+local function duiFlush()
+    if not DUI.dirty or not DUI.live or not DUI.obj or not DUI.msg then return end
+    if not DUI.avail then
+        if not IsDuiAvailable(DUI.obj) then return end
+        DUI.avail = true
+    end
+    SendDuiMessage(DUI.obj, DUI.msg)
+    DUI.dirty = false
+end
+
+local function duiMakeTxd()
+    for i = 0, 9 do
+        local name = i == 0 and 'm5rp_board_txd' or ('m5rp_board_txd' .. i)
+        local obj = CreateRuntimeTxd(name)
+        if obj and obj ~= 0 then
+            DUI.txd = name
+            return obj
+        end
+    end
+    return nil
+end
+
+local function duiWake()
+    if not DUI.obj or DUI.live then return end
+    SetDuiUrl(DUI.obj, duiUrl())
+    DUI.live    = true
+    DUI.avail   = false
+    DUI.lastKey = ''
+    duiPush()
 end
 
 local function duiCreate()
-    if DUI.made then return DUI.ready end
+    if DUI.made then
+        if DUI.ready and not DUI.live then duiWake() end
+        return DUI.ready
+    end
     DUI.made = true
 
     DUI.w, DUI.h = duiSize()
-    DUI.obj = CreateDui(('nui://%s/Files/ui/board.html'):format(GetCurrentResourceName()),
-                        DUI.w, DUI.h)
+    DUI.obj = CreateDui(duiUrl(), DUI.w, DUI.h)
     if not DUI.obj then return false end
 
     DUI.handle = GetDuiHandle(DUI.obj)
     if not DUI.handle then return false end
 
-    CreateRuntimeTxd(DUI.txd)
-    CreateRuntimeTextureFromDuiHandle(DUI.txd, DUI.tex, DUI.handle)
+    DUI.txdObj = duiMakeTxd()
+    if not DUI.txdObj then return false end
 
-    DUI.ready = true
+    CreateRuntimeTextureFromDuiHandle(DUI.txdObj, DUI.tex, DUI.handle)
+
+    DUI.ready, DUI.live, DUI.avail = true, true, false
     DUI.lastKey = ''
     duiPush()
     return true
 end
 
+local function duiPark()
+    if not DUI.obj or not DUI.live then return end
+    SetDuiUrl(DUI.obj, 'about:blank')
+    DUI.live, DUI.avail, DUI.dirty = false, false, false
+    DUI.lastKey = ''
+end
+
 local function duiDestroy()
-    if DUI.obj then
-        SetDuiUrl(DUI.obj, 'about:blank')
-        DestroyDui(DUI.obj)
-    end
-    DUI.obj, DUI.handle = nil, nil
-    DUI.made, DUI.ready = false, false
+    if DUI.obj then DestroyDui(DUI.obj) end
+    DUI.obj, DUI.handle, DUI.txdObj = nil, nil, nil
+    DUI.made, DUI.ready, DUI.live = false, false, false
+    DUI.avail, DUI.dirty, DUI.msg = false, false, nil
     DUI.lastKey = ''
 end
 
@@ -2682,7 +2730,7 @@ local function screenCorners(spot)
 end
 
 local function drawScreen(spot, dist, ex, ey, ez)
-    if not DUI.ready then return end
+    if not DUI.ready or not DUI.live or not DUI.avail then return end
 
     local a = math.floor(tonumber(spot.opacity) or 255)
     local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(spot)
@@ -2838,6 +2886,7 @@ function wbTick(me, podiumAcc)
                     if World3dToScreen2d(spot.pos.x, spot.pos.y, spot.pos.z) then
                         sleep = 0
                         if duiCreate() then
+                            duiFlush()
                             if not eyeX then
                                 local cam = GetGameplayCamCoord()
                                 eyeX, eyeY, eyeZ = cam.x, cam.y, cam.z
@@ -2856,15 +2905,15 @@ function wbTick(me, podiumAcc)
     end
 
     if anyNear then
-        WB.awayAt = 0
-    elseif DUI.made then
+        WB.awayAt = nil
+    elseif DUI.live then
         local keep = math.max(0, tonumber(((Config.WorldBoard or {}).screens or {}).keepAlive) or 60)
         local t = ms()
-        if WB.awayAt == 0 then
+        if not WB.awayAt then
             WB.awayAt = t
         elseif keep > 0 and (t - WB.awayAt) > (keep * 1000) then
-            WB.awayAt = 0
-            duiDestroy()
+            WB.awayAt = nil
+            duiPark()
         end
     end
 
