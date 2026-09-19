@@ -92,6 +92,18 @@ Locale.ar = {
     ['PODIUM ON']                 = 'المنصة مشغّلة',
     ['SAVE']                      = 'حفظ',
     ['BACK TO DEFAULTS']          = 'رجوع للافتراضي',
+
+    -- ------------------------------------- تحريك اللوحة وأنت واقف قدامها
+    ['MOVE IT IN THE WORLD']      = 'حرّكه باللعبة',
+    ['MOVE SPEED HINT']           = 'سرعة التحريك — كل ما زادت الشاشة تتحرك أسرع',
+    ['MOVE']                      = 'تحريك',
+    ['ROTATE']                    = 'دوران',
+    ['CONFIRM']                   = 'تأكيد',
+    ['BACK TO THE MENU']          = 'رجوع للقائمة',
+    ['CLICK HERE']                = 'اضغط هنا',
+    ['TO MOVE THE PLAYER']        = 'لتحريك اللاعب',
+    ['PRESS F5']                  = 'اضغط F5',
+    ['TO EDIT']                   = 'للتعديل',
     ['The board goes back to the positions in the config file.'] =
         'اللوحة ترجع للأماكن المكتوبة بملف الإعدادات.',
     ['The board layout was saved.'] = 'تم حفظ أماكن اللوحة.',

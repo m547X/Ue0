@@ -2576,3 +2576,134 @@ html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
   .be-side{max-height:180px}
   .be-row .inp{flex:1 1 auto}
 }
+
+/* ==========================================================================
+   THE BOARD EDITOR, OUT IN THE WORLD
+   ==========================================================================
+   Drawn over the game with the menu shut. It sits at the top of the screen so
+   it does not cover the board being moved, and it is narrow so most of the
+   view stays the view. Nothing here takes the keyboard — the client keeps NUI
+   focus with input passed through, so walking still works. */
+.bw{
+  position:fixed; top:26px; left:50%; transform:translateX(-50%);
+  z-index:70; width:min(430px,44vw);
+  display:flex; flex-direction:column; gap:10px;
+  font-family:var(--font,'Segoe UI',Tahoma,sans-serif);
+  direction:rtl; text-align:right;
+  pointer-events:none;
+}
+.bw > *{pointer-events:auto}
+/* with the mouse handed back to the game, the panel is still readable but
+   plainly not the thing being clicked */
+.bw.walking{opacity:.55}
+.bw.walking > *{pointer-events:none}
+.bw.walking .bw-walk{pointer-events:auto}
+
+.bw-speed{
+  background:rgba(10,12,17,.94); border:1px solid rgba(255,255,255,.09);
+  border-radius:14px; padding:10px 14px 12px;
+}
+.bw-speed > label{
+  display:block; font-size:11.5px; font-weight:700; color:var(--dim,#8C98A8);
+  margin-bottom:8px; letter-spacing:.02em;
+}
+/* Numbers and their two buttons stay left-to-right whatever the language is:
+   in a right-to-left run the minus of -232.3 jumps to the far end and reads as
+   232.3-, and the − and + swap places, which is not what anyone means by
+   "the one on the left takes it down". */
+.bw-speed-row{display:flex; align-items:center; gap:10px; direction:ltr}
+.bw-track{
+  flex:1 1 auto; height:16px; border-radius:9px;
+  background:rgba(255,255,255,.07); overflow:hidden;
+}
+.bw-track i{
+  display:block; height:100%; border-radius:9px;
+  background:linear-gradient(90deg,#9A7A22,var(--gold,#F5C542));
+}
+.bw-speed-val{font-size:13px; font-weight:800; min-width:44px; text-align:center}
+
+.bw-btn,.bw-nudge{
+  width:30px; height:30px; flex:none; border-radius:9px; cursor:pointer;
+  background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.10);
+  color:var(--text,#EEF3F9); font-size:17px; font-weight:800; line-height:1;
+}
+.bw-btn:hover,.bw-nudge:hover{background:rgba(255,255,255,.14)}
+
+.bw-modes{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+  background:rgba(10,12,17,.94); border:1px solid rgba(255,255,255,.09);
+  border-radius:16px; padding:10px;
+}
+.bw-mode{
+  display:flex; flex-direction:column; align-items:center; gap:5px;
+  padding:10px 4px 8px; border-radius:12px; cursor:pointer;
+  background:transparent; border:1px solid transparent;
+  color:var(--dim,#8C98A8); font-size:10.5px; font-weight:800;
+  letter-spacing:.04em;
+}
+.bw-mode svg{width:22px; height:22px; stroke:currentColor; fill:none}
+.bw-mode:hover{background:rgba(255,255,255,.06); color:var(--text,#EEF3F9)}
+.bw-mode.on{
+  background:rgba(245,197,66,.13); border-color:rgba(245,197,66,.34);
+  color:var(--gold,#F5C542);
+}
+/* the one that ends the job reads as the one that ends the job */
+.bw-mode.go{background:var(--gold,#F5C542); color:#0A0C10; border-color:transparent}
+.bw-mode.go:hover{background:#FFD75E; color:#0A0C10}
+
+.bw-pad{
+  display:flex; flex-direction:column; gap:7px;
+  background:rgba(10,12,17,.94); border:1px solid rgba(255,255,255,.09);
+  border-radius:14px; padding:10px 12px;
+}
+.bw-row{display:flex; align-items:center; justify-content:space-between; gap:12px}
+.bw-row label{font-size:12px; font-weight:700; color:var(--dim,#8C98A8)}
+.bw-ctl{display:flex; align-items:center; gap:8px; direction:ltr}
+.bw-val{min-width:62px; text-align:center; font-size:13.5px; font-weight:800;
+  direction:ltr; font-variant-numeric:tabular-nums}
+.bw-none{font-size:12px; color:var(--dim-2,#5A6472); text-align:center; padding:6px 0}
+
+.bw-save{
+  width:100%; padding:11px; border-radius:11px; cursor:pointer;
+  background:var(--gold,#F5C542); border:none; color:#0A0C10;
+  font-size:13.5px; font-weight:800; letter-spacing:.06em;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.bw-save svg{width:17px; height:17px; stroke:currentColor; fill:none}
+
+.bw-targets{
+  display:flex; flex-wrap:wrap; gap:6px;
+  background:rgba(10,12,17,.94); border:1px solid rgba(255,255,255,.09);
+  border-radius:14px; padding:9px 10px;
+}
+.bw-target{
+  padding:6px 11px; border-radius:9px; cursor:pointer;
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08);
+  color:var(--dim,#8C98A8); font-size:11.5px; font-weight:700;
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.bw-target.on{
+  background:rgba(245,197,66,.14); border-color:rgba(245,197,66,.34);
+  color:var(--gold,#F5C542);
+}
+
+.bw-foot{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.bw-ghost{
+  padding:9px 10px; border-radius:11px; cursor:pointer;
+  background:rgba(10,12,17,.94); border:1px solid rgba(255,255,255,.10);
+  color:var(--dim,#8C98A8); font-size:11.5px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; gap:7px;
+}
+.bw-ghost:hover{color:var(--text,#EEF3F9); border-color:rgba(255,255,255,.2)}
+.bw-ghost svg{width:15px; height:15px; stroke:currentColor; fill:none}
+
+/* the chip that hands the mouse back to the game and takes it again */
+.bw-walk{
+  align-self:center; cursor:pointer;
+  padding:9px 18px; border-radius:12px;
+  background:rgba(8,10,14,.96); border:1px solid rgba(255,255,255,.12);
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.bw-walk b{font-size:12.5px; font-weight:800; color:var(--text,#EEF3F9)}
+.bw-walk i{font-style:normal; font-size:12px; font-weight:800; color:var(--gold,#F5C542)}
+.bw-walk:hover{border-color:rgba(245,197,66,.4)}

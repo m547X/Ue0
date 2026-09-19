@@ -45,8 +45,8 @@ formulas, permission strings and anti-cheat thresholds never reach a player.
 ## 2. Installation
 
 1. Copy the `M5_RankedPvP` folder into your `resources` directory.
-2. Import `m5_rankedpvp.sql` (or leave `Config.Database.autoCreateTables = true`
-   and the resource will create every table on first start).
+2. Import `m5_rankedpvp.sql` — or skip it, the resource creates every table it
+   needs on first start.
 3. Add to `server.cfg`, **after** vRP and oxmysql:
 
 ```cfg
@@ -362,11 +362,19 @@ caller is allowed to use**; everything else is absent, not greyed out.
 ### Two layers of permission
 
 ```lua
-Config.Permissions.superAdmin     = 'pvp.all'   -- unlocks every action
-Config.Permissions.adminGrantsAll = true        -- 'pvp.admin' also unlocks everything
+Config.Permissions.superAdmin     = 'pvp.all'   -- a master key
+Config.Permissions.adminGrantsAll = true        -- 'pvp.admin' is one too
 ```
 
-Set `adminGrantsAll = false` for strict per-action control even for admins.
+`pvp.all` is a master key, not one more entry in the list: it passes **every**
+permission this resource checks, including ones added in a later version. That
+covers the admin panel, the board editor (`/pvpboard`), opening the menu,
+creating custom rooms, spectating and the hidden MMR. It does not pretend the
+holder literally has the `admin` or `moderator` role, which is what the panel
+reads to decide how much of itself to show.
+
+Set `adminGrantsAll = false` for strict per-action control even for admins;
+`pvp.all` is unaffected by it.
 
 ### One permission per action
 
@@ -747,6 +755,28 @@ drops the panel at eye height turned back towards you, or stands a podium spot
 on the floor facing the way you face. Save writes it; cancel throws it away;
 reset asks first and then restores the config.
 
+### Moving it while you look at it
+
+**MOVE IT IN THE WORLD** shuts the menu and leaves a small panel at the top of
+the screen, so the thing you are moving is the thing you are looking at. The
+client draws an axis marker at the board's centre — red east/west, green
+north/south, blue up — and traces the board's outline in gold, so you can place
+it before the page has even loaded.
+
+The panel is the four buttons from the screenshots: **تحريك / حجم / دوران /
+تأكيد**. Move offers the three directions, Size the width, Rotate the facing
+and the tilt; a podium spot is a person, so it is offered a facing and nothing
+else. Above them is the step size, which multiplies every press from 0.25x to
+4x. Below them: every board and podium spot, to switch between without going
+back; **PUT IT WHERE I STAND**; and **BACK TO THE MENU**. **تأكيد** saves and
+closes.
+
+It never takes the keyboard — the client holds NUI focus with input passed
+through, so you can still walk while clicking the panel. **اضغط هنا لتحريك
+اللاعب** hands the mouse back to the game so it turns the camera instead; the
+panel dims and **F5** takes it back. That key is registered through FiveM's
+keybinding system, so it can be rebound under **Settings → Key Bindings**.
+
 `/pvpcoords` is the other way: stand where you want it and copy the printed
 line straight into `spots`.
 
@@ -786,8 +816,6 @@ countdown, victory/defeat, MVP and rank-up sequences.
 
 * `Config.Buckets` — each match takes one bucket from `start..max`; custom games
   use `customStart..customMax`. Raise the ranges for very large servers.
-* `Config.Database.flushInterval` — lower it if you restart often, raise it to
-  reduce write load.
 * `Config.Matchmaking.expandInterval` / `mmrRangeStep` — the main lever for
   queue time versus match quality.
 * `Config.AntiBoost.reviewThreshold` — the severity sum at which a player is

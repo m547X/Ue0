@@ -1,0 +1,274 @@
+/* Moving the board while standing in front of it.
+ *
+ *   node tests/ui_board_world.js
+ *
+ * The world panel is drawn over the game with the menu shut, so the only way
+ * to know it works is to open the real page, put it in world mode and click
+ * the things. What matters:
+ *
+ *   - every control posts something the client can act on, and posts the right
+ *     axis — a + that sends the wrong letter looks perfect and moves the wrong
+ *     thing, and
+ *   - it offers a podium spot only what a podium spot has. A person has no
+ *     width and no tilt.
+ */
+const path = require('path');
+const { chromium } = require(process.env.PW || '/opt/node22/lib/node_modules/playwright');
+
+const UI = 'file://' + path.resolve(__dirname, '../M5_RankedPvP/Files/ui/index.html');
+
+let fails = 0, checks = 0;
+function check(name, got, want) {
+  checks++;
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  if (!ok) { fails++; console.log(`FAIL ${name.padEnd(56)} got=${JSON.stringify(got)} want=${JSON.stringify(want)}`); }
+  else console.log(`ok   ${name.padEnd(56)} ${JSON.stringify(got)}`);
+}
+
+const SHIM = () => {
+  window.__posted = [];
+  window.fetch = (url, opts) => {
+    let body = {};
+    try { body = JSON.parse(opts && opts.body || '{}'); } catch (e) {}
+    window.__posted.push({ name: String(url).split('/').pop(), body });
+    return Promise.resolve({ json: () => Promise.resolve({}) });
+  };
+  window.__send = (m) => window.dispatchEvent(new MessageEvent('message', { data: m }));
+};
+
+const SCREEN = {
+  action: 'boardWorld', on: true, mode: 'move', speed: 1, sel: 's0', walk: false,
+  targets: [{ id: 's0', kind: 's', n: 1, title: 'TOP' },
+            { id: 'p0', kind: 'p', n: 1 },
+            { id: 'p1', kind: 'p', n: 2 }],
+  item: { kind: 's', x: 10.5, y: -20.25, z: 44.02, h: 214, pitch: 0, width: 6 }
+};
+
+const last = (p, name) => p.evaluate((n) => {
+  const u = window.__posted.filter((x) => x.name === n);
+  return u.length ? u[u.length - 1].body : null;
+}, name || 'boardWorld');
+
+const clear = (p) => p.evaluate(() => { window.__posted = []; });
+
+(async () => {
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+
+  await page.addInitScript(SHIM);
+  await page.goto(UI);
+  await page.evaluate(() => window.__send({ action: 'open', page: 'board',
+    theme: {}, brand: {}, silent: true }));
+  await page.waitForTimeout(150);
+
+  // ======================================================================
+  // 1. getting there from the list
+  // ======================================================================
+  await page.evaluate(() => window.__send({ action: 'boardEdit', layout: {
+      screensEnabled: true, podiumEnabled: true, podiumDistance: 25,
+      screens: [{ pos: { x: 10, y: 20, z: 30 }, title: 'TOP', enabled: true,
+                  h: 0, pitch: 0, width: 6, rows: 10, opacity: 255, distance: 35 }],
+      podium: [{ pos: { x: 12, y: 20, z: 29 }, h: 90 }]
+    }, here: { x: 1, y: 2, z: 3, h: 4 } }));
+  await page.waitForTimeout(150);
+
+  check('the list offers to move it in the world',
+        await page.locator('#be-body .btn', { hasText: 'MOVE IT IN THE WORLD' }).count(), 1);
+
+  await clear(page);
+  await page.locator('#be-body .btn', { hasText: 'MOVE IT IN THE WORLD' }).click();
+  await page.waitForTimeout(150);
+  const handover = await last(page, 'boardEdit');
+  check('  and hands the client the layout to move',
+        [handover.action, handover.sel, handover.layout.screens.length], ['world', 's0', 1]);
+
+  // the panel does not appear on its own — the client answers with the mode
+  check('  the panel waits to be told',
+        await page.locator('#bw').evaluate((n) => n.classList.contains('hidden')), true);
+
+  // ======================================================================
+  // 2. the panel itself
+  // ======================================================================
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
+  check('the panel is up', await page.locator('#bw').evaluate(
+    (n) => !n.classList.contains('hidden')), true);
+  check('  with four things you can do',  await page.locator('.bw-mode').count(), 4);
+  check('  MOVE is the one lit',
+        await page.locator('.bw-mode.on').textContent(), 'MOVE');
+  check('  and the menu is shut behind it',
+        await page.locator('#app').evaluate((n) => n.classList.contains('hidden')), true);
+
+  const rows = await page.locator('.bw-row label').evaluateAll(
+    (ns) => ns.map((n) => n.textContent.trim()));
+  check('moving offers the three directions',
+        rows, ['EAST / WEST', 'NORTH / SOUTH', 'HEIGHT']);
+  check('  showing where it is now',
+        await page.locator('.bw-val').evaluateAll(
+          (ns) => ns.map((n) => n.textContent.trim())), ['10.5', '-20.25', '44.02']);
+
+  // ======================================================================
+  // 3. every nudge sends its own axis
+  // ======================================================================
+  const nudge = async (label, which) => {
+    await clear(page);
+    await page.locator('.bw-row', { hasText: label }).locator('.bw-nudge').nth(which).click();
+    await page.waitForTimeout(120);
+    return last(page);
+  };
+
+  check('east pushes x the right way',   await nudge('EAST / WEST', 1),
+        { action: 'nudge', axis: 'x', dir: 1 });
+  check('  and west the other',          await nudge('EAST / WEST', 0),
+        { action: 'nudge', axis: 'x', dir: -1 });
+  check('north pushes y',                await nudge('NORTH / SOUTH', 1),
+        { action: 'nudge', axis: 'y', dir: 1 });
+  check('height pushes z',               await nudge('HEIGHT', 1),
+        { action: 'nudge', axis: 'z', dir: 1 });
+
+  // ======================================================================
+  // 4. the other three modes
+  // ======================================================================
+  await clear(page);
+  await page.locator('.bw-mode', { hasText: 'SIZE' }).click();
+  await page.waitForTimeout(120);
+  check('SIZE asks the client to switch', await last(page), { action: 'mode', mode: 'size' });
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'size' })), SCREEN);
+  await page.waitForTimeout(150);
+  check('  and then offers the width alone',
+        await page.locator('.bw-row label').evaluateAll(
+          (ns) => ns.map((n) => n.textContent.trim())), ['WIDTH']);
+  check('  in metres',
+        await page.locator('.bw-val').textContent(), '6m');
+  check('  which pushes the width',      await nudge('WIDTH', 1),
+        { action: 'nudge', axis: 'width', dir: 1 });
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'rotate' })), SCREEN);
+  await page.waitForTimeout(150);
+  check('ROTATE offers a facing and a tilt',
+        await page.locator('.bw-row label').evaluateAll(
+          (ns) => ns.map((n) => n.textContent.trim())), ['FACING', 'TILT']);
+  check('  in degrees',
+        await page.locator('.bw-val').evaluateAll(
+          (ns) => ns.map((n) => n.textContent.trim())), ['214°', '0°']);
+  check('  and turning pushes the heading', await nudge('FACING', 1),
+        { action: 'nudge', axis: 'h', dir: 1 });
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'confirm' })), SCREEN);
+  await page.waitForTimeout(150);
+  await clear(page);
+  await page.locator('.bw-save').click();
+  await page.waitForTimeout(120);
+  check('CONFIRM saves', await last(page), { action: 'confirm' });
+
+  // ======================================================================
+  // 5. a podium spot is a person, not a panel
+  // ======================================================================
+  const PODIUM = Object.assign({}, SCREEN, {
+    sel: 'p0', mode: 'size', item: { kind: 'p', x: 1, y: 2, z: 3, h: 90 }
+  });
+  await page.evaluate((d) => window.__send(d), PODIUM);
+  await page.waitForTimeout(150);
+  check('a podium spot has no width to set',
+        await page.locator('.bw-row').count(), 0);
+  check('  and says so rather than showing an empty box',
+        await page.locator('.bw-none').count(), 1);
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'rotate' })), PODIUM);
+  await page.waitForTimeout(150);
+  check('  it can still be turned',
+        await page.locator('.bw-row label').evaluateAll(
+          (ns) => ns.map((n) => n.textContent.trim())), ['FACING']);
+  check('  but not tilted, because it is a person',
+        await page.locator('.bw-row', { hasText: 'TILT' }).count(), 0);
+
+  // ======================================================================
+  // 6. step size, picking a target, and the two footers
+  // ======================================================================
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
+  check('the step size is shown as it stands',
+        await page.locator('.bw-speed-val').textContent(), '1x');
+  await clear(page);
+  await page.locator('.bw-speed-row .bw-btn').nth(1).click();
+  await page.waitForTimeout(120);
+  check('  and can be raised', await last(page), { action: 'speed', dir: 1 });
+  await clear(page);
+  await page.locator('.bw-speed-row .bw-btn').nth(0).click();
+  await page.waitForTimeout(120);
+  check('  and lowered',       await last(page), { action: 'speed', dir: -1 });
+
+  check('every board and podium spot is listed',
+        await page.locator('.bw-target').count(), 3);
+  check('  the one being moved is lit',
+        await page.locator('.bw-target.on').textContent(), 'SCREEN 1 — TOP');
+  await clear(page);
+  await page.locator('.bw-target').nth(2).click();
+  await page.waitForTimeout(120);
+  check('  and another can be picked', await last(page), { action: 'pick', sel: 'p1' });
+
+  await clear(page);
+  await page.locator('.bw-ghost', { hasText: 'PUT IT WHERE I STAND' }).click();
+  await page.waitForTimeout(120);
+  check('it can be dropped where the player stands', await last(page), { action: 'here' });
+
+  await clear(page);
+  await page.locator('.bw-ghost', { hasText: 'BACK TO THE MENU' }).click();
+  await page.waitForTimeout(120);
+  check('and the list is one click away', await last(page), { action: 'back' });
+
+  // ======================================================================
+  // 7. handing the mouse back to the game
+  // ======================================================================
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+  check('the chip offers to let you walk',
+        (await page.locator('.bw-walk').innerText()).replace(/\s+/g, ' ').trim(),
+        'CLICK HERE TO MOVE THE PLAYER');
+  await clear(page);
+  await page.locator('.bw-walk').click();
+  await page.waitForTimeout(120);
+  check('  and asks the client to drop focus', await last(page),
+        { action: 'walk', on: true });
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { walk: true })), SCREEN);
+  await page.waitForTimeout(150);
+  check('walking dims the panel',
+        await page.locator('#bw').evaluate((n) => n.classList.contains('walking')), true);
+  check('  and the chip says how to come back',
+        (await page.locator('.bw-walk').innerText()).replace(/\s+/g, ' ').trim(),
+        'PRESS F5 TO EDIT');
+  check('  nothing else is clickable',
+        await page.locator('.bw-modes').evaluate(
+          (n) => getComputedStyle(n).pointerEvents), 'none');
+  check('  except the chip',
+        await page.locator('.bw-walk').evaluate(
+          (n) => getComputedStyle(n).pointerEvents), 'auto');
+
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
+  // ======================================================================
+  // 8. it does not cover the board it is moving
+  // ======================================================================
+  const box = await page.locator('#bw').boundingBox();
+  check('the panel keeps to the top of the screen', box.y + box.height < 900 * 0.75, true);
+  check('  and to one side of the middle of it',    box.width < 1600 * 0.35, true);
+
+  await page.evaluate(() => window.__send({ action: 'boardWorld', on: false }));
+  await page.waitForTimeout(150);
+  check('leaving world mode takes the panel away',
+        await page.locator('#bw').evaluate((n) => n.classList.contains('hidden')), true);
+
+  check('nothing threw along the way', errors, []);
+
+  await browser.close();
+  console.log();
+  console.log(fails === 0 ? `ALL PASS (${checks} checks)` : `${fails} FAILED`);
+  process.exit(fails === 0 ? 0 : 1);
+})().catch((e) => { console.error(e); process.exit(1); });

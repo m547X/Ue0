@@ -460,8 +460,11 @@ local function openMenu(page)
     end
 end
 
+local wbwAbort
+
 local function closeMenu(force)
     if State.uiLocked and not force then return end
+    if wbwAbort then wbwAbort() end
     if blurOn then
         TriggerScreenblurFadeOut(180)
         blurOn = false
@@ -3075,10 +3078,226 @@ local function wbEditClose(keep)
     closeMenu(true)
 end
 
+local WBW = { on = false, sel = 's0', mode = 'move', speed = 1.0, walk = false }
+local WBW_SPEEDS = { 0.25, 0.5, 1.0, 2.0, 4.0 }
+local WBW_STEP   = { x = 0.25, y = 0.25, z = 0.25, width = 0.25, h = 5.0, pitch = 2.0 }
+
+local function wbwSel()
+    local l = WB.edit
+    if not l then return nil end
+    local kind = WBW.sel:sub(1, 1)
+    local n    = (tonumber(WBW.sel:sub(2)) or 0) + 1
+    local list = (kind == 's') and l.screens or l.podium
+    return kind, n, list and list[n]
+end
+
+local function wbwPayload()
+    local l = WB.edit or { screens = {}, podium = {} }
+    local targets = {}
+    for i = 1, #(l.screens or {}) do
+        targets[#targets + 1] = { id = 's' .. (i - 1), kind = 's', n = i,
+                                  title = l.screens[i].title or '' }
+    end
+    for i = 1, #(l.podium or {}) do
+        targets[#targets + 1] = { id = 'p' .. (i - 1), kind = 'p', n = i }
+    end
+
+    local kind, _, it = wbwSel()
+    local item
+    if it then
+        item = { kind = kind,
+                 x = it.pos.x + 0.0, y = it.pos.y + 0.0, z = it.pos.z + 0.0,
+                 h = tonumber(it.h) or 0.0 }
+        if kind == 's' then
+            item.pitch = tonumber(it.pitch) or 0.0
+            item.width = tonumber(it.width) or 6.0
+        end
+    end
+
+    return { action = 'boardWorld', on = WBW.on, mode = WBW.mode,
+             speed = WBW.speed, sel = WBW.sel, walk = WBW.walk,
+             targets = targets, item = item }
+end
+
+local function wbwRepaint()
+    if WB.spawned then
+        local p = wbPodium()
+        if p then wbSpawn(p) else wbDespawn() end
+    end
+end
+
+local function wbwNudge(axis, dir)
+    local kind, _, it = wbwSel()
+    if not it then return end
+
+    local step = (WBW_STEP[axis] or 0.25) * (WBW.speed or 1.0) * (dir < 0 and -1 or 1)
+
+    if axis == 'x' or axis == 'y' or axis == 'z' then
+        it.pos[axis] = it.pos[axis] + step
+    elseif axis == 'h' then
+        it.h = ((((tonumber(it.h) or 0.0) + step) % 360) + 360) % 360
+    elseif kind == 's' and axis == 'pitch' then
+        it.pitch = math.max(-60.0, math.min(60.0, (tonumber(it.pitch) or 0.0) + step))
+    elseif kind == 's' and axis == 'width' then
+        it.width = math.max(0.5, math.min(40.0, (tonumber(it.width) or 6.0) + step))
+    end
+
+    if kind == 'p' then wbwRepaint() end
+end
+
+local function wbwHere()
+    local kind, _, it = wbwSel()
+    if not it then return end
+    local ped = playerPed()
+    local c   = GetEntityCoords(ped)
+    local h   = GetEntityHeading(ped)
+    it.pos.x, it.pos.y = c.x + 0.0, c.y + 0.0
+    it.pos.z = c.z + (kind == 's' and 1.35 or 0.0)
+    it.h = (kind == 'p') and h or ((h + 180.0) % 360)
+    if kind == 'p' then wbwRepaint() end
+end
+
+local function wbwGizmo()
+    local kind, _, it = wbwSel()
+    if not it then return end
+
+    local x, y, z = it.pos.x + 0.0, it.pos.y + 0.0, it.pos.z + 0.0
+    local len = 1.6
+
+    DrawLine(x - len, y, z, x + len, y, z, 235, 78, 78, 220)
+    DrawLine(x, y - len, z, x, y + len, z, 92, 222, 118, 220)
+    DrawLine(x, y, z - len, x, y, z + len, 86, 154, 248, 220)
+    DrawMarker(28, x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+               0.10, 0.10, 0.10, 250, 250, 250, 190,
+               false, false, 2, false, nil, nil, false)
+
+    if kind ~= 's' then return end
+
+    local ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz = screenCorners(it)
+    DrawLine(ax, ay, az, bx, by, bz, 245, 197, 66, 220)
+    DrawLine(bx, by, bz, cx, cy, cz, 245, 197, 66, 220)
+    DrawLine(cx, cy, cz, dx, dy, dz, 245, 197, 66, 220)
+    DrawLine(dx, dy, dz, ax, ay, az, 245, 197, 66, 220)
+end
+
+local function wbwEnter()
+    if not WB.edit or WBW.on then return end
+    WBW.on, WBW.walk = true, false
+    nui({ action = 'close' })
+    setFocus(true)
+    SetNuiFocusKeepInput(true)
+    nui(wbwPayload())
+
+    Citizen.CreateThread(function()
+        while WBW.on do
+            wbwGizmo()
+            Wait(0)
+        end
+    end)
+end
+
+local function wbwLeave(back)
+    WBW.on, WBW.walk = false, false
+    SetNuiFocusKeepInput(false)
+    nui(wbwPayload())
+    if back then
+        setFocus(true)
+        nui({ action = 'open', page = 'board', theme = Config.UI, brand = Config.Brand,
+              sounds = Config.Sounds, text = L, locale = localePayload(),
+              defaults = Config.DefaultSettings, silent = true })
+        wbEditPush()
+    end
+end
+
+function wbwAbort()
+    if not WBW.on then return end
+    WBW.on, WBW.walk = false, false
+    SetNuiFocusKeepInput(false)
+    WB.edit = nil
+    nui(wbwPayload())
+    if WB.spawned then
+        local p = wbPodium()
+        if p then wbSpawn(p) else wbDespawn() end
+    end
+end
+
+local function wbwWalk(on)
+    if not WBW.on then return end
+    WBW.walk = on
+    if on then
+        setFocus(false)
+    else
+        setFocus(true)
+        SetNuiFocusKeepInput(true)
+    end
+    nui(wbwPayload())
+end
+
+RegisterCommand('m5rp_board_walk', function()
+    if not WBW.on then return end
+    wbwWalk(not WBW.walk)
+end, false)
+RegisterKeyMapping('m5rp_board_walk', 'M5 Ranked PvP: board editor — walk / edit', 'keyboard', 'F5')
+
+RegisterNUICallback('boardWorld', function(data, cb)
+    local action = tostring(data and data.action or '')
+
+    if action == 'mode' then
+        local m = tostring(data.mode or 'move')
+        if m == 'move' or m == 'size' or m == 'rotate' then WBW.mode = m end
+
+    elseif action == 'speed' then
+        local i = 3
+        for n = 1, #WBW_SPEEDS do
+            if WBW_SPEEDS[n] == WBW.speed then i = n break end
+        end
+        i = math.max(1, math.min(#WBW_SPEEDS, i + ((tonumber(data.dir) or 0) < 0 and -1 or 1)))
+        WBW.speed = WBW_SPEEDS[i]
+
+    elseif action == 'nudge' then
+        wbwNudge(tostring(data.axis or ''), tonumber(data.dir) or 1)
+
+    elseif action == 'here' then
+        wbwHere()
+
+    elseif action == 'pick' then
+        local id = tostring(data.sel or '')
+        if id:match('^[sp]%d+$') then WBW.sel = id end
+
+    elseif action == 'walk' then
+        wbwWalk(data.on == true)
+        cb('ok')
+        return
+
+    elseif action == 'confirm' then
+        TriggerServerEvent('m5rp:sv:boardLayout', 'save', WB.edit)
+        WB.layout = WB.edit
+        wbwLeave(false)
+        wbEditClose(false)
+        cb('ok')
+        return
+
+    elseif action == 'back' then
+        wbwLeave(true)
+        cb('ok')
+        return
+    end
+
+    nui(wbwPayload())
+    cb('ok')
+end)
+
 RegisterNUICallback('boardEdit', function(data, cb)
     local action = tostring(data and data.action or '')
 
-    if action == 'update' then
+    if action == 'world' then
+        WB.edit = data.layout or WB.edit
+        WBW.sel = tostring(data.sel or WBW.sel)
+        wbwEnter()
+        cb('ok')
+        return
+
+    elseif action == 'update' then
         WB.edit = data.layout
         if WB.spawned then
             local p = wbPodium()

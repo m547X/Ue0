@@ -1549,7 +1549,7 @@ function beRender(d) {
   BE.layout.screens.forEach((s, i) =>
     row('s' + i, `${tx('SCREEN')} ${i + 1}${s.title ? ' — ' + s.title : ''}`, s.enabled !== false));
   BE.layout.podium.forEach((p, i) =>
-    row('p' + i, `${tx('PODIUM')} #${i + 1}`, BE.layout.podiumEnabled !== false));
+    row('p' + i, `${tx('PODIUM')} ${i + 1}`, BE.layout.podiumEnabled !== false));
 
   beBody();
 }
@@ -1640,7 +1640,7 @@ function beBody() {
   const one = (n) => Math.round(n * 100) / 100;
 
   $('be-name').textContent = sel.kind === 's'
-    ? `${tx('SCREEN')} ${sel.i + 1}` : `${tx('PODIUM')} #${sel.i + 1}`;
+    ? `${tx('SCREEN')} ${sel.i + 1}` : `${tx('PODIUM')} ${sel.i + 1}`;
 
   const posRows = [
     beNudge(tx('NORTH / SOUTH'), () => it.pos.y, (v) => { it.pos.y = v; }, 0.25, one),
@@ -1648,6 +1648,16 @@ function beBody() {
     beNudge(tx('HEIGHT'),        () => it.pos.z, (v) => { it.pos.z = v; }, 0.25, one)
   ];
   posRows.forEach((r) => body.appendChild(r));
+
+  /* The same thing, moved in the world instead of in a list. The menu shuts
+     and a small panel takes its place, so you can see what you are doing. */
+  const world = el('button', 'btn wide',
+    `<svg><use href="#i-move"/></svg> ${esc(tx('MOVE IT IN THE WORLD'))}`);
+  world.onclick = () => {
+    Sfx.play('click');
+    post('boardEdit', { action: 'world', layout: BE.layout, sel: BE.sel });
+  };
+  body.appendChild(world);
 
   const here = el('button', 'btn ghost wide',
     `<svg><use href="#i-map"/></svg> ${esc(tx('PUT IT WHERE I STAND'))}`);
@@ -1713,6 +1723,178 @@ function beBody() {
     };
     body.appendChild(del);
   }
+}
+
+/* =============================================== BOARD EDITOR, IN THE WORLD */
+/* Moving a board from inside a menu means looking at a menu. This panel is
+   drawn over the game with the menu shut, so what you are moving is what you
+   are looking at, and the client draws an axis marker and the board's outline
+   at the same time.
+
+   It never takes the keyboard: the client holds NUI focus with input passed
+   through, so walking still works while the panel can be clicked, and the walk
+   chip drops focus altogether for the times you want the mouse to turn the
+   camera instead. */
+const BW = { on: false, mode: 'move', speed: 1, sel: 's0', walk: false,
+             targets: [], item: null };
+
+const BW_MODES = [
+  { id: 'move',    key: 'MOVE',    icon: '#i-move' },
+  { id: 'size',    key: 'SIZE',    icon: '#i-scale' },
+  { id: 'rotate',  key: 'ROTATE',  icon: '#i-rotate' },
+  { id: 'confirm', key: 'CONFIRM', icon: '#i-check' }
+];
+
+/* What each mode can push, per kind of thing. A podium spot is a person: it
+   has no width and no tilt, so those rows are simply not offered. */
+const BW_PAD = {
+  move:   [['EAST / WEST', 'x'], ['NORTH / SOUTH', 'y'], ['HEIGHT', 'z']],
+  size:   [['WIDTH', 'width']],
+  rotate: [['FACING', 'h'], ['TILT', 'pitch']]
+};
+
+const bwPost = (action, extra) => post('boardWorld', Object.assign({ action }, extra || {}));
+
+function bwNudgeBtn(axis, dir) {
+  const b = el('button', 'bw-nudge', dir > 0 ? '+' : '−');
+  /* Holding repeats, because sliding a board across a plaza one click at a
+     time is not sliding a board. */
+  let held = null;
+  const fire = () => bwPost('nudge', { axis, dir });
+  const start = () => {
+    fire();
+    held = setTimeout(function again() { fire(); held = setTimeout(again, 70); }, 360);
+  };
+  const stop = () => { clearTimeout(held); held = null; };
+  b.onmousedown = start;
+  b.onmouseup = stop;
+  b.onmouseleave = stop;
+  return b;
+}
+
+function bwValue(axis) {
+  const it = BW.item;
+  if (!it) return '—';
+  if (axis === 'x' || axis === 'y' || axis === 'z') return (Math.round(it[axis] * 100) / 100);
+  if (axis === 'h' || axis === 'pitch') return Math.round(it[axis] || 0) + '°';
+  if (axis === 'width') return (Math.round((it.width || 0) * 10) / 10) + 'm';
+  return '—';
+}
+
+function bwPad() {
+  const host = el('div', 'bw-pad');
+  if (BW.mode === 'confirm') {
+    const save = el('button', 'bw-save',
+      `<svg><use href="#i-check"/></svg> ${esc(tx('SAVE'))}`);
+    save.onclick = () => bwPost('confirm');
+    host.appendChild(save);
+    return host;
+  }
+
+  const kind = (BW.item && BW.item.kind) || 's';
+  (BW_PAD[BW.mode] || []).forEach(([label, axis]) => {
+    if (kind === 'p' && (axis === 'width' || axis === 'pitch')) return;
+    const row = el('div', 'bw-row', `<label>${esc(tx(label))}</label>`);
+    const ctl = el('div', 'bw-ctl');
+    ctl.appendChild(bwNudgeBtn(axis, -1));
+    ctl.appendChild(el('b', 'bw-val', String(bwValue(axis))));
+    ctl.appendChild(bwNudgeBtn(axis, 1));
+    row.appendChild(ctl);
+    host.appendChild(row);
+  });
+
+  if (!host.children.length) {
+    host.appendChild(el('div', 'bw-none', tx('NOTHING TO EDIT')));
+  }
+  return host;
+}
+
+function renderWorldEdit(d) {
+  if (d) {
+    BW.on      = d.on === true;
+    BW.mode    = d.mode || BW.mode;
+    BW.speed   = typeof d.speed === 'number' ? d.speed : BW.speed;
+    BW.sel     = d.sel || BW.sel;
+    BW.walk    = d.walk === true;
+    BW.targets = d.targets || [];
+    BW.item    = d.item || null;
+  }
+
+  const host = $('bw');
+  host.classList.toggle('hidden', !BW.on);
+  // the menu and the world panel are never both up: the point of the panel is
+  // that you can see the thing you are moving
+  if (BW.on) $('app').classList.add('hidden');
+  if (!BW.on) { host.innerHTML = ''; return; }
+  host.classList.toggle('walking', BW.walk);
+
+  host.innerHTML = '';
+
+  // --- how far one press moves things -------------------------------------
+  const sp = el('div', 'bw-speed',
+    `<label>${esc(tx('MOVE SPEED HINT'))}</label>`);
+  const spRow = el('div', 'bw-speed-row');
+  const less = el('button', 'bw-btn', '−');
+  const more = el('button', 'bw-btn', '+');
+  less.onclick = () => bwPost('speed', { dir: -1 });
+  more.onclick = () => bwPost('speed', { dir: 1 });
+  const track = el('div', 'bw-track', '<i></i>');
+  // 0.25x is empty, 4x is full
+  const pct = Math.max(0, Math.min(1, (Math.log(BW.speed) / Math.log(2) + 2) / 4));
+  track.querySelector('i').style.width = Math.round(pct * 100) + '%';
+  spRow.appendChild(less);
+  spRow.appendChild(track);
+  spRow.appendChild(el('b', 'bw-speed-val', String(+BW.speed.toFixed(2)) + 'x'));
+  spRow.appendChild(more);
+  sp.appendChild(spRow);
+  host.appendChild(sp);
+
+  // --- which of the four things you are doing -----------------------------
+  const modes = el('div', 'bw-modes');
+  BW_MODES.forEach((m) => {
+    const b = el('button', 'bw-mode' + (BW.mode === m.id ? ' on' : '') +
+                           (m.id === 'confirm' ? ' go' : ''),
+      `<svg><use href="${m.icon}"/></svg><span>${esc(tx(m.key))}</span>`);
+    b.onclick = () => (m.id === 'confirm' ? bwPost('confirm') : bwPost('mode', { mode: m.id }));
+    modes.appendChild(b);
+  });
+  host.appendChild(modes);
+
+  host.appendChild(bwPad());
+
+  // --- which board or which podium spot -----------------------------------
+  if (BW.targets.length > 1) {
+    const tg = el('div', 'bw-targets');
+    BW.targets.forEach((t) => {
+      const label = t.kind === 's'
+        ? `${tx('SCREEN')} ${t.n}${t.title ? ' — ' + t.title : ''}`
+        : `${tx('PODIUM')} ${t.n}`;
+      const b = el('button', 'bw-target' + (BW.sel === t.id ? ' on' : ''),
+        `<span>${esc(label)}</span>`);
+      b.onclick = () => bwPost('pick', { sel: t.id });
+      tg.appendChild(b);
+    });
+    host.appendChild(tg);
+  }
+
+  // --- the two things that are not a nudge --------------------------------
+  const foot = el('div', 'bw-foot');
+  const here = el('button', 'bw-ghost',
+    `<svg><use href="#i-map"/></svg> ${esc(tx('PUT IT WHERE I STAND'))}`);
+  here.onclick = () => bwPost('here');
+  const back = el('button', 'bw-ghost',
+    `<svg><use href="#i-back"/></svg> ${esc(tx('BACK TO THE MENU'))}`);
+  back.onclick = () => bwPost('back');
+  foot.appendChild(here);
+  foot.appendChild(back);
+  host.appendChild(foot);
+
+  // --- the chip that hands the mouse back to the game ---------------------
+  const walk = el('button', 'bw-walk' + (BW.walk ? ' off' : ''),
+    BW.walk ? `<b>${esc(tx('PRESS F5'))}</b><i>${esc(tx('TO EDIT'))}</i>`
+            : `<b>${esc(tx('CLICK HERE'))}</b><i>${esc(tx('TO MOVE THE PLAYER'))}</i>`);
+  walk.onclick = () => bwPost('walk', { on: !BW.walk });
+  host.appendChild(walk);
 }
 
 /* =========================================================== LEADERBOARD */
@@ -3727,6 +3909,7 @@ window.addEventListener('message', (e) => {
       break;
 
     case 'boardEdit': beRender(d); break;
+    case 'boardWorld': renderWorldEdit(d); break;
 
     case 'promptFocus':
       S.promptFocus = d.on === true;
@@ -4172,6 +4355,9 @@ document.addEventListener('keydown', (e) => {
     }
     if (!$('modal-invite').classList.contains('hidden')) { $('modal-invite').classList.add('hidden'); return; }
     if (!$('modal-custom').classList.contains('hidden')) { $('modal-custom').classList.add('hidden'); return; }
+    /* In the world editor there is no menu to close — Escape goes back to the
+       list, which is where cancelling lives. */
+    if (BW.on) { e.preventDefault(); bwPost('back'); return; }
     if (escLocked()) { e.preventDefault(); return; }
     if (!$('modal-result').classList.contains('hidden')) $('modal-result').classList.add('hidden');
     post('close');
