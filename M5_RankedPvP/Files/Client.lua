@@ -2446,7 +2446,8 @@ local WB = {
     spawned = false,
     sent    = false,
     layout  = nil,
-    edit    = nil
+    edit    = nil,
+    awayAt  = 0
 }
 
 local function vec3(p)
@@ -2495,11 +2496,13 @@ local function wbLayout()
             pos      = spot.pos,
             title    = spot.title,
             enabled  = spot.enabled ~= false,
-            scale    = tonumber(sc.scale) or 1.0,
-            width    = 1.0,
-            rows     = tonumber(sc.rows) or 10,
-            opacity  = tonumber(sc.opacity) or 190,
-            distance = tonumber(sc.distance) or 18.0
+            h        = tonumber(spot.h) or 0.0,
+            pitch    = tonumber(spot.pitch) or 0.0,
+            width    = tonumber(spot.width) or 6.0,
+            height   = tonumber(spot.height),
+            rows     = tonumber(sc.rows) or 9,
+            opacity  = tonumber(sc.opacity) or 255,
+            distance = tonumber(sc.distance) or 35.0
         }
     end
     for i = 1, #(pc.spots or {}) do
@@ -2545,98 +2548,140 @@ local function wbColour(hex)
     return (n >> 16) & 255, (n >> 8) & 255, n & 255
 end
 
-local WB_COLS = {
-    { key = 'position', head = '#',      w = 0.000, align = 'left',   tint = true  },
-    { key = 'name',     head = 'PLAYER', w = 0.026, align = 'left'                 },
-    { key = 'kills',    head = 'K',      w = 0.560, align = 'right'                },
-    { key = 'deaths',   head = 'D',      w = 0.660, align = 'right'                },
-    { key = 'wins',     head = 'W',      w = 0.760, align = 'right', good = true   },
-    { key = 'losses',   head = 'L',      w = 0.845, align = 'right', bad  = true   },
-    { key = 'kd',       head = 'K/D',    w = 0.930, align = 'right', warm = true   },
-    { key = 'rp',       head = 'RP',     w = 1.000, align = 'right', tint = true   }
+local DUI = {
+    obj     = nil,
+    handle  = nil,
+    txd     = 'm5rp_board_txd',
+    tex     = 'm5rp_board',
+    made    = false,
+    ready   = false,
+    w       = 1280,
+    h       = 720,
+    lastKey = ''
 }
 
+local function duiSize()
+    local sc = (Config.WorldBoard or {}).screens or {}
+    local w = math.floor(tonumber(sc.textureWidth)  or 1280)
+    local h = math.floor(tonumber(sc.textureHeight) or 720)
+    if w < 256 then w = 256 elseif w > 2048 then w = 2048 end
+    if h < 144 then h = 144 elseif h > 2048 then h = 2048 end
+    return w, h
+end
+
+local function duiPush()
+    if not DUI.ready then return end
+
+    local sc  = (Config.WorldBoard or {}).screens or {}
+    local rows = {}
+    local max  = math.floor(tonumber(sc.rows) or 9)
+    for i = 1, math.min(#WB.rows, max) do rows[i] = WB.rows[i] end
+
+    local key = tostring(#rows) .. '|' .. tostring(WB.season)
+    for i = 1, #rows do
+        key = key .. '|' .. tostring(rows[i].userId) .. ':' .. tostring(rows[i].rp)
+              .. ':' .. tostring(rows[i].kills) .. ':' .. tostring(rows[i].deaths)
+              .. ':' .. tostring(rows[i].wins) .. ':' .. tostring(rows[i].losses)
+    end
+    if key == DUI.lastKey then return end
+    DUI.lastKey = key
+
+    local ui    = Config.UI or {}
+    local col   = ui.colors or {}
+    local brand = Config.Brand or {}
+
+    SendDuiMessage(DUI.obj, json.encode({
+        action = 'board',
+        rows   = rows,
+        max    = max,
+        season = WB.season,
+        title  = sc.podiumTitle,
+        subtitle = sc.subtitle,
+        theme  = { accent = col.accent, gold = col.gold, text = col.text,
+                   dim = col.dim, bg = col.bgDeep or col.bg, panel = col.panel },
+        brand  = { name = brand.name, accent = brand.accent }
+    }))
+end
+
+local function duiCreate()
+    if DUI.made then return DUI.ready end
+    DUI.made = true
+
+    DUI.w, DUI.h = duiSize()
+    DUI.obj = CreateDui(('nui://%s/Files/ui/board.html'):format(GetCurrentResourceName()),
+                        DUI.w, DUI.h)
+    if not DUI.obj then return false end
+
+    DUI.handle = GetDuiHandle(DUI.obj)
+    if not DUI.handle then return false end
+
+    CreateRuntimeTxd(DUI.txd)
+    CreateRuntimeTextureFromDuiHandle(DUI.txd, DUI.tex, DUI.handle)
+
+    DUI.ready = true
+    DUI.lastKey = ''
+    duiPush()
+    return true
+end
+
+local function duiDestroy()
+    if DUI.obj then
+        SetDuiUrl(DUI.obj, 'about:blank')
+        DestroyDui(DUI.obj)
+    end
+    DUI.obj, DUI.handle = nil, nil
+    DUI.made, DUI.ready = false, false
+    DUI.lastKey = ''
+end
+
+local function screenSize(spot)
+    local w = tonumber(spot.width) or 4.0
+    local h = tonumber(spot.height)
+    if not h or h <= 0 then h = w * (DUI.h / DUI.w) end
+    return w, h
+end
+
+local function screenCorners(spot)
+    local p    = vec3(spot.pos)
+    local yaw  = math.rad(tonumber(spot.h) or 0.0)
+    local tilt = math.rad(tonumber(spot.pitch) or 0.0)
+    local w, h = screenSize(spot)
+
+    local rx, ry = math.cos(yaw), math.sin(yaw)
+    local ux, uy, uz = -math.sin(yaw) * math.sin(tilt),
+                        math.cos(yaw) * math.sin(tilt),
+                        math.cos(tilt)
+
+    local hw, hh = w * 0.5, h * 0.5
+    local ax, ay, az = rx * hw, ry * hw, 0.0
+    local bx, by, bz = ux * hh, uy * hh, uz * hh
+
+    return
+        p.x - ax + bx, p.y - ay + by, p.z - az + bz,
+        p.x + ax + bx, p.y + ay + by, p.z + az + bz,
+        p.x + ax - bx, p.y + ay - by, p.z + az - bz,
+        p.x - ax - bx, p.y - ay - by, p.z - az - bz
+end
+
 local function drawScreen(spot, dist)
-    local far   = tonumber(spot.distance) or 18.0
-    local scale = (tonumber(spot.scale) or 1.0) * (1.0 - (dist / (far * 2.4)))
-    if scale < 0.22 then scale = 0.22 end
+    if not DUI.ready then return end
 
-    local shown = math.min(tonumber(spot.rows) or 10, #WB.rows)
-    local alpha = math.floor(tonumber(spot.opacity) or 190)
+    local a = math.floor(tonumber(spot.opacity) or 255)
+    local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(spot)
 
-    local lineH = 0.020 * scale
-    local width = 0.230 * scale * (tonumber(spot.width) or 1.0)
-    local head  = 0.042 * scale
-    local hdr   = 0.016 * scale
-    local body  = lineH * math.max(shown, 1)
-    local total = head + hdr + body + (0.012 * scale)
+    DrawSpritePoly(tlx, tly, tlz, trx, try, trz, brx, bry, brz,
+                   255, 255, 255, a, DUI.txd, DUI.tex,
+                   0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0)
+    DrawSpritePoly(tlx, tly, tlz, brx, bry, brz, blx, bly, blz,
+                   255, 255, 255, a, DUI.txd, DUI.tex,
+                   0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
 
-    local left  = -(width / 2) + (0.010 * scale)
-    local right =  (width / 2) - (0.010 * scale)
-    local span  = right - left
-
-    local function colX(c)
-        return left + (span * c.w)
-    end
-
-    SetDrawOrigin(spot.pos.x, spot.pos.y, spot.pos.z, 0)
-
-    DrawRect(0.0, 0.0, width, total, 8, 10, 14, alpha)
-    DrawRect(0.0, -(total / 2) + (head / 2), width, head, 150, 28, 42, math.min(255, alpha + 45))
-    DrawRect(0.0, -(total / 2) + head, width, 0.0016 * scale, 210, 45, 60, 255)
-
-    wbText(spot.title or 'LEADERBOARD', 0.0, -(total / 2) + (head / 2) - (0.012 * scale),
-           0.46 * scale, 245, 245, 250, 255, 'centre')
-    if WB.season then
-        wbText(WB.season, 0.0, -(total / 2) + (head / 2) + (0.004 * scale),
-               0.26 * scale, 205, 175, 180, 210, 'centre')
-    end
-
-    local y = -(total / 2) + head + (0.004 * scale)
-
-    for i = 1, #WB_COLS do
-        local c = WB_COLS[i]
-        wbText(c.head, colX(c), y, 0.25 * scale, 150, 158, 170, 220, c.align, right)
-    end
-    y = y + hdr
-    DrawRect(0.0, y - (0.002 * scale), width - (0.008 * scale), 0.0008 * scale, 90, 96, 108, 160)
-
-    if shown == 0 then
-        wbText('NO PLAYERS ON THE BOARD YET', 0.0, y + (lineH * 0.6),
-               0.30 * scale, 150, 158, 170, 210, 'centre')
-        ClearDrawOrigin()
-        return
-    end
-
-    for i = 1, shown do
-        local row = WB.rows[i]
-        local r, g, b = row.r or 220, row.g or 220, row.b or 225
-        local cells = row.cells
-
-        if i <= 3 then
-            DrawRect(0.0, y + (lineH / 2) - (0.002 * scale), width - (0.008 * scale),
-                     lineH, r, g, b, 38)
-        elseif i % 2 == 0 then
-            DrawRect(0.0, y + (lineH / 2) - (0.002 * scale), width - (0.008 * scale),
-                     lineH, 255, 255, 255, 8)
-        end
-
-        for n = 1, #WB_COLS do
-            local c  = WB_COLS[n]
-            local cr, cg, cb = 225, 228, 234
-            if c.tint then cr, cg, cb = r, g, b
-            elseif c.good then cr, cg, cb = 70, 210, 140
-            elseif c.bad  then cr, cg, cb = 220, 80, 90
-            elseif c.warm then cr, cg, cb = 235, 190, 90 end
-
-            wbText(cells and cells[n] or '-', colX(c), y,
-                   0.29 * scale, cr, cg, cb, 255, c.align, right)
-        end
-
-        y = y + lineH
-    end
-
-    ClearDrawOrigin()
+    DrawSpritePoly(brx, bry, brz, trx, try, trz, tlx, tly, tlz,
+                   255, 255, 255, a, DUI.txd, DUI.tex,
+                   1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    DrawSpritePoly(blx, bly, blz, brx, bry, brz, tlx, tly, tlz,
+                   255, 255, 255, a, DUI.txd, DUI.tex,
+                   0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
 end
 
 local function wbDespawn()
@@ -2717,12 +2762,6 @@ end
 local function wbFormatRows()
     for i = 1, #WB.rows do
         local row = WB.rows[i]
-        local cells = {}
-        for n = 1, #WB_COLS do
-            local v = row[WB_COLS[n].key]
-            cells[n] = (v == nil) and '-' or tostring(v)
-        end
-        row.cells = cells
         row.plate = ('#%d  %s'):format(row.position or i, row.name or '')
         row.under = ('%s \194\183 %d RP'):format(row.rank or '', row.rp or 0)
         row.r, row.g, row.b = wbColour(row.color)
@@ -2735,6 +2774,7 @@ RegisterNetEvent('m5rp:cl:worldBoard', function(payload)
     WB.rows   = payload.rows or {}
     WB.season = payload.season
     wbFormatRows()
+    duiPush()
     if WB.spawned then
         local cfg = wbPodium()
         if cfg then wbSpawn(cfg) else wbDespawn() end
@@ -2744,6 +2784,7 @@ end)
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     wbDespawn()
+    duiDestroy()
 end)
 
 local WB_FAR  = 2000
@@ -2755,23 +2796,39 @@ function wbTick(me, podiumAcc)
     if not WB.ready then return sleep, podiumAcc end
 
     local screens = wbScreens()
+    local anyNear = false
     if screens then
         for i = 1, #screens do
             local spot = screens[i]
-            local far  = tonumber(spot.distance) or 18.0
+            local far  = tonumber(spot.distance) or 35.0
             if spot.enabled ~= false and spot.pos then
                 local d = #(me - vec3(spot.pos))
                 if d <= far then
+                    anyNear = true
                     if World3dToScreen2d(spot.pos.x, spot.pos.y, spot.pos.z) then
                         sleep = 0
-                        drawScreen(spot, d)
+                        if duiCreate() then drawScreen(spot, d) end
                     elseif sleep > WB_NEAR then
                         sleep = WB_NEAR
                     end
-                elseif d <= far * 2.5 and sleep > WB_NEAR then
-                    sleep = WB_NEAR
+                elseif d <= far * 1.6 then
+                    anyNear = true
+                    if sleep > WB_NEAR then sleep = WB_NEAR end
                 end
             end
+        end
+    end
+
+    if anyNear then
+        WB.awayAt = 0
+    elseif DUI.made then
+        local keep = math.max(0, tonumber(((Config.WorldBoard or {}).screens or {}).keepAlive) or 60)
+        local t = ms()
+        if WB.awayAt == 0 then
+            WB.awayAt = t
+        elseif keep > 0 and (t - WB.awayAt) > (keep * 1000) then
+            WB.awayAt = 0
+            duiDestroy()
         end
     end
 
@@ -2851,11 +2908,11 @@ if Config.ClientCommands.coords and Config.ClientCommands.coords.enabled then
 
         print('')
         print('[M5RP] ---- ' .. Config.ClientCommands.coords.name .. ' ----')
-        print(('  screen : pos = vector3(%.2f, %.2f, %.2f)')
-            :format(c.x, c.y, c.z + 1.35))
+        print(('  screen : { pos = vector3(%.2f, %.2f, %.2f), h = %.1f, pitch = 0.0, width = 6.0, enabled = true },')
+            :format(c.x, c.y, c.z + 1.35, (h + 180.0) % 360.0))
         print(('  podium : { pos = vector3(%.2f, %.2f, %.2f), h = %.1f, anim = nil },')
             :format(c.x, c.y, c.z, h))
-        print('[M5RP] the screen line floats at eye height; the podium line stands on the ground')
+        print('[M5RP] the screen line floats at eye height and faces back at you; the podium line stands on the ground')
         print('')
     end, false)
 end
@@ -2871,9 +2928,10 @@ local function wbEditSnapshot()
         out.screens[i] = {
             pos = { x = s.pos.x + 0.0, y = s.pos.y + 0.0, z = s.pos.z + 0.0 },
             title = s.title or '', enabled = s.enabled ~= false,
-            scale = tonumber(s.scale) or 1.0, width = tonumber(s.width) or 1.0,
-            rows = tonumber(s.rows) or 10, opacity = tonumber(s.opacity) or 190,
-            distance = tonumber(s.distance) or 18.0
+            h = tonumber(s.h) or 0.0, pitch = tonumber(s.pitch) or 0.0,
+            width = tonumber(s.width) or 6.0,
+            rows = tonumber(s.rows) or 9, opacity = tonumber(s.opacity) or 255,
+            distance = tonumber(s.distance) or 35.0
         }
     end
     for i = 1, #l.podium do
@@ -2910,7 +2968,8 @@ local function wbEditOpen()
                 return { x = c.x, y = c.y, z = c.z + 1.35 }
             end)(),
             title = 'LEADERBOARD', enabled = true,
-            scale = 1.0, width = 1.0, rows = 10, opacity = 190, distance = 18.0
+            h = ((GetEntityHeading(playerPed()) + 180.0) % 360),
+            pitch = 0.0, width = 6.0, rows = 9, opacity = 255, distance = 35.0
         }
     end
 

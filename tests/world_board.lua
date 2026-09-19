@@ -83,10 +83,28 @@ Citizen = { Wait = noop }
 RegisterNetEvent, AddEventHandler = noop, noop
 function GetCurrentResourceName() return 'M5_RankedPvP' end
 
-Config = { WorldBoard = {
+-- the board is a web page painted onto a texture; the page itself is checked
+-- in the browser by tests/ui_world_board.js, so here it is only counted
+DUIS, PUSHED, DESTROYED = 0, 0, 0
+function CreateDui() DUIS = DUIS + 1; return 100 + DUIS end
+function GetDuiHandle() return 'handle' end
+function CreateRuntimeTxd() return 1 end
+function CreateRuntimeTextureFromDuiHandle() return 1 end
+function SendDuiMessage(_, payload) PUSHED = PUSHED + 1; LAST_PUSH = payload end
+function SetDuiUrl() end
+function DestroyDui() DESTROYED = DESTROYED + 1 end
+function DrawSpritePoly() DRAWS = DRAWS + 1 end
+json = { encode = function(t) return t end }
+local CLOCK = 0
+function ms() return CLOCK end
+function advance(n) CLOCK = CLOCK + n end
+
+Config = { UI = { colors = {} }, Brand = {}, WorldBoard = {
   enabled = true,
-  screens = { enabled = true, distance = 18.0, rows = 10, scale = 1.0, opacity = 190,
-              spots = { { pos = vector3(0, 0, 0), title = 'TOP', enabled = true } } },
+  screens = { enabled = true, distance = 18.0, rows = 10, opacity = 255,
+              textureWidth = 1280, textureHeight = 720, keepAlive = 60,
+              spots = { { pos = vector3(0, 0, 0), title = 'TOP', enabled = true,
+                          h = 0.0, pitch = 0.0, width = 6.0 } } },
   podium  = { enabled = true, distance = 25.0, showNames = true,
               fallback = 'a_m_y_skater_01',
               spots = { { pos = vector3(2, 0, 0), h = 0.0 },
@@ -94,12 +112,12 @@ Config = { WorldBoard = {
                         { pos = vector3(6, 0, 0), h = 0.0 } } } } }
 
 -- the slice hands back the tick and the table it keeps its rows and peds in
-local wbTick, WB
+local wbTick, WB, DUI
 do
   local a = CL:find('local WB = {', 1, true)
   local b = CL:find('Citizen.CreateThread(function()\n    if not wbOn() then return end', a, true)
   assert(a and b, 'could not slice the world board')
-  wbTick, WB = assert(load(CL:sub(a, b - 1) .. '\nreturn wbTick, WB', 'wb'))()
+  wbTick, WB, DUI = assert(load(CL:sub(a, b - 1) .. '\nreturn wbTick, WB, DUI', 'wb'))()
 end
 
 local function rows(n)
@@ -144,9 +162,15 @@ sleep = tick(500)
 check('a board far away sleeps for two seconds', sleep, 2000)
 check('  and draws nothing at all',              DRAWS, 0)
 
-sleep = tick(30)
+-- the band where it starts looking more often reaches half again as far as
+-- the board is visible from, so approaching one is picked up before it should
+-- already be on screen
+sleep = tick(25)
 check('walking towards it starts checking more often', sleep, 400)
 check('  but still draws nothing',                     DRAWS, 0)
+
+sleep = tick(40)
+check('further out than that it goes back to sleep',   sleep, 2000)
 
 sleep = tick(5)
 check('standing in front of it runs at frame rate', sleep, 0)
@@ -213,40 +237,37 @@ check('  and no peds are spawned',                  SPAWNED, 0)
 Config.WorldBoard.podium.enabled = true
 
 -- ==========================================================================
--- 2b. every line states its own alignment
+-- 2b. the page behind the board
 -- ==========================================================================
--- GTA keeps the alignment flags from one draw to the next. The RP column is
--- right justified, so without a reset the rank number on the next row lands on
--- the wrong side of the board — legible in a screenshot, invisible in review.
+-- The texture is a running browser page. It is worth what it costs only while
+-- somebody can see it, and repainting it is paid by every machine looking at
+-- the board — so it is built on demand, pushed only when the numbers actually
+-- change, and handed back once nobody has been near for a while.
 Config.WorldBoard.screens.enabled = true
 Config.WorldBoard.podium.enabled = false
-ALIGNMENTS = {}
-tick(5, 0, 0, 0)
-check('every line drawn states its alignment', #ALIGNMENTS > 6, true)
 
-local unset = 0
-for _, a in ipairs(ALIGNMENTS) do
-  if a:find('nil') then unset = unset + 1 end
-end
-check('  none of them inherits it from the line before', unset, 0)
+DUI.made, DUI.ready, DUI.lastKey = false, false, ''
+DUIS, PUSHED, DESTROYED = 0, 0, 0
 
--- the number columns are right justified and the name column is not, on every
--- row and on the header — the count is the invariant that catches a leak
-local rights, lefts = 0, 0
-for _, a in ipairs(ALIGNMENTS) do
-  if a:find('/true') then rights = rights + 1 else lefts = lefts + 1 end
-end
-local numeric, text = 0, 0
-for _, c in ipairs({ 'position', 'name', 'kills', 'deaths', 'wins', 'losses', 'kd', 'rp' }) do
-  if c == 'position' or c == 'name' then text = text + 1 else numeric = numeric + 1 end
-end
-local lines = math.min(Config.WorldBoard.screens.rows, #WB.rows) + 1   -- +1 header
-check('  the number columns are right justified, on every row',
-      rights, numeric * lines)
-check('  and the name column never is',
-      lefts >= text * lines, true)
-Config.WorldBoard.podium.enabled = true
+tick(500)
+check('a board nobody is near builds no page', DUIS, 0)
 
+tick(5)
+check('walking up to it builds one', DUIS, 1)
+check('  and paints the rows onto it once', PUSHED, 1)
+
+tick(5)
+tick(5)
+check('standing there does not build another', DUIS, 1)
+check('  and does not repaint it either',      PUSHED, 1)
+
+-- the same rows arriving again are the same picture
+WBPUSH = PUSHED
+WB.rows = rows(10)
+tick(5)
+check('rows that say the same thing are not repainted', PUSHED, WBPUSH)
+
+-- ==========================================================================
 -- ==========================================================================
 -- 2c. what a frame in front of the board costs
 -- ==========================================================================

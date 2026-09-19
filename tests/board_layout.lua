@@ -57,16 +57,19 @@ check('  and the facing',            out.podium[1].h, 90)
 -- ==========================================================================
 -- 2. numbers are clamped, not trusted
 -- ==========================================================================
+-- the width is metres of world now, not a percentage of a drawn panel
 out = sanitise(layout({ screens = { screen({ width = 900 }) } }))
-check('an absurd width is clamped', out.screens[1].width, 3.0)
+check('a board the size of a city block is clamped', out.screens[1].width, 40.0)
 out = sanitise(layout({ screens = { screen({ width = -5 }) } }))
-check('  and a negative one',        out.screens[1].width, 0.4)
+check('  and a negative one',        out.screens[1].width, 0.5)
 
-out = sanitise(layout({ screens = { screen({ scale = 100 }) } }))
-check('the size is clamped too', out.screens[1].scale, 4.0)
+out = sanitise(layout({ screens = { screen({ h = 400 }) } }))
+check('a facing past a full turn wraps round', out.screens[1].h, 40.0)
+out = sanitise(layout({ screens = { screen({ pitch = 200 }) } }))
+check('a tilt past upside down is clamped',    out.screens[1].pitch, 60.0)
 
 out = sanitise(layout({ screens = { screen({ distance = 5000 }) } }))
-check('a board visible from a kilometre away is clamped', out.screens[1].distance, 120.0)
+check('a board visible from a kilometre away is clamped', out.screens[1].distance, 200.0)
 
 out = sanitise(layout({ screens = { screen({ rows = 999 }) } }))
 check('the row count is clamped', out.screens[1].rows, 25)
@@ -81,8 +84,8 @@ check('a heading past a full turn wraps', out.podium[1].h, 5)
 
 -- a value that is not a number at all falls back rather than propagating nil
 out = sanitise(layout({ screens = { screen({ width = 'wide', rows = {} }) } }))
-check('text where a number belongs falls back', out.screens[1].width, 1.0)
-check('  and so does a table',                  out.screens[1].rows, 10)
+check('text where a number belongs falls back', out.screens[1].width, 4.0)
+check('  and so does a table',                  out.screens[1].rows, 9)
 
 -- ==========================================================================
 -- 3. positions have to be real places

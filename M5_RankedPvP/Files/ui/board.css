@@ -1,0 +1,256 @@
+/* The world board.
+ *
+ * Read from ten metres away, through a texture that is smaller than the screen
+ * it was drawn for, so everything here is a size up from what a menu would
+ * use and the contrast is pushed: thin grey on dark disappears at that
+ * distance. The palette arrives from the client as CSS variables, so the board
+ * follows Config.UI.colors like the rest of the interface.
+ *
+ * Nothing animates. A DUI texture is repainted whenever the page changes, and
+ * a board that breathes costs that repaint every frame for the whole server.
+ */
+
+:root {
+  --bg:      #06070A;
+  --panel:   #0C1016;
+  --panel-2: #11161F;
+  --line:    rgba(255,255,255,.07);
+  --text:    #EEF3F9;
+  --dim:     #8C98A8;
+  --dim-2:   #5A6472;
+  --accent:  #2E9BE6;
+  --accent-rgb: 46,155,230;
+  --gold:    #F5C542;
+  --silver:  #C8D0DA;
+  --bronze:  #C77B3C;
+  --good:    #3FD07F;
+  --bad:     #E8544B;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', Tahoma, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.board {
+  width: 100%; height: 100%;
+  display: grid;
+  grid-template-columns: 32% 1fr;
+  gap: 18px;
+  padding: 22px;
+  background:
+    radial-gradient(1200px 600px at 78% -10%, rgba(var(--accent-rgb),.10), transparent 60%),
+    linear-gradient(160deg, #0A0E14 0%, var(--bg) 55%);
+}
+
+.hidden { display: none !important; }
+
+/* ------------------------------------------------------------- left panel */
+.podium {
+  display: flex; flex-direction: column;
+  border-radius: 16px;
+  background: linear-gradient(170deg, var(--panel) 0%, rgba(6,7,10,.9) 100%);
+  border: 1px solid var(--line);
+  padding: 20px 18px;
+}
+
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-cup { width: 26px; height: 26px; fill: var(--gold); flex: none; }
+.brand-name { display: flex; align-items: baseline; gap: 7px; line-height: 1; }
+.brand-name b { font-size: 25px; font-weight: 800; letter-spacing: .04em; }
+.brand-name i { font-style: normal; font-size: 25px; font-weight: 800;
+  letter-spacing: .04em; color: var(--accent); }
+
+.podium-title {
+  margin-top: 16px; font-size: 15px; font-weight: 800; letter-spacing: .26em;
+  color: var(--dim);
+}
+
+/* the three cards, tallest in the middle, each standing on a plinth. The
+   plinths are what make it a podium instead of three cards in a row, and they
+   are what fills the panel down to the floor without stretching the cards
+   hollow to do it. */
+.stand {
+  flex: 1; display: grid; grid-template-columns: 1fr 1.16fr 1fr;
+  align-items: end; gap: 10px;
+  margin-top: auto; padding-top: 34px; min-width: 0;
+}
+.col {
+  display: flex; flex-direction: column; justify-content: flex-end;
+  height: 100%; min-width: 0;
+}
+
+.base {
+  margin-top: 9px; border-radius: 10px 10px 2px 2px;
+  display: grid; place-items: center;
+  font-weight: 900; line-height: 1;
+  border: 1px solid var(--line); border-bottom: none;
+}
+.col.c1 .base {
+  height: 176px; font-size: 48px; color: var(--gold);
+  background: linear-gradient(180deg, rgba(245,197,66,.26), rgba(245,197,66,.03));
+  border-color: rgba(245,197,66,.34);
+}
+.col.c2 .base {
+  height: 126px; font-size: 38px; color: var(--silver);
+  background: linear-gradient(180deg, rgba(200,208,218,.18), rgba(200,208,218,.02));
+  border-color: rgba(200,208,218,.22);
+}
+.col.c3 .base {
+  height: 94px; font-size: 33px; color: var(--bronze);
+  background: linear-gradient(180deg, rgba(199,123,60,.20), rgba(199,123,60,.02));
+  border-color: rgba(199,123,60,.26);
+}
+
+.pod {
+  position: relative; min-width: 0;
+  border-radius: 14px; padding: 20px 8px 16px;
+  background: linear-gradient(180deg, var(--panel-2), rgba(8,10,14,.9));
+  border: 1px solid var(--line);
+  text-align: center;
+}
+.pod.p1 { padding: 34px 8px 22px; border-color: rgba(245,197,66,.4);
+  box-shadow: 0 0 0 1px rgba(245,197,66,.14), 0 -18px 46px -28px var(--gold) inset; }
+.pod.p2 { border-color: rgba(200,208,218,.26); }
+.pod.p3 { border-color: rgba(199,123,60,.30); }
+
+.pod-crown {
+  position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
+  width: 22px; height: 22px; fill: var(--gold);
+}
+
+.pod-av {
+  width: 66px; height: 66px; border-radius: 50%; margin: 0 auto;
+  overflow: hidden; position: relative; flex: none;
+  background: linear-gradient(145deg, #253040, #131922);
+  display: grid; place-items: center;
+  font-size: 26px; font-weight: 800; color: #fff;
+  border: 2px solid var(--line);
+}
+.pod.p1 .pod-av { width: 80px; height: 80px; font-size: 32px; border-color: rgba(245,197,66,.55); }
+.pod.p2 .pod-av { border-color: rgba(200,208,218,.4); }
+.pod.p3 .pod-av { border-color: rgba(199,123,60,.45); }
+.pod-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+.pod-name {
+  margin-top: 13px; font-size: 15px; font-weight: 700; letter-spacing: .05em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The size here is a starting point — board.js measures the name and steps it
+   down from this until it fits the card, because cutting somebody's name off
+   with an ellipsis on a board people walk up to read is worse than a smaller
+   name. */
+.pod-score { margin-top: 8px; font-size: 26px; font-weight: 800; line-height: 1; }
+.pod.p1 .pod-score { font-size: 31px; color: var(--gold); }
+.pod.p2 .pod-score { color: var(--silver); }
+.pod.p3 .pod-score { color: var(--bronze); }
+/* a six figure score does not fit at the headline size, so it steps down
+   rather than running out of the card */
+.pod-score.long { font-size: 22px; }
+.pod.p1 .pod-score.long { font-size: 26px; }
+.pod-unit { font-size: 9px; letter-spacing: .24em; color: var(--dim-2); margin-top: 3px; }
+
+.pod-stats {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr; gap: 4px;
+  font-size: 10.5px; color: var(--dim);
+}
+.pod-stats b { color: var(--text); font-weight: 700; }
+.pod-stats span { display: flex; justify-content: space-between; gap: 6px; }
+
+/* ------------------------------------------------------------ right panel */
+.table {
+  display: flex; flex-direction: column; min-width: 0;
+  border-radius: 16px;
+  background: linear-gradient(170deg, var(--panel) 0%, rgba(6,7,10,.92) 100%);
+  border: 1px solid var(--line);
+  padding: 18px 20px 14px;
+}
+
+.table-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; padding-bottom: 12px;
+}
+.th-title { font-size: 17px; font-weight: 800; letter-spacing: .2em; }
+.th-sub { font-size: 11px; font-weight: 700; letter-spacing: .28em; color: var(--dim-2); }
+
+/* one grid definition for the header and every row, so the columns cannot
+   drift apart */
+.grid {
+  display: grid; column-gap: 6px;
+  grid-template-columns:
+    40px 104px minmax(120px,1fr) 44px 56px 62px 52px 64px 50px 72px;
+  align-items: center;
+}
+
+.head {
+  padding: 0 10px 9px;
+  font-size: 10px; font-weight: 700; letter-spacing: .18em; color: var(--dim-2);
+  border-bottom: 1px solid var(--line);
+}
+.head .c-num, .head .c-lvl { text-align: right; }
+
+.rows { flex: 1; display: flex; flex-direction: column; gap: 4px; padding-top: 7px;
+  overflow: hidden; }
+
+.row {
+  flex: 1 1 0; min-height: 34px; max-height: 56px;
+  padding: 7px 10px; border-radius: 9px;
+  background: rgba(255,255,255,.015);
+  border: 1px solid transparent;
+  font-size: 13px;
+}
+.row:nth-child(2n) { background: rgba(255,255,255,.035); }
+.row.top1 { background: linear-gradient(90deg, rgba(245,197,66,.13), rgba(255,255,255,.02));
+  border-color: rgba(245,197,66,.28); }
+.row.top2 { background: linear-gradient(90deg, rgba(200,208,218,.10), rgba(255,255,255,.02)); }
+.row.top3 { background: linear-gradient(90deg, rgba(199,123,60,.10), rgba(255,255,255,.02)); }
+
+.c-top { font-size: 14px; font-weight: 800; color: var(--dim); }
+.row.top1 .c-top { color: var(--gold); }
+.row.top2 .c-top { color: var(--silver); }
+.row.top3 .c-top { color: var(--bronze); }
+
+.c-rank { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.c-rank svg { width: 19px; height: 19px; flex: none; }
+.c-rank span {
+  font-size: 8.5px; font-weight: 700; letter-spacing: .05em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.c-player { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.av {
+  width: 28px; height: 28px; border-radius: 50%; flex: none;
+  overflow: hidden; position: relative;
+  background: linear-gradient(145deg, #253040, #131922);
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+}
+.av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.who { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.who b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who i { font-style: normal; font-size: 10px; color: var(--dim-2); }
+
+.c-lvl { text-align: right; }
+.lvl {
+  display: inline-block; min-width: 30px; padding: 2px 7px; border-radius: 6px;
+  background: rgba(255,255,255,.07); color: var(--dim);
+  font-size: 10px; font-weight: 800; letter-spacing: .06em;
+}
+
+.c-num { text-align: right; font-weight: 700; }
+.c-num.win  { color: var(--good); }
+.c-num.loss { color: var(--bad); }
+.c-num.kd   { color: var(--gold); }
+.c-score { color: var(--accent); font-size: 14px; font-weight: 800; }
+
+.empty {
+  flex: 1; display: grid; place-items: center;
+  font-size: 15px; font-weight: 700; letter-spacing: .24em; color: var(--dim-2);
+}

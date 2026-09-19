@@ -34,7 +34,7 @@ const SHIM = () => {
 const LAYOUT = {
   screensEnabled: true, podiumEnabled: true, podiumDistance: 25,
   screens: [{ pos: { x: 10, y: 20, z: 30 }, title: 'TOP', enabled: true,
-              scale: 1.0, width: 1.0, rows: 10, opacity: 190, distance: 18 }],
+              h: 0, pitch: 0, width: 6.0, rows: 10, opacity: 190, distance: 18 }],
   podium: [{ pos: { x: 12, y: 20, z: 29 }, h: 90 },
            { pos: { x: 14, y: 20, z: 29 }, h: 90 },
            { pos: { x: 16, y: 20, z: 29 }, h: 90 }]
@@ -44,6 +44,14 @@ const HERE = { x: 100.5, y: 200.25, z: 40.0, h: 175.5 };
 const last = (p) => p.evaluate(() => {
   const u = window.__posted.filter((x) => x.name === 'boardEdit');
   return u.length ? u[u.length - 1].body : null;
+});
+
+/* Rows are picked by their whole label, not by a word inside it — "SIZE"
+   otherwise also finds "STEP SIZE" and quietly drives the wrong control. */
+const beRow = (page, label) => page.locator('#be-body .be-row').filter({
+  has: page.locator('label', {
+    hasText: new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&') + '$')
+  })
 });
 
 (async () => {
@@ -76,7 +84,7 @@ const last = (p) => p.evaluate(() => {
   // 2. moving it pushes the whole layout, not just the panel
   // ======================================================================
   await page.evaluate(() => { window.__posted = []; });
-  const northPlus = page.locator('.be-row', { hasText: 'NORTH' }).locator('.be-btn').nth(1);
+  const northPlus = beRow(page, 'NORTH / SOUTH').locator('.be-btn').nth(1);
   await northPlus.click();
   await page.waitForTimeout(120);
 
@@ -89,37 +97,55 @@ const last = (p) => p.evaluate(() => {
         sent.layout.podium.length, 3);
 
   // and back again
-  const northMinus = page.locator('.be-row', { hasText: 'NORTH' }).locator('.be-btn').nth(0);
+  const northMinus = beRow(page, 'NORTH / SOUTH').locator('.be-btn').nth(0);
   await northMinus.click();
   await page.waitForTimeout(120);
   sent = await last(page);
   check('nudging the other way puts it back', sent.layout.screens[0].pos.y, 20);
 
   // ======================================================================
-  // 3. the width and the size, which is what was asked for
+  // 3. the panel in the world: how it faces, how big it is, what it shows
   // ======================================================================
-  const bump = async (label, times) => {
-    const b = page.locator('.be-row', { hasText: label }).locator('.be-btn').nth(1);
+  const bump = async (label, times, which) => {
+    const b = beRow(page, label).locator('.be-btn').nth(which === undefined ? 1 : which);
     for (let i = 0; i < times; i++) { await b.click(); await page.waitForTimeout(40); }
     await page.waitForTimeout(100);
     return last(page);
   };
 
+  sent = await bump('FACING', 6);
+  check('the board can be turned',  sent.layout.screens[0].h, 30);
+  sent = await bump('TILT', 3);
+  check('  and leaned back',        sent.layout.screens[0].pitch, 6);
   sent = await bump('WIDTH', 4);
-  check('the width can be widened', Math.round(sent.layout.screens[0].width * 100) / 100, 1.2);
-  sent = await bump('SIZE', 4);
-  check('  and the size raised',     Math.round(sent.layout.screens[0].scale * 100) / 100, 1.2);
+  check('  widened, in metres',     Math.round(sent.layout.screens[0].width * 100) / 100, 7);
   sent = await bump('ROWS', 3);
-  check('  and the row count',       sent.layout.screens[0].rows, 13);
+  check('  given more rows',        sent.layout.screens[0].rows, 13);
   sent = await bump('SEEN FROM', 5);
-  check('  and how far off it is visible', sent.layout.screens[0].distance, 23);
+  check('  and seen from further',  sent.layout.screens[0].distance, 43);
+  sent = await bump('OPACITY', 2);
+  check('  it can be faded',        sent.layout.screens[0].opacity, 210);
 
-  // the numbers are clamped, so a held button cannot make a board a kilometre wide
-  const wide = page.locator('.be-row', { hasText: 'WIDTH' }).locator('.be-btn').nth(1);
-  for (let i = 0; i < 60; i++) await wide.click({ delay: 0 });
+  // the numbers are clamped, so a held button cannot shrink a board to nothing
+  const narrow = beRow(page, 'WIDTH').locator('.be-btn').nth(0);
+  for (let i = 0; i < 60; i++) await narrow.click({ delay: 0 });
   await page.waitForTimeout(150);
   sent = await last(page);
-  check('the width stops at its limit', sent.layout.screens[0].width <= 3, true);
+  check('the width stops at its limit', sent.layout.screens[0].width, 0.5);
+
+  // the step size multiplies every nudge, so a board can be dragged across a
+  // room without sixty clicks
+  check('a step size is offered', await beRow(page, 'STEP SIZE').count(), 1);
+  check('  starting at one', await beRow(page, 'STEP SIZE').locator('.be-val').textContent(), '1x');
+  await bump('STEP SIZE', 2);
+  check('  and it can be raised',
+        await beRow(page, 'STEP SIZE').locator('.be-val').textContent(), '4x');
+  sent = await bump('WIDTH', 1);
+  check('  one nudge then moves four times as far',
+        Math.round(sent.layout.screens[0].width * 100) / 100, 1.5);
+  await bump('STEP SIZE', 2, 0);
+  check('  and lowered again',
+        await beRow(page, 'STEP SIZE').locator('.be-val').textContent(), '1x');
 
   // ======================================================================
   // 4. put it where I stand
@@ -131,6 +157,8 @@ const last = (p) => p.evaluate(() => {
         [sent.layout.screens[0].pos.x, sent.layout.screens[0].pos.y], [100.5, 200.25]);
   check('  at eye height, not on the floor',
         sent.layout.screens[0].pos.z, 41.35);
+  check('  turned to face back at whoever placed it',
+        sent.layout.screens[0].h, 355.5);
 
   // ======================================================================
   // 5. the podium: its own controls, and a facing
@@ -138,9 +166,10 @@ const last = (p) => p.evaluate(() => {
   await page.locator('.be-target').nth(1).click();
   await page.waitForTimeout(150);
   check('a podium spot has a facing to set',
-        await page.locator('.be-row', { hasText: 'FACING' }).count(), 1);
+        await beRow(page, 'FACING').count(), 1);
   check('  and no width, because it is a person',
-        await page.locator('.be-row', { hasText: 'WIDTH' }).count(), 0);
+        await beRow(page, 'WIDTH').count(), 0);
+  check('  nor a tilt', await beRow(page, 'TILT').count(), 0);
 
   sent = await bump('FACING', 2);
   check('turning it moves in five degree steps', sent.layout.podium[0].h, 100);
@@ -157,7 +186,7 @@ const last = (p) => p.evaluate(() => {
   // 6. switches, adding and removing
   // ======================================================================
   // the switch styles its checkbox away, so the label is what gets clicked
-  await page.locator('.be-row', { hasText: 'PODIUM ON' }).locator('.sw').click();
+  await beRow(page, 'PODIUM ON').locator('.sw').click();
   await page.waitForTimeout(150);
   sent = await last(page);
   check('the podium can be switched off from here', sent.layout.podiumEnabled, false);

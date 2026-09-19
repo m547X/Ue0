@@ -14,7 +14,9 @@ echo "--- syntax ---"
 for f in M5_RankedPvP/Files/*.lua M5_RankedPvP/الاعدادات/*.lua M5_RankedPvP/fxmanifest.lua; do
   luac5.4 -p "$f" || { echo "SYNTAX FAIL $f"; fails=$((fails+1)); }
 done
-node --check M5_RankedPvP/Files/ui/app.js || { echo "SYNTAX FAIL app.js"; fails=$((fails+1)); }
+for f in M5_RankedPvP/Files/ui/*.js; do
+  node --check "$f" || { echo "SYNTAX FAIL $f"; fails=$((fails+1)); }
+done
 echo "ok"
 
 echo

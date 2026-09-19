@@ -31,6 +31,11 @@ files {
     'Files/ui/index.html',
     'Files/ui/style.css',
     'Files/ui/app.js',
+    -- لوحة المتصدرين الي تنرسم بالعالم. صفحة لحالها تنرسم على تكستشر، فلازم
+    -- تكون مسجّلة هنا عشان الكلنت يقدر يفتحها بـ nui://
+    'Files/ui/board.html',
+    'Files/ui/board.css',
+    'Files/ui/board.js',
     -- أي صورة تحطها بمجلد img تنشحن للاعب. النجمتين ** تشمل المجلدات
     -- الفرعية، فتقدر ترتب صورك بمجلدات جوّه img وتشتغل عادي.
     'Files/ui/img/**/*.png',

@@ -1514,7 +1514,7 @@ function customPayload() {
    control here pushes the whole layout straight back to the client, which
    redraws from it — so what is on screen is always exactly what will be saved,
    and there is no second copy to keep in step. */
-const BE = { layout: null, here: null, sel: 's0' };
+const BE = { layout: null, here: null, sel: 's0', speed: 1 };
 
 function beSel() {
   const kind = BE.sel[0];
@@ -1563,7 +1563,7 @@ function beNudge(label, get, set, step, fmt) {
   const more = el('button', 'be-btn', '+');
 
   const bump = (dir) => {
-    set(get() + (step * dir));
+    set(get() + (step * (BE.speed || 1) * dir));
     val.textContent = (fmt || String)(get());
     bePush();
   };
@@ -1602,11 +1602,39 @@ function beToggle(label, get, set) {
   return wrap;
 }
 
+const BE_SPEEDS = [0.25, 0.5, 1, 2, 4];
+
+/** How far one press of a nudge moves things. Shared by every control. */
+function beSpeedRow() {
+  const wrap = el('div', 'be-row be-speed', `<label>${esc(tx('STEP SIZE'))}</label>`);
+  const ctl = el('div', 'be-ctl');
+  const less = el('button', 'be-btn', '−');
+  const val = el('b', 'be-val', (BE.speed || 1) + 'x');
+  const more = el('button', 'be-btn', '+');
+
+  const step = (dir) => {
+    let i = BE_SPEEDS.indexOf(BE.speed);
+    if (i < 0) i = 2;
+    i = Math.max(0, Math.min(BE_SPEEDS.length - 1, i + dir));
+    BE.speed = BE_SPEEDS[i];
+    val.textContent = BE.speed + 'x';
+    Sfx.play('click');
+  };
+  less.onclick = () => step(-1);
+  more.onclick = () => step(1);
+
+  ctl.appendChild(less); ctl.appendChild(val); ctl.appendChild(more);
+  wrap.appendChild(ctl);
+  return wrap;
+}
+
 function beBody() {
   const body = $('be-body');
   body.innerHTML = '';
   const sel = beSel();
   if (!sel.item) { body.appendChild(el('div', 'empty', tx('NOTHING TO EDIT'))); return; }
+
+  body.appendChild(beSpeedRow());
 
   const it = sel.item;
   const one = (n) => Math.round(n * 100) / 100;
@@ -1628,7 +1656,8 @@ function beBody() {
     it.pos.x = BE.here.x;
     it.pos.y = BE.here.y;
     it.pos.z = BE.here.z + (sel.kind === 's' ? 1.35 : 0);
-    if (sel.kind === 'p') it.h = BE.here.h;
+    // a podium faces the way you were facing; a board faces back at you
+    it.h = sel.kind === 'p' ? BE.here.h : ((BE.here.h + 180) % 360);
     Sfx.play('click');
     bePush(); beBody();
   };
@@ -1645,16 +1674,23 @@ function beBody() {
     return;
   }
 
+  /* The board is a flat panel hung in the world now, so what there is to set
+     is where it faces and how big it is in metres. Its height follows its
+     width, because the picture on it has one shape and stretching it would
+     show. */
+  body.appendChild(beNudge(tx('FACING'), () => it.h || 0,
+    (v) => { it.h = ((v % 360) + 360) % 360; }, 5, (n) => Math.round(n) + '°'));
+  body.appendChild(beNudge(tx('TILT'), () => it.pitch || 0,
+    (v) => { it.pitch = Math.max(-60, Math.min(60, v)); }, 2, (n) => Math.round(n) + '°'));
   body.appendChild(beNudge(tx('WIDTH'), () => it.width,
-    (v) => { it.width = Math.max(0.4, Math.min(3, v)); }, 0.05, (n) => Math.round(n * 100) + '%'));
-  body.appendChild(beNudge(tx('SIZE'), () => it.scale,
-    (v) => { it.scale = Math.max(0.3, Math.min(4, v)); }, 0.05, (n) => Math.round(n * 100) + '%'));
+    (v) => { it.width = Math.max(0.5, Math.min(40, v)); }, 0.25,
+    (n) => (Math.round(n * 10) / 10) + 'm'));
   body.appendChild(beNudge(tx('ROWS'), () => it.rows,
     (v) => { it.rows = Math.max(1, Math.min(25, Math.round(v))); }, 1, String));
   body.appendChild(beNudge(tx('SEEN FROM'), () => it.distance,
-    (v) => { it.distance = Math.max(3, Math.min(120, v)); }, 1, (n) => Math.round(n) + 'm'));
-  body.appendChild(beNudge(tx('BACKGROUND'), () => it.opacity,
-    (v) => { it.opacity = Math.max(0, Math.min(255, Math.round(v))); }, 10,
+    (v) => { it.distance = Math.max(3, Math.min(200, v)); }, 5, (n) => Math.round(n) + 'm'));
+  body.appendChild(beNudge(tx('OPACITY'), () => it.opacity,
+    (v) => { it.opacity = Math.max(20, Math.min(255, Math.round(v))); }, 10,
     (n) => Math.round((n / 255) * 100) + '%'));
 
   const title = el('div', 'be-row', `<label>${esc(tx('TITLE'))}</label>`);

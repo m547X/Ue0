@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>M5 Ranked PvP — World Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="board.css"/>
+</head>
+<!--
+  This page is not the menu. It is painted into a texture and drawn on a flat
+  surface out in the world, so it is built for one job: be readable from ten
+  metres away, and cost as close to nothing as a browser can while it sits
+  there. No animation loops, no timers, no fetches — it draws once when the
+  client sends it rows and then does nothing at all until the next set.
+-->
+<body>
+  <div class="board" id="board">
+
+    <!-- left: the three at the top, as a podium -->
+    <aside class="podium">
+      <div class="brand">
+        <svg class="brand-cup" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 4h10v2h3v3a4 4 0 0 1-4 4h-.35A5 5 0 0 1 13 15.9V18h3v2H8v-2h3v-2.1a5 5 0 0 1-2.65-2.9H8a4 4 0 0 1-4-4V6h3V4zm0 4H6v1a2 2 0 0 0 1 1.73V8zm10 0v2.73A2 2 0 0 0 18 9V8h-1z"/>
+        </svg>
+        <div class="brand-name"><b id="bd-name">M5</b><i id="bd-accent">RANKED</i></div>
+      </div>
+
+      <div class="podium-title" id="bd-podium-title">LEADERBOARD TOP 3</div>
+
+      <div class="stand" id="bd-stand"></div>
+    </aside>
+
+    <!-- right: the standings -->
+    <main class="table">
+      <div class="table-head">
+        <span class="th-title" id="bd-season">SEASON STANDINGS</span>
+        <span class="th-sub" id="bd-sub">LEADERBOARD OVERVIEW</span>
+      </div>
+
+      <div class="grid head">
+        <span class="c-top">TOP</span>
+        <span class="c-rank">RANK</span>
+        <span class="c-player">PLAYER</span>
+        <span class="c-lvl">LVL</span>
+        <span class="c-num">KILLS</span>
+        <span class="c-num">DEATHS</span>
+        <span class="c-num">WINS</span>
+        <span class="c-num">LOSSES</span>
+        <span class="c-num">K/D</span>
+        <span class="c-num c-score">SCORE</span>
+      </div>
+
+      <div class="rows" id="bd-rows"></div>
+      <div class="empty hidden" id="bd-empty">NO RANKED PLAYERS YET</div>
+    </main>
+  </div>
+
+  <!-- the crest every rank badge is stamped from, drawn once and referenced -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="crest" viewBox="0 0 24 24">
+      <path d="M12 2 20.5 6.2v7.1c0 4.1-3.4 7.6-8.5 8.7-5.1-1.1-8.5-4.6-8.5-8.7V6.2L12 2z"
+            fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <path d="M8.6 13.2 12 9.4l3.4 3.8-1.5.2L12 11.6l-1.9 1.8-1.5-.2z" fill="currentColor"/>
+    </symbol>
+  </svg>
+
+<script src="board.js"></script>
+</body>
+</html>

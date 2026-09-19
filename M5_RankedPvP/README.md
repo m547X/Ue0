@@ -28,7 +28,10 @@ M5_RankedPvP/
 │   └── ui/
 │       ├── index.html
 │       ├── style.css
-│       └── app.js
+│       ├── app.js
+│       ├── board.html     ← the world leaderboard board (see 7f)
+│       ├── board.css
+│       └── board.js
 │
 ├── m5_rankedpvp.sql
 └── README.md
@@ -663,6 +666,77 @@ The key is registered through FiveM's keybinding system, so a player can rebind
 it under **Settings → Key Bindings → FiveM → M5 Ranked PvP** instead of being
 stuck with TAB. It needs no NUI focus — the board is display only, so it cannot
 swallow your mouse mid fight.
+
+---
+
+## 7f. The world leaderboard board
+
+A leaderboard you can walk up to and read. It is not drawn with `DrawText` —
+`Files/ui/board.html` is a real web page, rendered into a texture with FiveM's
+DUI and stretched over a flat panel out in the world, so it looks exactly like
+the menu does: the top three on a podium on the left, the season standings as a
+ten-column table on the right, ranks, avatars, K/D and score.
+
+Alongside it, three peds stand as the top three, wearing those players' real
+appearance.
+
+### What it costs
+
+The point of doing it this way is that a texture costs nothing to keep looking
+at — it only costs something when it *changes*. So:
+
+* **One thread.** It sleeps **two seconds** per pass while you are away from
+  every board and every podium spot, and only runs at frame rate when a board
+  is actually in front of your camera — not merely near you.
+* **The page is built on demand.** No board exists until somebody walks into
+  range. Walk away and, after `keepAlive` seconds, the page is torn down and
+  the texture handed back. Set `keepAlive = 0` to keep it loaded for good.
+* **The page holds still.** `board.js` has no timer, no animation and no
+  network call, and it compares each payload against the last one and drops it
+  if the rows are identical. A repaint is paid for by every machine that can
+  see the board, so it does not happen for nothing.
+* **Two triangles.** The panel is four `DrawSpritePoly` calls — two for the
+  front and two for the back, so it reads from either side. No prop is spawned
+  and no game texture is replaced.
+
+### Where it goes — `Config.WorldBoard` (Config_Client.lua)
+
+Each entry under `screens.spots` is one panel:
+
+| field | what it does |
+|---|---|
+| `pos` | the centre of the panel |
+| `h` | which way it faces, in degrees |
+| `pitch` | lean, −60 to 60; `0` is upright |
+| `width` | how wide it is **in metres** |
+| `height` | optional — left out, it follows `width` and the texture's shape so the picture is never stretched |
+| `title` | its heading, in place of the season name |
+| `enabled` | switch one panel off without deleting it |
+
+`screens.distance` is how far off it is visible, `screens.rows` how many rows
+the table shows, `screens.opacity` how solid it is, and
+`screens.textureWidth` / `textureHeight` the size it is rendered at — 1280×720
+is right for a panel of four to six metres, and the two must stay 16:9.
+
+**Which rows** it shows — which ladder, how many, how often it refreshes — is
+`Config.WorldBoard` in **Config_Server.lua**, because the board is server fed
+and the client is never asked what the standings are.
+
+### Placing it in game — `/pvpboard`
+
+Needs `Config.Permissions.editBoard`. It opens an editor with every panel and
+podium spot listed; pick one and nudge it while watching it move:
+
+**NORTH / SOUTH**, **EAST / WEST**, **HEIGHT**, **FACING**, **TILT**,
+**WIDTH** (metres), **ROWS**, **SEEN FROM**, **OPACITY**, its **TITLE**, and a
+**SCREEN ON** switch. **STEP SIZE** multiplies every nudge — 0.25x to 4x — so
+dragging a panel across a plaza is not sixty clicks. **PUT IT WHERE I STAND**
+drops the panel at eye height turned back towards you, or stands a podium spot
+on the floor facing the way you face. Save writes it; cancel throws it away;
+reset asks first and then restores the config.
+
+`/pvpcoords` is the other way: stand where you want it and copy the printed
+line straight into `spots`.
 
 ---
 
