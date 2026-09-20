@@ -115,6 +115,8 @@ Locale.ar = {
     ['WHERE DOES THE PODIUM SPOT GO'] = 'وين تبي المنصة؟',
     ['Look at the spot and click the ground.'] = 'طالع المكان واضغط على الأرض.',
     ['PUT IT HERE']               = 'حطه هنا',
+    ['HIDE THE PANEL']            = 'أخفِ القائمة',
+    ['SHOW THE PANEL']            = 'أظهر القائمة',
     ['The board goes back to the positions in the config file.'] =
         'اللوحة ترجع للأماكن المكتوبة بملف الإعدادات.',
     ['The board layout was saved.'] = 'تم حفظ أماكن اللوحة.',

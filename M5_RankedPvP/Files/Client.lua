@@ -3480,7 +3480,6 @@ local function wbwEnter()
     WBW.on, WBW.walk = true, false
     nui({ action = 'close' })
     setFocus(true)
-    SetNuiFocusKeepInput(true)
     nui(wbwPayload())
 
     Citizen.CreateThread(function()
@@ -3519,12 +3518,7 @@ end
 local function wbwWalk(on)
     if not WBW.on then return end
     WBW.walk = on
-    if on then
-        setFocus(false)
-    else
-        setFocus(true)
-        SetNuiFocusKeepInput(true)
-    end
+    setFocus(not on)
     nui(wbwPayload())
 end
 

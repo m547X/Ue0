@@ -860,11 +860,18 @@ client does the hit testing and the maths. Moves are throttled to thirty a
 second, and only while the editor holds focus: walking hands the mouse back to
 the game and the layer stands down with it.
 
-It never takes the keyboard — the client holds NUI focus with input passed
-through, so you can still walk while clicking the panel. **اضغط هنا لتحريك
-اللاعب** hands the mouse back to the game so it turns the camera instead; the
-panel dims and **F5** takes it back. That key is registered through FiveM's
-keybinding system, so it can be rebound under **Settings → Key Bindings**.
+While the editor is open the mouse is a cursor: it picks up the handles and
+clicks the panel, and it does **not** turn the camera — passing input through
+to the game meant the camera span while you were trying to click, and nothing
+was usable. **اضغط هنا لتحريك اللاعب** hands the mouse back to the game so you
+can walk and look around; the panel dims and **F5** takes it back. That key is
+registered through FiveM's keybinding system, so it can be rebound under
+**Settings → Key Bindings**.
+
+The panel gets out of the way on its own: while a handle is actually being
+dragged it fades almost to nothing and comes back when the mouse comes up.
+**أخفِ القائمة** puts it away entirely for a longer look, leaving only the way
+back and the walk chip.
 
 `/pvpcoords` is the other way: stand where you want it and copy the printed
 line straight into `spots`.

@@ -2666,6 +2666,18 @@ html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
   pointer-events:none;
 }
 .bw > *{pointer-events:auto}
+/* While a handle is being dragged the panel is standing in front of the thing
+   it is moving, so it gets out of the way until the mouse comes up. */
+.bw.dragging{opacity:.14; transition:opacity .12s var(--ease,ease)}
+.bw.dragging > *{pointer-events:none}
+
+/* put away by hand: only the way back is left on screen */
+.bw-ghost.show{
+  align-self:center; padding:9px 16px;
+  background:rgba(8,10,14,.96); border-color:rgba(245,197,66,.34);
+  color:var(--gold,#F5C542);
+}
+
 /* with the mouse handed back to the game, the panel is still readable but
    plainly not the thing being clicked */
 .bw.walking{opacity:.55}
@@ -2760,7 +2772,7 @@ html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
   color:var(--gold,#F5C542);
 }
 
-.bw-foot{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.bw-foot{display:grid; grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); gap:8px}
 .bw-ghost{
   padding:9px 10px; border-radius:11px; cursor:pointer;
   background:rgba(10,12,17,.94); border:1px solid rgba(255,255,255,.10);

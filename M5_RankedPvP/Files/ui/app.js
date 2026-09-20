@@ -1555,6 +1555,33 @@ function beRender(d) {
   beBody();
 }
 
+/* A held button repeats, because moving a board ten metres one click at a time
+   is not moving a board. The timer lives here rather than on the button for a
+   reason: the world panel is rebuilt from scratch every time the client answers
+   a nudge, so the button being held is taken out of the document mid-hold — its
+   mouseup then never arrives and the repeat runs for ever, which reads as the
+   board spinning on its own. The release is watched on the window, which is
+   still there whatever happened to the button, and a redraw stops it too. */
+let holdTimer = null;
+
+function holdStop() {
+  if (holdTimer === null) return;
+  clearTimeout(holdTimer);
+  holdTimer = null;
+}
+
+function holdStart(fire) {
+  holdStop();
+  fire();
+  holdTimer = setTimeout(function again() {
+    fire();
+    holdTimer = setTimeout(again, 70);
+  }, 360);
+}
+
+window.addEventListener('mouseup', holdStop);
+window.addEventListener('blur', holdStop);
+
 /** One row of the editor: a label, a value, and a pair of nudge buttons. */
 function beNudge(label, get, set, step, fmt) {
   const wrap = el('div', 'be-row', `<label>${esc(label)}</label>`);
@@ -1568,25 +1595,10 @@ function beNudge(label, get, set, step, fmt) {
     val.textContent = (fmt || String)(get());
     bePush();
   };
-  less.onclick = () => bump(-1);
-  more.onclick = () => bump(1);
 
-  /* Holding a nudge button repeats, because moving a board ten metres one
-     click at a time is not moving a board. */
-  let held = null;
-  const start = (dir) => {
-    bump(dir);
-    held = setTimeout(function again() {
-      bump(dir);
-      held = setTimeout(again, 70);
-    }, 380);
-  };
-  const stop = () => { clearTimeout(held); held = null; };
-  less.onmousedown = () => start(-1); more.onmousedown = () => start(1);
-  [less, more].forEach((b) => {
-    b.onmouseup = stop; b.onmouseleave = stop;
-    b.onclick = null;                       // mousedown already did it
-  });
+  less.onmousedown = () => holdStart(() => bump(-1));
+  more.onmousedown = () => holdStart(() => bump(1));
+  [less, more].forEach((b) => { b.onmouseleave = holdStop; });
 
   ctl.appendChild(less); ctl.appendChild(val); ctl.appendChild(more);
   wrap.appendChild(ctl);
@@ -1737,7 +1749,14 @@ function beBody() {
    chip drops focus altogether for the times you want the mouse to turn the
    camera instead. */
 const BW = { on: false, mode: 'move', speed: 1, sel: 's0', walk: false,
-             targets: [], item: null, placing: null };
+             targets: [], item: null, placing: null, hidden: false };
+
+/* While a handle is actually being dragged the panel is in the way of the
+   thing it is moving, so it fades out of it and comes back on release. */
+function bwDragging(on) {
+  const p = $('bw');
+  if (p) p.classList.toggle('dragging', !!on);
+}
 
 const BW_MODES = [
   { id: 'move',    key: 'MOVE',    icon: '#i-move' },
@@ -1791,6 +1810,7 @@ function bwBindCatch() {
       .then((v) => {
         BWG.held = (v === 'grab');
         host.classList.toggle('grabbing', BWG.held);
+        bwDragging(BWG.held);
       })
       .catch(() => {});
   };
@@ -1811,6 +1831,7 @@ function bwBindCatch() {
     BWG.down = false;
     if (BWG.held) { BWG.held = false; bwPost('drop'); }
     host.classList.remove('grabbing');
+    bwDragging(false);
   };
   host.onmouseup = release;
   host.onmouseleave = release;
@@ -1818,18 +1839,8 @@ function bwBindCatch() {
 
 function bwNudgeBtn(axis, dir) {
   const b = el('button', 'bw-nudge', dir > 0 ? '+' : '−');
-  /* Holding repeats, because sliding a board across a plaza one click at a
-     time is not sliding a board. */
-  let held = null;
-  const fire = () => bwPost('nudge', { axis, dir });
-  const start = () => {
-    fire();
-    held = setTimeout(function again() { fire(); held = setTimeout(again, 70); }, 360);
-  };
-  const stop = () => { clearTimeout(held); held = null; };
-  b.onmousedown = start;
-  b.onmouseup = stop;
-  b.onmouseleave = stop;
+  b.onmousedown = () => holdStart(() => bwPost('nudge', { axis, dir }));
+  b.onmouseleave = holdStop;
   return b;
 }
 
@@ -1903,6 +1914,9 @@ function renderWorldEdit(d) {
     BW.placing = d.placing || null;
   }
 
+  // a rebuild takes the held button out of the document with it
+  holdStop();
+
   const host = $('bw');
   host.classList.toggle('hidden', !BW.on);
   // the menu and the world panel are never both up: the point of the panel is
@@ -1917,10 +1931,29 @@ function renderWorldEdit(d) {
     if (BW.on) bwBindCatch();
   }
 
-  if (!BW.on) { host.innerHTML = ''; return; }
+  if (!BW.on) { host.innerHTML = ''; BW.hidden = false; return; }
   host.classList.toggle('walking', BW.walk);
 
   host.innerHTML = '';
+
+  const walkChip = () => {
+    const walk = el('button', 'bw-walk' + (BW.walk ? ' off' : ''),
+      BW.walk ? `<b>${esc(tx('PRESS F5'))}</b><i>${esc(tx('TO EDIT'))}</i>`
+              : `<b>${esc(tx('CLICK HERE'))}</b><i>${esc(tx('TO MOVE THE PLAYER'))}</i>`);
+    walk.onclick = () => bwPost('walk', { on: !BW.walk });
+    return walk;
+  };
+
+  /* Put away, the panel leaves the handles and the board to themselves. The
+     way back is the only thing still on screen. */
+  if (BW.hidden && !BW.placing) {
+    const show = el('button', 'bw-ghost show',
+      `<svg><use href="#i-sliders"/></svg> ${esc(tx('SHOW THE PANEL'))}`);
+    show.onclick = () => { BW.hidden = false; Sfx.play('click'); renderWorldEdit(); };
+    host.appendChild(show);
+    host.appendChild(walkChip());
+    return;
+  }
 
   /* Placing a new one is its own little mode: the client draws a marker where
      you are looking and this says what the click will do. */
@@ -2008,19 +2041,19 @@ function renderWorldEdit(d) {
   const here = el('button', 'bw-ghost',
     `<svg><use href="#i-map"/></svg> ${esc(tx('PUT IT WHERE I STAND'))}`);
   here.onclick = () => bwPost('here');
+  const hide = el('button', 'bw-ghost',
+    `<svg><use href="#i-sliders"/></svg> ${esc(tx('HIDE THE PANEL'))}`);
+  hide.onclick = () => { BW.hidden = true; Sfx.play('click'); renderWorldEdit(); };
   const back = el('button', 'bw-ghost',
     `<svg><use href="#i-back"/></svg> ${esc(tx('BACK TO THE MENU'))}`);
   back.onclick = () => bwPost('back');
   foot.appendChild(here);
+  foot.appendChild(hide);
   foot.appendChild(back);
   host.appendChild(foot);
 
   // --- the chip that hands the mouse back to the game ---------------------
-  const walk = el('button', 'bw-walk' + (BW.walk ? ' off' : ''),
-    BW.walk ? `<b>${esc(tx('PRESS F5'))}</b><i>${esc(tx('TO EDIT'))}</i>`
-            : `<b>${esc(tx('CLICK HERE'))}</b><i>${esc(tx('TO MOVE THE PLAYER'))}</i>`);
-  walk.onclick = () => bwPost('walk', { on: !BW.walk });
-  host.appendChild(walk);
+  host.appendChild(walkChip());
 }
 
 /* =========================================================== LEADERBOARD */

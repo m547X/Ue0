@@ -390,6 +390,97 @@ const clear = (p) => p.evaluate(() => { window.__posted = []; });
   await page.waitForTimeout(120);
   check('  and it hands the height back', await last(page), { action: 'autoHeight' });
 
+  // ======================================================================
+  // 12. a held nudge stops when you let go
+  // ======================================================================
+  // Holding + repeats. The client answers every nudge with a fresh payload and
+  // the panel is rebuilt from it, which takes the button being held out of the
+  // document — so its own mouseup never arrives. Watched on the button alone,
+  // the repeat ran for ever and the board span on its own.
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'rotate' })), SCREEN);
+  await page.waitForTimeout(150);
+
+  const plus = page.locator('.bw-row', { hasText: 'FACING' }).locator('.bw-nudge').nth(1);
+  const plusBox = await plus.boundingBox();
+  await clear(page);
+  await page.mouse.move(plusBox.x + plusBox.width / 2, plusBox.y + plusBox.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(600);        // past the repeat's first delay
+
+  const held = await page.evaluate(() =>
+    window.__posted.filter((x) => x.body && x.body.action === 'nudge').length);
+  check('holding the button repeats', held > 1, true);
+
+  // the client answers, and the panel is rebuilt under the cursor
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'rotate' })), SCREEN);
+  await page.waitForTimeout(150);
+  await clear(page);
+  await page.waitForTimeout(300);
+  check('  a rebuild under the cursor stops it', await page.evaluate(() =>
+    window.__posted.filter((x) => x.body && x.body.action === 'nudge').length), 0);
+
+  // and letting go anywhere at all stops it, not only over the button
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  await page.mouse.move(40, 800);
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  await clear(page);
+  await page.waitForTimeout(400);
+  check('letting go away from the button stops it too', await page.evaluate(() =>
+    window.__posted.filter((x) => x.body && x.body.action === 'nudge').length), 0);
+
+  // ======================================================================
+  // 13. the panel gets out of the way of the thing it is moving
+  // ======================================================================
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
+  const faded = () => page.locator('#bw').evaluate(
+    (n) => n.classList.contains('dragging'));
+
+  check('the panel is solid to begin with', await faded(), false);
+  await page.mouse.move(800, 450);
+  await page.mouse.down();
+  await page.waitForTimeout(160);
+  check('  and fades out while a handle is held', await faded(), true);
+  await page.mouse.up();
+  await page.waitForTimeout(160);
+  check('  then comes back when you let go',      await faded(), false);
+
+  // a grab that hit nothing is not a drag, so the panel stays where it is
+  await page.evaluate(() => { window.__grab = 'miss'; });
+  await page.mouse.down();
+  await page.waitForTimeout(160);
+  check('a press that hit no handle does not fade it', await faded(), false);
+  await page.mouse.up();
+  await page.evaluate(() => { window.__grab = 'grab'; });
+  await page.waitForTimeout(120);
+
+  // and it can be put away by hand, for a longer look
+  await page.locator('.bw-ghost', { hasText: 'HIDE THE PANEL' }).click();
+  await page.waitForTimeout(150);
+  check('putting the panel away leaves the controls behind',
+        await page.locator('.bw-modes, .bw-pad, .bw-targets').count(), 0);
+  check('  with a way back',
+        await page.locator('.bw-ghost', { hasText: 'SHOW THE PANEL' }).count(), 1);
+  check('  and the walk chip still there, because it is the way out',
+        await page.locator('.bw-walk').count(), 1);
+
+  await page.locator('.bw-ghost', { hasText: 'SHOW THE PANEL' }).click();
+  await page.waitForTimeout(150);
+  check('bringing it back brings the controls with it',
+        await page.locator('.bw-modes').count(), 1);
+
+  // the walk chip is the one thing that must always take a click
+  await clear(page);
+  await page.locator('.bw-walk').click();
+  await page.waitForTimeout(120);
+  check('the walk chip takes its click', await last(page), { action: 'walk', on: true });
+
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
   check('nothing threw along the way', errors, []);
 
   await browser.close();
