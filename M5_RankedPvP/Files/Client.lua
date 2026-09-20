@@ -2891,7 +2891,7 @@ function wbTick(me, podiumAcc)
                         if duiCreate() then
                             duiFlush()
                             if not eyeX then
-                                local cam = GetGameplayCamCoord()
+                                local cam = GetFinalRenderedCamCoord()
                                 eyeX, eyeY, eyeZ = cam.x, cam.y, cam.z
                             end
                             drawScreen(spot, d, eyeX, eyeY, eyeZ)
@@ -3081,6 +3081,7 @@ end
 
 local WBW = { on = false, sel = 's0', mode = 'move', speed = 1.0, walk = false }
 local WBP = { on = false, kind = 's', x = 0.0, y = 0.0, z = 0.0, ok = false }
+local WBC = { on = false, cam = nil, yaw = 0.0, pitch = -6.0, dist = 10.0 }
 local WBW_SPEEDS = { 0.25, 0.5, 1.0, 2.0, 4.0 }
 local WBW_STEP   = { x = 0.25, y = 0.25, z = 0.25, width = 0.25, h = 5.0, pitch = 2.0 }
 
@@ -3120,7 +3121,8 @@ local function wbwPayload()
     return { action = 'boardWorld', on = WBW.on, mode = WBW.mode,
              speed = WBW.speed, sel = WBW.sel, walk = WBW.walk,
              targets = targets, item = item,
-             placing = WBP.on and WBP.kind or nil }
+             placing = WBP.on and WBP.kind or nil,
+             focused = WBC.on }
 end
 
 local function wbwRepaint()
@@ -3176,7 +3178,7 @@ local function wbgProject(x, y, z)
 end
 
 local function wbgScale(it)
-    local c = GetGameplayCamCoord()
+    local c = GetFinalRenderedCamCoord()
     local d = #(vec3({ x = c.x, y = c.y, z = c.z }) - vec3(it.pos))
     return math.max(0.5, math.min(6.0, d * 0.11))
 end
@@ -3405,9 +3407,66 @@ local function wbgDragEnd()
     WBG.drag = nil
 end
 
+local function wbcAim()
+    if not WBC.on or not WBC.cam then return end
+    local _, _, it = wbwSel()
+    if not it then return end
+
+    local tx, ty, tz = it.pos.x + 0.0, it.pos.y + 0.0, it.pos.z + 0.0
+    local yaw = math.rad(WBC.yaw)
+    local pit = math.rad(WBC.pitch)
+    local cp  = math.cos(pit)
+
+    SetCamCoord(WBC.cam,
+        tx + math.sin(yaw) * cp * WBC.dist,
+        ty - math.cos(yaw) * cp * WBC.dist,
+        tz - math.sin(pit) * WBC.dist)
+    PointCamAtCoord(WBC.cam, tx, ty, tz)
+end
+
+local function wbcEnter()
+    if WBC.on then return end
+    local kind, _, it = wbwSel()
+    if not it then return end
+
+    WBC.yaw   = tonumber(it.h) or 0.0
+    WBC.pitch = -6.0
+    WBC.dist  = (kind == 's') and math.max(4.0, (tonumber(it.width) or 6.0) * 1.5) or 4.5
+
+    WBC.cam = CreateCam('DEFAULT_SCRIPTED_CAMERA', true)
+    if not WBC.cam then return end
+    WBC.on = true
+
+    wbcAim()
+    SetCamActive(WBC.cam, true)
+    RenderScriptCams(true, true, 420, true, true)
+end
+
+local function wbcLeave()
+    if not WBC.on then return end
+    WBC.on = false
+    RenderScriptCams(false, true, 420, true, true)
+    if WBC.cam then DestroyCam(WBC.cam, false) end
+    WBC.cam = nil
+end
+
+local function wbcOrbit(dx, dy)
+    if not WBC.on then return end
+    WBC.yaw   = (((WBC.yaw + dx * 420.0) % 360) + 360) % 360
+    WBC.pitch = math.max(-80.0, math.min(80.0, WBC.pitch + dy * 260.0))
+    wbcAim()
+end
+
+local function wbcZoom(dir)
+    if not WBC.on then return end
+    local step = math.max(0.4, WBC.dist * 0.16)
+    WBC.dist = math.max(1.5, math.min(80.0, WBC.dist + (dir < 0 and -step or step)))
+    wbcAim()
+end
+
 local function wbpAim()
-    local cam  = GetGameplayCamCoord()
-    local rot  = GetGameplayCamRot(2)
+    local cam  = GetFinalRenderedCamCoord()
+    local rot  = GetFinalRenderedCamRot(2)
     local pz   = math.rad(rot.z)
     local px   = math.rad(rot.x)
     local cosx = math.cos(px)
@@ -3484,6 +3543,7 @@ local function wbwEnter()
 
     Citizen.CreateThread(function()
         while WBW.on do
+            if WBC.on then wbcAim() end
             if WBP.on then wbpTick() else wbwGizmo() end
             Wait(0)
         end
@@ -3493,6 +3553,7 @@ end
 local function wbwLeave(back)
     WBW.on, WBW.walk = false, false
     SetNuiFocusKeepInput(false)
+    wbcLeave()
     nui(wbwPayload())
     if back then
         setFocus(true)
@@ -3507,6 +3568,7 @@ function wbwAbort()
     if not WBW.on then return end
     WBW.on, WBW.walk = false, false
     SetNuiFocusKeepInput(false)
+    wbcLeave()
     WB.edit = nil
     nui(wbwPayload())
     if WB.spawned then
@@ -3517,6 +3579,7 @@ end
 
 local function wbwWalk(on)
     if not WBW.on then return end
+    if on then wbcLeave() end
     WBW.walk = on
     setFocus(not on)
     nui(wbwPayload())
@@ -3527,6 +3590,11 @@ RegisterCommand('m5rp_board_walk', function()
     wbwWalk(not WBW.walk)
 end, false)
 RegisterKeyMapping('m5rp_board_walk', 'M5 Ranked PvP: board editor — walk / edit', 'keyboard', 'F5')
+
+AddEventHandler('onResourceStop', function(resource)
+    if resource ~= GetCurrentResourceName() then return end
+    wbcLeave()
+end)
 
 RegisterNUICallback('boardWorld', function(data, cb)
     local action = tostring(data and data.action or '')
@@ -3576,7 +3644,21 @@ RegisterNUICallback('boardWorld', function(data, cb)
         cb('ok')
         return
 
+    elseif action == 'focus' then
+        if data.on == true then wbcEnter() else wbcLeave() end
+
+    elseif action == 'orbit' then
+        wbcOrbit(tonumber(data.x) or 0.0, tonumber(data.y) or 0.0)
+        cb('ok')
+        return
+
+    elseif action == 'zoom' then
+        wbcZoom(tonumber(data.dir) or 1)
+        cb('ok')
+        return
+
     elseif action == 'place' then
+        wbcLeave()
         local k = tostring(data.kind or 's')
         WBP.kind = (k == 'p') and 'p' or 's'
         WBP.on   = true

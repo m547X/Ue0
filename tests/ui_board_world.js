@@ -457,20 +457,72 @@ const clear = (p) => p.evaluate(() => { window.__posted = []; });
   await page.evaluate(() => { window.__grab = 'grab'; });
   await page.waitForTimeout(120);
 
-  // and it can be put away by hand, for a longer look
-  await page.locator('.bw-ghost', { hasText: 'HIDE THE PANEL' }).click();
+  // ======================================================================
+  // 14. looking at it: the panel goes and the camera comes round
+  // ======================================================================
+  // Hiding the panel is only half of it — the point of getting it out of the
+  // way is a clear look at the thing, so the camera goes there at the same
+  // time and the mouse gets to swing around it.
+  await clear(page);
+  await page.locator('.bw-ghost', { hasText: 'LOOK AT IT' }).click();
   await page.waitForTimeout(150);
-  check('putting the panel away leaves the controls behind',
+  check('looking at it asks the client for the camera',
+        await last(page), { action: 'focus', on: true });
+  check('  and the controls go with the panel',
         await page.locator('.bw-modes, .bw-pad, .bw-targets').count(), 0);
-  check('  with a way back',
+  check('  leaving a way back',
         await page.locator('.bw-ghost', { hasText: 'SHOW THE PANEL' }).count(), 1);
-  check('  and the walk chip still there, because it is the way out',
+  check('  and the walk chip, because it is the way out',
         await page.locator('.bw-walk').count(), 1);
 
+  check('no hint yet — the client has not said the camera moved',
+        await page.locator('.bw-cam-hint').count(), 0);
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { focused: true })), SCREEN);
+  await page.waitForTimeout(150);
+  check('  and it appears once it has',
+        await page.locator('.bw-cam-hint').count(), 1);
+
+  // right-drag swings it; the left button is still the handles
+  await clear(page);
+  await page.mouse.move(800, 450);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(880, 470);
+  await page.waitForTimeout(150);
+  const orbit = await last(page);
+  check('right-dragging swings the camera', orbit.action, 'orbit');
+  check('  by how far the mouse went',
+        [Math.round(orbit.x * 1000) / 1000, Math.round(orbit.y * 1000) / 1000], [0.05, 0.022]);
+  await page.mouse.up({ button: 'right' });
+
+  await clear(page);
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(150);
+  check('the wheel pulls the camera back', await last(page), { action: 'zoom', dir: 1 });
+  await clear(page);
+  await page.mouse.wheel(0, -120);
+  await page.waitForTimeout(150);
+  check('  and pushes it in',              await last(page), { action: 'zoom', dir: -1 });
+
+  await clear(page);
   await page.locator('.bw-ghost', { hasText: 'SHOW THE PANEL' }).click();
   await page.waitForTimeout(150);
-  check('bringing it back brings the controls with it',
+  check('coming back hands the camera back too',
+        await last(page), { action: 'focus', on: false });
+  check('  and brings the controls with it',
         await page.locator('.bw-modes').count(), 1);
+
+  // with no camera on it, the wheel and the right button do nothing
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+  await clear(page);
+  await page.mouse.wheel(0, 120);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(900, 500);
+  await page.mouse.up({ button: 'right' });
+  await page.waitForTimeout(150);
+  check('neither does anything with the camera where it was',
+        await page.evaluate(() => window.__posted.filter(
+          (x) => x.body && (x.body.action === 'zoom' || x.body.action === 'orbit')).length), 0);
 
   // the walk chip is the one thing that must always take a click
   await clear(page);

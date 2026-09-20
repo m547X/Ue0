@@ -115,8 +115,10 @@ Locale.ar = {
     ['WHERE DOES THE PODIUM SPOT GO'] = 'وين تبي المنصة؟',
     ['Look at the spot and click the ground.'] = 'طالع المكان واضغط على الأرض.',
     ['PUT IT HERE']               = 'حطه هنا',
-    ['HIDE THE PANEL']            = 'أخفِ القائمة',
+    ['LOOK AT IT']                = 'ركّز عليه',
     ['SHOW THE PANEL']            = 'أظهر القائمة',
+    ['Right-drag to swing around it, wheel to zoom.'] =
+        'اسحب بزر الماوس الأيمن عشان تلف حوله، والعجلة تقرّب وتبعّد.',
     ['The board goes back to the positions in the config file.'] =
         'اللوحة ترجع للأماكن المكتوبة بملف الإعدادات.',
     ['The board layout was saved.'] = 'تم حفظ أماكن اللوحة.',

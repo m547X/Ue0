@@ -870,8 +870,19 @@ registered through FiveM's keybinding system, so it can be rebound under
 
 The panel gets out of the way on its own: while a handle is actually being
 dragged it fades almost to nothing and comes back when the mouse comes up.
-**أخفِ القائمة** puts it away entirely for a longer look, leaving only the way
-back and the walk chip.
+
+**ركّز عليه** does the rest of it — the panel goes away *and* the camera comes
+round onto the thing you are editing, standing on the side a board faces at
+about a width and a half back, so the handles are in front of you and nothing
+is covering them. From there **right-drag swings the camera around it** and
+**the wheel zooms**; the only things left on screen are the way back and the
+walk chip. The camera follows the thing while you drag it, and is handed back
+when you come out of the editor, walk, place a new one, or the resource stops.
+
+Everything that has to agree with what is on screen — the projection the
+handles are picked with, how long the arrows are, the board's own back-face
+cull — reads the *rendered* camera rather than the gameplay one, so it is all
+still right while that scripted camera is up.
 
 `/pvpcoords` is the other way: stand where you want it and copy the printed
 line straight into `spots`.

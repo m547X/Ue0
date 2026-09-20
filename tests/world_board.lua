@@ -40,10 +40,14 @@ BeginTextCommandDisplayText, AddTextComponentSubstringPlayerName = counted, coun
 local VISIBLE = true
 function World3dToScreen2d() return VISIBLE end
 
--- where the eye is, so the client can drop the face pointing away from it
+-- Where the eye is, so the client can drop the face pointing away from it.
+-- It is the *rendered* camera that is asked, not the gameplay one: the board
+-- editor can push a scripted camera, and the face that is drawn has to follow
+-- whatever is actually on screen.
 CAM = { x = 0.0, y = -10.0, z = 30.0 }
 local CAM_CALLS = 0
-function GetGameplayCamCoord() CAM_CALLS = CAM_CALLS + 1; return CAM end
+function GetFinalRenderedCamCoord() CAM_CALLS = CAM_CALLS + 1; return CAM end
+function GetGameplayCamCoord() return CAM end
 function camCalls() local n = CAM_CALLS; CAM_CALLS = 0; return n end
 
 -- GTA's text alignment flags survive the draw that set them, so a right

@@ -1749,7 +1749,7 @@ function beBody() {
    chip drops focus altogether for the times you want the mouse to turn the
    camera instead. */
 const BW = { on: false, mode: 'move', speed: 1, sel: 's0', walk: false,
-             targets: [], item: null, placing: null, hidden: false };
+             targets: [], item: null, placing: null, hidden: false, focused: false };
 
 /* While a handle is actually being dragged the panel is in the way of the
    thing it is moving, so it fades out of it and comes back on release. */
@@ -1784,7 +1784,7 @@ const bwPost = (action, extra) => post('boardWorld', Object.assign({ action }, e
 
    Moves are throttled: without a drag in progress they only feed the hover
    highlight, and thirty a second is plenty for that. */
-const BWG = { down: false, held: false, last: 0, sent: { x: -1, y: -1 } };
+const BWG = { down: false, held: false, orbit: false, last: 0, sent: { x: -1, y: -1 } };
 const BWG_RATE = 33;
 
 function bwCursor(e) {
@@ -1797,7 +1797,22 @@ function bwBindCatch() {
   if (!host || host._bound) return;
   host._bound = true;
 
+  host.oncontextmenu = (e) => e.preventDefault();
+  host.onwheel = (e) => {
+    if (!BW.focused) return;
+    e.preventDefault();
+    bwPost('zoom', { dir: e.deltaY > 0 ? 1 : -1 });
+  };
+
   host.onmousedown = (e) => {
+    // right button swings the focused camera around the thing being edited
+    if (e.button === 2) {
+      if (!BW.focused) return;
+      BWG.down = true;
+      BWG.orbit = true;
+      BWG.sent = bwCursor(e);
+      return;
+    }
     if (e.button !== 0) return;
     const c = bwCursor(e);
     BWG.down = true;
@@ -1820,8 +1835,10 @@ function bwBindCatch() {
     if (now - BWG.last < BWG_RATE) return;
     const c = bwCursor(e);
     if (Math.abs(c.x - BWG.sent.x) < 0.0015 && Math.abs(c.y - BWG.sent.y) < 0.0015) return;
+    const dx = c.x - BWG.sent.x, dy = c.y - BWG.sent.y;
     BWG.last = now;
     BWG.sent = c;
+    if (BWG.orbit) { bwPost('orbit', { x: dx, y: dy }); return; }
     if (BW.placing) return;              // the client follows the camera there
     bwPost('drag', { x: c.x, y: c.y });
   };
@@ -1829,6 +1846,7 @@ function bwBindCatch() {
   const release = () => {
     if (!BWG.down) return;
     BWG.down = false;
+    BWG.orbit = false;
     if (BWG.held) { BWG.held = false; bwPost('drop'); }
     host.classList.remove('grabbing');
     bwDragging(false);
@@ -1912,6 +1930,7 @@ function renderWorldEdit(d) {
     BW.targets = d.targets || [];
     BW.item    = d.item || null;
     BW.placing = d.placing || null;
+    BW.focused = d.focused === true;
   }
 
   // a rebuild takes the held button out of the document with it
@@ -1949,8 +1968,16 @@ function renderWorldEdit(d) {
   if (BW.hidden && !BW.placing) {
     const show = el('button', 'bw-ghost show',
       `<svg><use href="#i-sliders"/></svg> ${esc(tx('SHOW THE PANEL'))}`);
-    show.onclick = () => { BW.hidden = false; Sfx.play('click'); renderWorldEdit(); };
+    show.onclick = () => {
+      BW.hidden = false;
+      Sfx.play('click');
+      bwPost('focus', { on: false });
+      renderWorldEdit();
+    };
     host.appendChild(show);
+    if (BW.focused) {
+      host.appendChild(el('div', 'bw-cam-hint', tx('Right-drag to swing around it, wheel to zoom.')));
+    }
     host.appendChild(walkChip());
     return;
   }
@@ -2041,9 +2068,16 @@ function renderWorldEdit(d) {
   const here = el('button', 'bw-ghost',
     `<svg><use href="#i-map"/></svg> ${esc(tx('PUT IT WHERE I STAND'))}`);
   here.onclick = () => bwPost('here');
+  /* Put the panel away and put the camera on the thing at the same time: the
+     point of hiding it is to get a clear look at what you are editing. */
   const hide = el('button', 'bw-ghost',
-    `<svg><use href="#i-sliders"/></svg> ${esc(tx('HIDE THE PANEL'))}`);
-  hide.onclick = () => { BW.hidden = true; Sfx.play('click'); renderWorldEdit(); };
+    `<svg><use href="#i-target"/></svg> ${esc(tx('LOOK AT IT'))}`);
+  hide.onclick = () => {
+    BW.hidden = true;
+    Sfx.play('click');
+    bwPost('focus', { on: true });
+    renderWorldEdit();
+  };
   const back = el('button', 'bw-ghost',
     `<svg><use href="#i-back"/></svg> ${esc(tx('BACK TO THE MENU'))}`);
   back.onclick = () => bwPost('back');

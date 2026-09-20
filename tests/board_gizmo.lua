@@ -37,6 +37,10 @@ end
 local CAM = { x = 0.0, y = -20.0, z = 30.0 }
 local SCALE = 0.05                      -- screen units per metre
 
+-- the rendered camera, because the editor can put a scripted one on the thing
+-- being edited and everything here has to agree with what is on screen
+function GetFinalRenderedCamCoord() return CAM end
+function GetFinalRenderedCamRot() return { x = 0.0, y = 0.0, z = 0.0 } end
 function GetGameplayCamCoord() return CAM end
 function GetAspectRatio() return 16 / 9 end
 
@@ -57,6 +61,15 @@ function StartShapeTestRay() return 1 end
 function GetShapeTestResult() return 2, 0, { x = 0.0, y = 0.0, z = 0.0 } end
 function GetGroundZFor_3dCoord() return true, 29.0 end
 function GetGameplayCamRot() return { x = 0.0, y = 0.0, z = 0.0 } end
+
+-- the focus camera, recorded rather than rendered
+CAMS = { made = 0, killed = 0, at = nil, look = nil, rendering = false }
+function CreateCam() CAMS.made = CAMS.made + 1; return 7 end
+function SetCamCoord(_, x, y, z) CAMS.at = { x = x, y = y, z = z } end
+function PointCamAtCoord(_, x, y, z) CAMS.look = { x = x, y = y, z = z } end
+function SetCamActive() end
+function RenderScriptCams(on) CAMS.rendering = on end
+function DestroyCam() CAMS.killed = CAMS.killed + 1 end
 
 -- ==========================================================================
 -- the slice
@@ -291,6 +304,75 @@ check('the board outline and three arrows are drawn', DRAWN.lines >= 4 + 3 * 5, 
 check('  each arrow tipped with a marker',            DRAWN.markers >= 4, true)
 check('  and each one labelled',
       table.concat(DRAWN.text), 'XYZ')
+
+-- ==========================================================================
+-- 8. the camera that goes and looks at the thing being edited
+-- ==========================================================================
+-- Hiding the panel is only useful if the thing you are editing is in front of
+-- you, so the editor can put a camera on it. It has to arrive on the *front*
+-- of a board — landing behind it shows a blank back and reads as broken.
+local C
+do
+  local a = CL:find('local function wbcAim()', 1, true)
+  local b = CL:find('local function wbwEnter()', a, true)
+  assert(a and b, 'could not slice the focus camera')
+  ENV.WBC = { on = false, cam = nil, yaw = 0.0, pitch = -6.0, dist = 10.0 }
+  C = assert(load(CL:sub(a, b - 1)
+    .. '\nreturn { enter = wbcEnter, leave = wbcLeave, orbit = wbcOrbit,'
+    .. '          zoom = wbcZoom, aim = wbcAim, state = WBC }', 'cam', 't', ENV))()
+end
+
+-- a board at the origin facing north: its front is the south side, so a camera
+-- looking at it must stand to the south
+it = screen({ h = 0.0, width = 6.0 })
+ENV.WBW.mode = 'move'
+C.enter()
+check('looking at it makes a camera',        CAMS.made, 1)
+check('  and puts it on screen',             CAMS.rendering, true)
+check('  aimed at the board',
+      ('%.1f/%.1f'):format(CAMS.look.x, CAMS.look.y), '0.0/0.0')
+check('  standing on the side it faces',     CAMS.at.y < 0.0, true)
+check('  and level with it, east to west',
+      math.abs(CAMS.at.x) < 0.01, true)
+check('  a little above it',                 CAMS.at.z > it.pos.z, true)
+near('  back by about its width and a half',
+     math.sqrt(CAMS.at.x ^ 2 + CAMS.at.y ^ 2), 9.0, 0.6)
+
+-- turn the board round and the camera has to come round with it
+C.leave()
+it = screen({ h = 180.0, width = 6.0 })
+C.enter()
+check('a board facing the other way is watched from the other side',
+      CAMS.at.y > 0.0, true)
+
+-- swinging it round keeps it the same distance and keeps it pointed at it
+local before = math.sqrt(CAMS.at.x ^ 2 + (CAMS.at.y - it.pos.y) ^ 2)
+C.orbit(0.25, 0.0)
+near('swinging it round keeps the same distance',
+     math.sqrt(CAMS.at.x ^ 2 + (CAMS.at.y - it.pos.y) ^ 2), before, 0.05)
+check('  and it is still pointed at the board',
+      ('%.1f/%.1f'):format(CAMS.look.x, CAMS.look.y), '0.0/0.0')
+
+-- and it cannot be swung over the top and upside down
+C.orbit(0.0, -5.0)
+check('it cannot be swung past straight up',   C.state.pitch >= -80.0, true)
+C.orbit(0.0, 5.0)
+check('  nor past straight down',              C.state.pitch <= 80.0, true)
+
+local d0 = C.state.dist
+C.zoom(-1)
+check('the wheel pulls it in',  C.state.dist < d0, true)
+C.zoom(1); C.zoom(1)
+check('  and pushes it out',    C.state.dist > d0, true)
+for _ = 1, 40 do C.zoom(-1) end
+check('  never through the thing itself', C.state.dist >= 1.5, true)
+
+CAMS.killed = 0
+C.leave()
+check('coming back hands the camera in',   CAMS.killed, 1)
+check('  and gives the view back',         CAMS.rendering, false)
+C.leave()
+check('  and handing it in twice is not two cameras', CAMS.killed, 1)
 
 print(fails > 0 and ('\n%d FAILED of %d'):format(fails, checks)
                 or ('\nALL PASS (%d checks)'):format(checks))

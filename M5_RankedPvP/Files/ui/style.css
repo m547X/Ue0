@@ -2671,6 +2671,13 @@ html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
 .bw.dragging{opacity:.14; transition:opacity .12s var(--ease,ease)}
 .bw.dragging > *{pointer-events:none}
 
+/* what the mouse does while the camera is on the thing */
+.bw-cam-hint{
+  align-self:center; font-size:11px; font-weight:700; color:var(--gold,#F5C542);
+  background:rgba(8,10,14,.9); border:1px solid rgba(255,255,255,.1);
+  border-radius:9px; padding:6px 12px;
+}
+
 /* put away by hand: only the way back is left on screen */
 .bw-ghost.show{
   align-self:center; padding:9px 16px;
