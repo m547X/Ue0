@@ -820,12 +820,45 @@ north/south, blue up — and traces the board's outline in gold, so you can plac
 it before the page has even loaded.
 
 The panel is the four buttons from the screenshots: **تحريك / حجم / دوران /
-تأكيد**. Move offers the three directions, Size the width, Rotate the facing
-and the tilt; a podium spot is a person, so it is offered a facing and nothing
-else. Above them is the step size, which multiplies every press from 0.25x to
-4x. Below them: every board and podium spot, to switch between without going
-back; **PUT IT WHERE I STAND**; and **BACK TO THE MENU**. **تأكيد** saves and
-closes.
+تأكيد**, and each of them puts handles on the thing in the world that you drag
+with the mouse:
+
+* **تحريك** — a red, a green and a blue arrow for X, Y and Z. Grab one and the
+  thing slides along that axis and no other. The arrows grow with distance, so
+  they stay the same size on screen wherever the board is.
+* **حجم** — green handles on the left and right edges for the width, red ones
+  on the top and bottom for the height. A height dragged by hand pins it and
+  stretches the picture; **رجّع الارتفاع تلقائي** hands it back to the
+  texture's own shape.
+* **دوران** — a ring around it. Drag left and right to turn it, up and down to
+  lean it. A podium spot is a person, so it turns and nothing else.
+
+The nudge rows are still there underneath for the last quarter of a metre the
+mouse will not give you, and the step size above multiplies both the buttons
+and the drags, from 0.25x to 4x.
+
+Below them: every board and podium spot, to switch between without going back,
+with **+ شاشة** and **+ منصة** to add one and a red ✕ to remove the one being
+moved. Then **PUT IT WHERE I STAND** and **BACK TO THE MENU**. **تأكيد** saves
+and closes.
+
+### Adding one — pick the spot first
+
+**+ شاشة** and **+ منصة** do not drop the new one on top of you. The panel
+turns into *وين تبي الشاشة؟* and the client draws a red disc on the ground
+wherever you are looking, with a line up to the height a board would hang at.
+Look at the spot, click the ground, and the new one is created there and
+selected, with the handles already on it.
+
+### How the mouse reaches the world
+
+The handles are drawn by the client, which is the only side that knows where
+they are; the cursor is known only to the page. So a transparent layer under
+the panel reports the cursor in normalized screen coordinates — the same 0..1
+space `GetScreenCoordFromWorldCoord` projects the handles into — and the
+client does the hit testing and the maths. Moves are throttled to thirty a
+second, and only while the editor holds focus: walking hands the mouse back to
+the game and the layer stands down with it.
 
 It never takes the keyboard — the client holds NUI focus with input passed
 through, so you can still walk while clicking the panel. **اضغط هنا لتحريك

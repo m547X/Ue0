@@ -186,6 +186,12 @@ const beRow = (page, label) => page.locator('#be-body .be-row').filter({
   // 6. switches, adding and removing
   // ======================================================================
   // the switch styles its checkbox away, so the label is what gets clicked
+  /* The switch is a <label>, and the row stretches its label to fill the width.
+     That turned SCREEN ON into a nine-hundred-pixel slider. */
+  check('a switch stays switch-sized inside a row',
+        await beRow(page, 'PODIUM ON').locator('.sw')
+                .evaluate((n) => Math.round(n.getBoundingClientRect().width)), 42);
+
   await beRow(page, 'PODIUM ON').locator('.sw').click();
   await page.waitForTimeout(150);
   sent = await last(page);

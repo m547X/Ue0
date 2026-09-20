@@ -3019,6 +3019,7 @@ local function wbEditSnapshot()
             h = tonumber(s.h) or 0.0, pitch = tonumber(s.pitch) or 0.0,
             width = tonumber(s.width) or 6.0,
             rows = tonumber(s.rows) or 10, opacity = tonumber(s.opacity) or 255,
+            height = tonumber(s.height),
             distance = tonumber(s.distance) or 35.0
         }
     end
@@ -3079,6 +3080,7 @@ local function wbEditClose(keep)
 end
 
 local WBW = { on = false, sel = 's0', mode = 'move', speed = 1.0, walk = false }
+local WBP = { on = false, kind = 's', x = 0.0, y = 0.0, z = 0.0, ok = false }
 local WBW_SPEEDS = { 0.25, 0.5, 1.0, 2.0, 4.0 }
 local WBW_STEP   = { x = 0.25, y = 0.25, z = 0.25, width = 0.25, h = 5.0, pitch = 2.0 }
 
@@ -3109,14 +3111,16 @@ local function wbwPayload()
                  x = it.pos.x + 0.0, y = it.pos.y + 0.0, z = it.pos.z + 0.0,
                  h = tonumber(it.h) or 0.0 }
         if kind == 's' then
-            item.pitch = tonumber(it.pitch) or 0.0
-            item.width = tonumber(it.width) or 6.0
+            item.pitch  = tonumber(it.pitch) or 0.0
+            item.width  = tonumber(it.width) or 6.0
+            item.height = tonumber(it.height)
         end
     end
 
     return { action = 'boardWorld', on = WBW.on, mode = WBW.mode,
              speed = WBW.speed, sel = WBW.sel, walk = WBW.walk,
-             targets = targets, item = item }
+             targets = targets, item = item,
+             placing = WBP.on and WBP.kind or nil }
 end
 
 local function wbwRepaint()
@@ -3157,27 +3161,318 @@ local function wbwHere()
     if kind == 'p' then wbwRepaint() end
 end
 
-local function wbwGizmo()
+local WBG = { hot = nil, drag = nil, cx = 0.5, cy = 0.5, sx = 0.0, sy = 0.0 }
+
+local WBG_AXIS = {
+    x = { 1.0, 0.0, 0.0, 235,  78,  78, 'X' },
+    y = { 0.0, 1.0, 0.0,  92, 222, 118, 'Y' },
+    z = { 0.0, 0.0, 1.0,  86, 154, 248, 'Z' }
+}
+
+local function wbgProject(x, y, z)
+    local ok, sx, sy = GetScreenCoordFromWorldCoord(x, y, z)
+    if not ok then return nil end
+    return sx, sy
+end
+
+local function wbgScale(it)
+    local c = GetGameplayCamCoord()
+    local d = #(vec3({ x = c.x, y = c.y, z = c.z }) - vec3(it.pos))
+    return math.max(0.5, math.min(6.0, d * 0.11))
+end
+
+local function wbgRight(it)
+    local yaw = math.rad(tonumber(it.h) or 0.0)
+    return math.cos(yaw), math.sin(yaw), 0.0
+end
+
+local function wbgUp(it)
+    local yaw  = math.rad(tonumber(it.h) or 0.0)
+    local tilt = math.rad(tonumber(it.pitch) or 0.0)
+    return -math.sin(yaw) * math.sin(tilt), math.cos(yaw) * math.sin(tilt), math.cos(tilt)
+end
+
+local function wbgHandles()
     local kind, _, it = wbwSel()
+    if not it then return {}, nil, nil end
+
+    local ox, oy, oz = it.pos.x + 0.0, it.pos.y + 0.0, it.pos.z + 0.0
+    local len = wbgScale(it)
+    local out = {}
+
+    if WBW.mode == 'move' then
+        for _, id in ipairs({ 'x', 'y', 'z' }) do
+            local a = WBG_AXIS[id]
+            out[#out + 1] = { id = id,
+                x = ox + a[1] * len, y = oy + a[2] * len, z = oz + a[3] * len,
+                r = a[4], g = a[5], b = a[6], label = a[7],
+                dx = a[1], dy = a[2], dz = a[3] }
+        end
+
+    elseif WBW.mode == 'size' and kind == 's' then
+        local w, h = screenSize(it)
+        local rx, ry, rz = wbgRight(it)
+        local ux, uy, uz = wbgUp(it)
+        local hw, hh = w * 0.5, h * 0.5
+        for _, s in ipairs({ 1, -1 }) do
+            out[#out + 1] = { id = 'width',
+                x = ox + rx * hw * s, y = oy + ry * hw * s, z = oz + rz * hw * s,
+                r = 92, g = 222, b = 118, dx = rx * s, dy = ry * s, dz = rz * s }
+            out[#out + 1] = { id = 'height',
+                x = ox + ux * hh * s, y = oy + uy * hh * s, z = oz + uz * hh * s,
+                r = 235, g = 78, b = 78, dx = ux * s, dy = uy * s, dz = uz * s }
+        end
+
+    elseif WBW.mode == 'rotate' then
+        out[#out + 1] = { id = 'h', x = ox, y = oy, z = oz,
+                          r = 186, g = 132, b = 245, ring = len * 0.9 }
+    end
+
+    return out, it, kind
+end
+
+local function wbgPick(cx, cy)
+    local hs = wbgHandles()
+    local asp  = GetAspectRatio(false)
+    if not asp or asp <= 0 then asp = 16 / 9 end
+
+    local best, bestD = nil, math.huge
+    for i = 1, #hs do
+        local sx, sy = wbgProject(hs[i].x, hs[i].y, hs[i].z)
+        if sx then
+            local ddx = (sx - cx) * asp
+            local ddy = sy - cy
+            local d = math.sqrt(ddx * ddx + ddy * ddy)
+            local reach = hs[i].ring and 0.13 or 0.05
+            if d <= reach and d < bestD then best, bestD = hs[i], d end
+        end
+    end
+    return best
+end
+
+local function wbgArrow(ox, oy, oz, hx, hy, hz, r, g, b, a)
+    DrawLine(ox, oy, oz, hx, hy, hz, r, g, b, a)
+
+    local vx, vy, vz = hx - ox, hy - oy, hz - oz
+    local len = math.sqrt(vx * vx + vy * vy + vz * vz)
+    if len < 0.01 then return end
+    vx, vy, vz = vx / len, vy / len, vz / len
+
+    local px, py, pz = -vy, vx, 0.0
+    local pl = math.sqrt(px * px + py * py)
+    if pl < 0.01 then px, py, pz, pl = 1.0, 0.0, 0.0, 1.0 end
+    px, py = px / pl, py / pl
+
+    local qx = vy * pz - vz * py
+    local qy = vz * px - vx * pz
+    local qz = vx * py - vy * px
+
+    local back = len * 0.16
+    local wide = len * 0.055
+    local bx, by, bz = hx - vx * back, hy - vy * back, hz - vz * back
+
+    for _, s in ipairs({ { px, py, pz }, { -px, -py, -pz }, { qx, qy, qz }, { -qx, -qy, -qz } }) do
+        DrawLine(hx, hy, hz,
+                 bx + s[1] * wide, by + s[2] * wide, bz + s[3] * wide, r, g, b, a)
+    end
+end
+
+local function wbgRing(ox, oy, oz, radius, r, g, b, a)
+    local prevX, prevY
+    for i = 0, 24 do
+        local ang = (i / 24) * math.pi * 2
+        local x = ox + math.cos(ang) * radius
+        local y = oy + math.sin(ang) * radius
+        if prevX then DrawLine(prevX, prevY, oz, x, y, oz, r, g, b, a) end
+        prevX, prevY = x, y
+    end
+end
+
+local function wbwGizmo()
+    local hs, it, kind = wbgHandles()
     if not it then return end
 
-    local x, y, z = it.pos.x + 0.0, it.pos.y + 0.0, it.pos.z + 0.0
-    local len = 1.6
+    local ox, oy, oz = it.pos.x + 0.0, it.pos.y + 0.0, it.pos.z + 0.0
 
-    DrawLine(x - len, y, z, x + len, y, z, 235, 78, 78, 220)
-    DrawLine(x, y - len, z, x, y + len, z, 92, 222, 118, 220)
-    DrawLine(x, y, z - len, x, y, z + len, 86, 154, 248, 220)
-    DrawMarker(28, x, y, z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-               0.10, 0.10, 0.10, 250, 250, 250, 190,
+    if kind == 's' then
+        local ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz = screenCorners(it)
+        DrawLine(ax, ay, az, bx, by, bz, 245, 197, 66, 200)
+        DrawLine(bx, by, bz, cx, cy, cz, 245, 197, 66, 200)
+        DrawLine(cx, cy, cz, dx, dy, dz, 245, 197, 66, 200)
+        DrawLine(dx, dy, dz, ax, ay, az, 245, 197, 66, 200)
+    end
+
+    local active = WBG.drag and WBG.drag.id or WBG.hot
+
+    for i = 1, #hs do
+        local hnd = hs[i]
+        local on  = (active == hnd.id)
+        local a   = on and 255 or 190
+        local r, g, b = hnd.r, hnd.g, hnd.b
+        if on then r, g, b = 255, 255, 255 end
+
+        if hnd.ring then
+            wbgRing(ox, oy, oz, hnd.ring, r, g, b, a)
+            wbgRing(ox, oy, oz, hnd.ring * 0.93, r, g, b, math.floor(a * 0.5))
+        else
+            wbgArrow(ox, oy, oz, hnd.x, hnd.y, hnd.z, r, g, b, a)
+            DrawMarker(28, hnd.x, hnd.y, hnd.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                       on and 0.09 or 0.07, on and 0.09 or 0.07, on and 0.09 or 0.07,
+                       r, g, b, a, false, false, 2, false, nil, nil, false)
+            if hnd.label then
+                drawMarkerText(hnd.x, hnd.y, hnd.z + 0.22, hnd.label)
+            end
+        end
+    end
+
+    DrawMarker(28, ox, oy, oz, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+               0.05, 0.05, 0.05, 250, 250, 250, 210,
                false, false, 2, false, nil, nil, false)
+end
 
-    if kind ~= 's' then return end
+local function wbgDragStart(cx, cy)
+    WBG.cx, WBG.cy = cx, cy
+    local hnd = wbgPick(cx, cy)
+    if not hnd then
+        WBG.hot = nil
+        return false
+    end
 
-    local ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz = screenCorners(it)
-    DrawLine(ax, ay, az, bx, by, bz, 245, 197, 66, 220)
-    DrawLine(bx, by, bz, cx, cy, cz, 245, 197, 66, 220)
-    DrawLine(cx, cy, cz, dx, dy, dz, 245, 197, 66, 220)
-    DrawLine(dx, dy, dz, ax, ay, az, 245, 197, 66, 220)
+    local _, _, it = wbwSel()
+    if not it then return false end
+
+    WBG.hot = hnd.id
+    WBG.drag = { id = hnd.id, dx = hnd.dx, dy = hnd.dy, dz = hnd.dz }
+
+    if not hnd.ring then
+        local ox, oy, oz = it.pos.x + 0.0, it.pos.y + 0.0, it.pos.z + 0.0
+        local s0x, s0y = wbgProject(ox, oy, oz)
+        local s1x, s1y = wbgProject(ox + hnd.dx, oy + hnd.dy, oz + hnd.dz)
+        if s0x and s1x then
+            WBG.drag.ax, WBG.drag.ay = s1x - s0x, s1y - s0y
+        else
+            WBG.drag.ax, WBG.drag.ay = 0.0, 0.0
+        end
+    end
+    return true
+end
+
+local function wbgDragMove(cx, cy)
+    local mdx, mdy = cx - WBG.cx, cy - WBG.cy
+    WBG.cx, WBG.cy = cx, cy
+
+    local d = WBG.drag
+    if not d then
+        WBG.hot = (wbgPick(cx, cy) or {}).id
+        return false
+    end
+
+    local kind, _, it = wbwSel()
+    if not it then return false end
+
+    local speed = WBW.speed or 1.0
+
+    if d.id == 'h' then
+        it.h = ((((tonumber(it.h) or 0.0) + mdx * 520.0 * speed) % 360) + 360) % 360
+        if kind == 's' then
+            it.pitch = math.max(-60.0, math.min(60.0,
+                (tonumber(it.pitch) or 0.0) + mdy * 260.0 * speed))
+        end
+        if kind == 'p' then wbwRepaint() end
+        return true
+    end
+
+    local den = (d.ax or 0.0) * (d.ax or 0.0) + (d.ay or 0.0) * (d.ay or 0.0)
+    if den < 1e-9 then return false end
+    local metres = ((mdx * d.ax) + (mdy * d.ay)) / den
+
+    if d.id == 'x' or d.id == 'y' or d.id == 'z' then
+        it.pos[d.id] = it.pos[d.id] + metres * speed
+        if kind == 'p' then wbwRepaint() end
+
+    elseif kind == 's' and d.id == 'width' then
+        it.width = math.max(0.5, math.min(40.0,
+            (tonumber(it.width) or 6.0) + metres * 2.0 * speed))
+
+    elseif kind == 's' and d.id == 'height' then
+        local _, cur = screenSize(it)
+        it.height = math.max(0.3, math.min(30.0, cur + metres * 2.0 * speed))
+    end
+    return true
+end
+
+local function wbgDragEnd()
+    WBG.drag = nil
+end
+
+local function wbpAim()
+    local cam  = GetGameplayCamCoord()
+    local rot  = GetGameplayCamRot(2)
+    local pz   = math.rad(rot.z)
+    local px   = math.rad(rot.x)
+    local cosx = math.cos(px)
+    local dx, dy, dz = -math.sin(pz) * cosx, math.cos(pz) * cosx, math.sin(px)
+
+    local far  = 60.0
+    local ray  = StartShapeTestRay(cam.x, cam.y, cam.z,
+                                   cam.x + dx * far, cam.y + dy * far, cam.z + dz * far,
+                                   1 + 16 + 256, playerPed(), 4)
+    local _, hit, endCoords = GetShapeTestResult(ray)
+
+    if hit == 1 or hit == true then
+        return endCoords.x + 0.0, endCoords.y + 0.0, endCoords.z + 0.0, true
+    end
+
+    local ped = playerPed()
+    local c   = GetEntityCoords(ped)
+    local h   = math.rad(GetEntityHeading(ped))
+    local fx, fy = c.x - math.sin(h) * 6.0, c.y + math.cos(h) * 6.0
+    local found, gz = GetGroundZFor_3dCoord(fx, fy, c.z + 2.0, false)
+    return fx, fy, (found and gz or c.z), false
+end
+
+local function wbpTick()
+    local x, y, z, hit = wbpAim()
+    WBP.x, WBP.y, WBP.z, WBP.ok = x, y, z, hit
+
+    local r, g, b = 235, 62, 62
+    DrawMarker(25, x, y, z + 0.03, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+               0.85, 0.85, 0.85, r, g, b, 170, false, false, 2, false, nil, nil, false)
+    DrawMarker(28, x, y, z + 0.03, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+               0.13, 0.13, 0.13, r, g, b, 235, false, false, 2, false, nil, nil, false)
+
+    if WBP.kind == 's' then
+        local top = z + 1.35
+        DrawLine(x, y, z + 0.03, x, y, top, r, g, b, 150)
+        DrawMarker(28, x, y, top, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                   0.08, 0.08, 0.08, 245, 197, 66, 220,
+                   false, false, 2, false, nil, nil, false)
+    end
+end
+
+local function wbpPlace()
+    if not WBP.on or not WB.edit then return end
+    local ped = playerPed()
+    local h   = GetEntityHeading(ped)
+
+    if WBP.kind == 's' then
+        WB.edit.screens = WB.edit.screens or {}
+        WB.edit.screens[#WB.edit.screens + 1] = {
+            pos = { x = WBP.x, y = WBP.y, z = WBP.z + 1.35 },
+            title = '', enabled = true,
+            h = (h + 180.0) % 360, pitch = 0.0, width = 6.0,
+            rows = 10, opacity = 255, distance = 35.0
+        }
+        WBW.sel = 's' .. (#WB.edit.screens - 1)
+    else
+        WB.edit.podium = WB.edit.podium or {}
+        WB.edit.podium[#WB.edit.podium + 1] = { pos = { x = WBP.x, y = WBP.y, z = WBP.z }, h = h }
+        WBW.sel = 'p' .. (#WB.edit.podium - 1)
+        wbwRepaint()
+    end
+
+    WBP.on = false
+    WBW.mode = 'move'
 end
 
 local function wbwEnter()
@@ -3190,7 +3485,7 @@ local function wbwEnter()
 
     Citizen.CreateThread(function()
         while WBW.on do
-            wbwGizmo()
+            if WBP.on then wbpTick() else wbwGizmo() end
             Wait(0)
         end
     end)
@@ -3268,6 +3563,51 @@ RegisterNUICallback('boardWorld', function(data, cb)
         wbwWalk(data.on == true)
         cb('ok')
         return
+
+    elseif action == 'grab' then
+        local took = (not WBP.on) and wbgDragStart(tonumber(data.x) or 0.5, tonumber(data.y) or 0.5)
+        cb(took and 'grab' or 'miss')
+        return
+
+    elseif action == 'drag' then
+        if wbgDragMove(tonumber(data.x) or 0.5, tonumber(data.y) or 0.5) then
+            nui(wbwPayload())
+        end
+        cb('ok')
+        return
+
+    elseif action == 'drop' then
+        wbgDragEnd()
+        nui(wbwPayload())
+        cb('ok')
+        return
+
+    elseif action == 'place' then
+        local k = tostring(data.kind or 's')
+        WBP.kind = (k == 'p') and 'p' or 's'
+        WBP.on   = true
+        WBG.drag, WBG.hot = nil, nil
+
+    elseif action == 'placeHere' then
+        wbpPlace()
+
+    elseif action == 'placeCancel' then
+        WBP.on = false
+
+    elseif action == 'autoHeight' then
+        local kind, _, it = wbwSel()
+        if kind == 's' and it then it.height = nil end
+
+    elseif action == 'remove' then
+        local kind, n, it = wbwSel()
+        if it and WB.edit then
+            local list = (kind == 's') and WB.edit.screens or WB.edit.podium
+            if #list > 1 or kind == 'p' then
+                table.remove(list, n)
+                WBW.sel = (#(WB.edit.screens or {}) > 0) and 's0' or 'p0'
+                if kind == 'p' then wbwRepaint() end
+            end
+        end
 
     elseif action == 'confirm' then
         TriggerServerEvent('m5rp:sv:boardLayout', 'save', WB.edit)

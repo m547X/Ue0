@@ -521,6 +521,12 @@
 <!-- the thing being moved is the thing being looked at; everything inside   -->
 <!-- is built by app.js so the wording stays in Locale.lua.                  -->
 <!-- ====================================================================== -->
+<!-- Catches the mouse for the world gizmo. It sits under the panel, so the
+     panel's own buttons still take their clicks first, and it reports where
+     the cursor is in normalized screen coordinates — the same space the
+     client projects the handles into. -->
+<div id="bw-catch" class="bw-catch hidden"></div>
+
 <div id="bw" class="bw hidden"></div>
 
 <div id="toasts" class="toasts"></div>

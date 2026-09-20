@@ -103,6 +103,18 @@ Locale.ar = {
     ['TO MOVE THE PLAYER']        = 'لتحريك اللاعب',
     ['PRESS F5']                  = 'اضغط F5',
     ['TO EDIT']                   = 'للتعديل',
+    ['Drag an arrow to slide it along that axis.'] =
+        'اسحب السهم عشان تحركه على محوره.',
+    ['Drag the green handles for width, the red ones for height.'] =
+        'اسحب المقابض الخضراء للعرض، والحمراء للارتفاع.',
+    ['Drag the ring left or right to turn it.'] =
+        'اسحب الحلقة يمين أو يسار عشان تدوّره.',
+    ['BACK TO AUTO HEIGHT']       = 'رجّع الارتفاع تلقائي',
+    ['REMOVE THIS ONE']           = 'احذف هذا',
+    ['WHERE DOES THE SCREEN GO']  = 'وين تبي الشاشة؟',
+    ['WHERE DOES THE PODIUM SPOT GO'] = 'وين تبي المنصة؟',
+    ['Look at the spot and click the ground.'] = 'طالع المكان واضغط على الأرض.',
+    ['PUT IT HERE']               = 'حطه هنا',
     ['The board goes back to the positions in the config file.'] =
         'اللوحة ترجع للأماكن المكتوبة بملف الإعدادات.',
     ['The board layout was saved.'] = 'تم حفظ أماكن اللوحة.',

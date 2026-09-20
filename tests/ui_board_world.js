@@ -27,11 +27,15 @@ function check(name, got, want) {
 
 const SHIM = () => {
   window.__posted = [];
+  // the client answers a grab with 'grab' or 'miss'; __grab decides which
+  window.__grab = 'grab';
   window.fetch = (url, opts) => {
     let body = {};
     try { body = JSON.parse(opts && opts.body || '{}'); } catch (e) {}
-    window.__posted.push({ name: String(url).split('/').pop(), body });
-    return Promise.resolve({ json: () => Promise.resolve({}) });
+    const name = String(url).split('/').pop();
+    window.__posted.push({ name, body });
+    const reply = (name === 'boardWorld' && body.action === 'grab') ? window.__grab : {};
+    return Promise.resolve({ json: () => Promise.resolve(reply) });
   };
   window.__send = (m) => window.dispatchEvent(new MessageEvent('message', { data: m }));
 };
@@ -204,7 +208,7 @@ const clear = (p) => p.evaluate(() => { window.__posted = []; });
   check('  and lowered',       await last(page), { action: 'speed', dir: -1 });
 
   check('every board and podium spot is listed',
-        await page.locator('.bw-target').count(), 3);
+        await page.locator('.bw-target:not(.add):not(.del)').count(), 3);
   check('  the one being moved is lit',
         await page.locator('.bw-target.on').textContent(), 'SCREEN 1 — TOP');
   await clear(page);
@@ -264,6 +268,127 @@ const clear = (p) => p.evaluate(() => { window.__posted = []; });
   await page.waitForTimeout(150);
   check('leaving world mode takes the panel away',
         await page.locator('#bw').evaluate((n) => n.classList.contains('hidden')), true);
+
+  // ======================================================================
+  // 9. the mouse layer: dragging a handle in the world
+  // ======================================================================
+  // The handles are drawn by the client and it alone knows where they are, so
+  // all this side does is report the cursor. What it must get right is the
+  // space: normalized 0..1, the same one the client projects into.
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
+  check('the mouse layer is up with the panel',
+        await page.locator('#bw-catch').evaluate((n) => !n.classList.contains('hidden')), true);
+  check('  and sits under it, so the buttons take their clicks first',
+        await page.evaluate(() => {
+          const z = (id) => parseInt(getComputedStyle(document.getElementById(id)).zIndex, 10);
+          return z('bw-catch') < z('bw');
+        }), true);
+
+  await clear(page);
+  await page.mouse.move(800, 450);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  check('pressing on it asks the client what is under the cursor',
+        await last(page), { action: 'grab', x: 0.5, y: 0.5 });
+
+  await clear(page);
+  await page.mouse.move(960, 450);
+  await page.waitForTimeout(120);
+  check('  and moving reports where the cursor went',
+        await last(page), { action: 'drag', x: 0.6, y: 0.5 });
+
+  await clear(page);
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+  check('letting go tells the client to let go', await last(page), { action: 'drop' });
+
+  // a press that lands on nothing must not leave the page thinking it holds
+  // something, or the next mouseup posts a drop for a drag that never was
+  await page.evaluate(() => { window.__grab = 'miss'; });
+  await page.mouse.move(700, 300);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  await clear(page);
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+  check('a press that hit nothing sends no drop', await last(page), null);
+  await page.evaluate(() => { window.__grab = 'grab'; });
+
+  // walking hands the mouse back to the game, so the layer stands down
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { walk: true })), SCREEN);
+  await page.waitForTimeout(150);
+  check('walking takes the mouse layer away',
+        await page.locator('#bw-catch').evaluate((n) => n.classList.contains('hidden')), true);
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
+  // ======================================================================
+  // 10. adding one: pick the spot first
+  // ======================================================================
+  await clear(page);
+  await page.locator('.bw-target.add', { hasText: 'SCREEN' }).click();
+  await page.waitForTimeout(120);
+  check('adding a screen asks the client for the marker',
+        await last(page), { action: 'place', kind: 's' });
+  await clear(page);
+  await page.locator('.bw-target.add', { hasText: 'PODIUM' }).click();
+  await page.waitForTimeout(120);
+  check('  and a podium spot the same way',
+        await last(page), { action: 'place', kind: 'p' });
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { placing: 's' })), SCREEN);
+  await page.waitForTimeout(150);
+  check('placing replaces the panel with where-does-it-go',
+        await page.locator('.bw-place').count(), 1);
+  check('  and the controls are out of the way',
+        await page.locator('.bw-modes').count(), 0);
+  check('  the cursor says you are placing something',
+        await page.locator('#bw-catch').evaluate((n) => n.classList.contains('placing')), true);
+
+  await clear(page);
+  await page.mouse.move(700, 600);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  check('clicking the ground puts it there',
+        await last(page), { action: 'placeHere' });
+
+  await clear(page);
+  await page.locator('.bw-ghost', { hasText: 'CANCEL' }).click();
+  await page.waitForTimeout(120);
+  check('  or it can be called off', await last(page), { action: 'placeCancel' });
+
+  await page.evaluate((d) => window.__send(d), SCREEN);
+  await page.waitForTimeout(150);
+
+  // ======================================================================
+  // 11. removing one, and letting the height go back to automatic
+  // ======================================================================
+  await clear(page);
+  await page.locator('.bw-target.del').click();
+  await page.waitForTimeout(120);
+  check('the one being moved can be removed', await last(page), { action: 'remove' });
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { targets: [d.targets[0]] })), SCREEN);
+  await page.waitForTimeout(150);
+  check('  but not the last one left', await page.locator('.bw-target.del').count(), 0);
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'size' })), SCREEN);
+  await page.waitForTimeout(150);
+  check('a board on automatic height is not offered a reset',
+        await page.locator('.bw-ghost', { hasText: 'AUTO HEIGHT' }).count(), 0);
+
+  await page.evaluate((d) => window.__send(Object.assign({}, d, { mode: 'size',
+    item: Object.assign({}, d.item, { height: 4.2 }) })), SCREEN);
+  await page.waitForTimeout(150);
+  check('  one that was dragged taller is',
+        await page.locator('.bw-ghost', { hasText: 'AUTO HEIGHT' }).count(), 1);
+  await clear(page);
+  await page.locator('.bw-ghost', { hasText: 'AUTO HEIGHT' }).click();
+  await page.waitForTimeout(120);
+  check('  and it hands the height back', await last(page), { action: 'autoHeight' });
 
   check('nothing threw along the way', errors, []);
 

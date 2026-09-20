@@ -2171,7 +2171,10 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 .chip:hover{color:var(--text);border-color:var(--edge)}
 .chip.on{color:var(--red);border-color:var(--red);background:var(--red-soft)}
 
-.sw{position:relative;display:inline-block;width:42px;height:22px;cursor:pointer}
+/* The switch is itself a <label>, so a row rule that stretches "label" to fill
+   stretches the switch into a 900px slider. It never flexes. */
+.sw{position:relative;display:inline-block;width:42px;height:22px;cursor:pointer;
+  flex:0 0 42px}
 .sw input{display:none}
 .sw i{position:absolute;inset:0;border-radius:20px;background:var(--panel-3);border:1px solid var(--edge);transition:.18s}
 .sw i::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
@@ -2623,7 +2626,7 @@ html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
 
 .be-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:9px;
   background:var(--panel-2);border:1px solid var(--edge-soft)}
-.be-row label{flex:1;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--dim)}
+.be-row > label:not(.sw){flex:1;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--dim)}
 .be-row .inp{flex:0 0 190px}
 .be-ctl{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .be-btn{width:32px;height:30px;border-radius:8px;font-size:17px;font-weight:700;
@@ -2777,3 +2780,48 @@ html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
 .bw-walk b{font-size:12.5px; font-weight:800; color:var(--text,#EEF3F9)}
 .bw-walk i{font-style:normal; font-size:12px; font-weight:800; color:var(--gold,#F5C542)}
 .bw-walk:hover{border-color:rgba(245,197,66,.4)}
+
+/* ---------------------------------------------- the world gizmo's mouse ---
+   A transparent sheet over the game that reports where the cursor is. It sits
+   below the panel so the panel's buttons take their clicks first, and it is
+   only up while the editor holds focus — walking hands the mouse back to the
+   game and this stands down with it. */
+.bw-catch{
+  position:fixed; inset:0; z-index:69;
+  cursor:crosshair; background:transparent;
+}
+.bw-catch.grabbing{cursor:grabbing}
+.bw-catch.placing{cursor:cell}
+
+/* what the handles do, said once above the rows */
+.bw-drag-hint{
+  font-size:11px; line-height:1.5; color:var(--gold,#F5C542);
+  padding:2px 2px 4px; border-bottom:1px solid rgba(255,255,255,.07);
+  margin-bottom:3px;
+}
+
+/* placing a new one */
+.bw-place{
+  display:flex; flex-direction:column; gap:6px;
+  background:rgba(10,12,17,.94); border:1px solid rgba(245,197,66,.4);
+  border-radius:14px; padding:13px 15px;
+}
+.bw-place b{font-size:13.5px; font-weight:800; letter-spacing:.03em}
+.bw-place span{font-size:11.5px; color:var(--dim,#8C98A8); line-height:1.5}
+.bw-place .bw-foot{margin-top:5px}
+.bw-ghost.go{
+  background:var(--gold,#F5C542); border-color:transparent; color:#0A0C10;
+}
+.bw-ghost.go:hover{background:#FFD75E; color:#0A0C10}
+.bw-ghost.wide{width:100%}
+
+/* adding and removing from the chip row */
+.bw-target.add{
+  color:var(--gold,#F5C542); border-color:rgba(245,197,66,.3);
+  background:rgba(245,197,66,.08);
+}
+.bw-target.del{
+  color:var(--lose,#FF3B4E); border-color:rgba(255,59,78,.3);
+  background:rgba(255,59,78,.08); padding:6px 9px;
+}
+.bw-target.del svg{width:12px; height:12px; stroke:currentColor; fill:none; display:block}

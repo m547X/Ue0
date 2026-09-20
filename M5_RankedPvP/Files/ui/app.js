@@ -1737,7 +1737,7 @@ function beBody() {
    chip drops focus altogether for the times you want the mouse to turn the
    camera instead. */
 const BW = { on: false, mode: 'move', speed: 1, sel: 's0', walk: false,
-             targets: [], item: null };
+             targets: [], item: null, placing: null };
 
 const BW_MODES = [
   { id: 'move',    key: 'MOVE',    icon: '#i-move' },
@@ -1755,6 +1755,66 @@ const BW_PAD = {
 };
 
 const bwPost = (action, extra) => post('boardWorld', Object.assign({ action }, extra || {}));
+
+/* ---------------------------------------------------- the gizmo's mouse ---
+   The handles are drawn in the world by the client, which is the only side
+   that knows where they are. This layer does the one thing the client cannot:
+   it knows where the cursor is. It reports the cursor in normalized screen
+   coordinates — the same 0..1 space GetScreenCoordFromWorldCoord projects the
+   handles into — and the client does the hit testing and the maths.
+
+   Moves are throttled: without a drag in progress they only feed the hover
+   highlight, and thirty a second is plenty for that. */
+const BWG = { down: false, held: false, last: 0, sent: { x: -1, y: -1 } };
+const BWG_RATE = 33;
+
+function bwCursor(e) {
+  return { x: e.clientX / Math.max(1, window.innerWidth),
+           y: e.clientY / Math.max(1, window.innerHeight) };
+}
+
+function bwBindCatch() {
+  const host = $('bw-catch');
+  if (!host || host._bound) return;
+  host._bound = true;
+
+  host.onmousedown = (e) => {
+    if (e.button !== 0) return;
+    const c = bwCursor(e);
+    BWG.down = true;
+    BWG.sent = c;
+    // placing a new one is a single click on the ground, not a drag
+    if (BW.placing) { bwPost('placeHere'); BWG.down = false; return; }
+    // the client answers whether the click actually landed on a handle
+    post('boardWorld', { action: 'grab', x: c.x, y: c.y })
+      .then((r) => (r && typeof r.json === 'function') ? r.json() : r)
+      .then((v) => {
+        BWG.held = (v === 'grab');
+        host.classList.toggle('grabbing', BWG.held);
+      })
+      .catch(() => {});
+  };
+
+  host.onmousemove = (e) => {
+    const now = Date.now();
+    if (now - BWG.last < BWG_RATE) return;
+    const c = bwCursor(e);
+    if (Math.abs(c.x - BWG.sent.x) < 0.0015 && Math.abs(c.y - BWG.sent.y) < 0.0015) return;
+    BWG.last = now;
+    BWG.sent = c;
+    if (BW.placing) return;              // the client follows the camera there
+    bwPost('drag', { x: c.x, y: c.y });
+  };
+
+  const release = () => {
+    if (!BWG.down) return;
+    BWG.down = false;
+    if (BWG.held) { BWG.held = false; bwPost('drop'); }
+    host.classList.remove('grabbing');
+  };
+  host.onmouseup = release;
+  host.onmouseleave = release;
+}
 
 function bwNudgeBtn(axis, dir) {
   const b = el('button', 'bw-nudge', dir > 0 ? '+' : '−');
@@ -1793,8 +1853,21 @@ function bwPad() {
   }
 
   const kind = (BW.item && BW.item.kind) || 's';
-  (BW_PAD[BW.mode] || []).forEach(([label, axis]) => {
-    if (kind === 'p' && (axis === 'width' || axis === 'pitch')) return;
+
+  const rows = (BW_PAD[BW.mode] || []).filter(
+    ([, axis]) => !(kind === 'p' && (axis === 'width' || axis === 'pitch')));
+
+  /* The handles are the point; the rows are for the last quarter of a metre
+     the mouse will not give you. No rows means no handles either, so the hint
+     would be describing something that is not there. */
+  if (rows.length) {
+    host.appendChild(el('div', 'bw-drag-hint',
+      tx(BW.mode === 'rotate' ? 'Drag the ring left or right to turn it.'
+         : BW.mode === 'size' ? 'Drag the green handles for width, the red ones for height.'
+         : 'Drag an arrow to slide it along that axis.')));
+  }
+
+  rows.forEach(([label, axis]) => {
     const row = el('div', 'bw-row', `<label>${esc(tx(label))}</label>`);
     const ctl = el('div', 'bw-ctl');
     ctl.appendChild(bwNudgeBtn(axis, -1));
@@ -1804,7 +1877,15 @@ function bwPad() {
     host.appendChild(row);
   });
 
-  if (!host.children.length) {
+  /* A height dragged by hand stretches the picture; this hands it back to the
+     texture's own shape. */
+  if (BW.mode === 'size' && kind === 's' && BW.item && BW.item.height) {
+    const auto = el('button', 'bw-ghost wide', esc(tx('BACK TO AUTO HEIGHT')));
+    auto.onclick = () => bwPost('autoHeight');
+    host.appendChild(auto);
+  }
+
+  if (!rows.length) {
     host.appendChild(el('div', 'bw-none', tx('NOTHING TO EDIT')));
   }
   return host;
@@ -1819,6 +1900,7 @@ function renderWorldEdit(d) {
     BW.walk    = d.walk === true;
     BW.targets = d.targets || [];
     BW.item    = d.item || null;
+    BW.placing = d.placing || null;
   }
 
   const host = $('bw');
@@ -1826,10 +1908,39 @@ function renderWorldEdit(d) {
   // the menu and the world panel are never both up: the point of the panel is
   // that you can see the thing you are moving
   if (BW.on) $('app').classList.add('hidden');
+
+  // the mouse layer follows the panel, and stands down while you are walking
+  const grab = $('bw-catch');
+  if (grab) {
+    grab.classList.toggle('hidden', !BW.on || BW.walk);
+    grab.classList.toggle('placing', !!BW.placing);
+    if (BW.on) bwBindCatch();
+  }
+
   if (!BW.on) { host.innerHTML = ''; return; }
   host.classList.toggle('walking', BW.walk);
 
   host.innerHTML = '';
+
+  /* Placing a new one is its own little mode: the client draws a marker where
+     you are looking and this says what the click will do. */
+  if (BW.placing) {
+    const box = el('div', 'bw-place',
+      `<b>${esc(tx(BW.placing === 'p' ? 'WHERE DOES THE PODIUM SPOT GO' : 'WHERE DOES THE SCREEN GO'))}</b>
+       <span>${esc(tx('Look at the spot and click the ground.'))}</span>`);
+    const row = el('div', 'bw-foot');
+    const ok = el('button', 'bw-ghost go',
+      `<svg><use href="#i-check"/></svg> ${esc(tx('PUT IT HERE'))}`);
+    ok.onclick = () => bwPost('placeHere');
+    const no = el('button', 'bw-ghost',
+      `<svg><use href="#i-x"/></svg> ${esc(tx('CANCEL'))}`);
+    no.onclick = () => bwPost('placeCancel');
+    row.appendChild(ok);
+    row.appendChild(no);
+    box.appendChild(row);
+    host.appendChild(box);
+    return;
+  }
 
   // --- how far one press moves things -------------------------------------
   const sp = el('div', 'bw-speed',
@@ -1863,20 +1974,34 @@ function renderWorldEdit(d) {
 
   host.appendChild(bwPad());
 
-  // --- which board or which podium spot -----------------------------------
+  // --- which board or which podium spot, and adding another ---------------
+  const tg = el('div', 'bw-targets');
+  BW.targets.forEach((t) => {
+    const label = t.kind === 's'
+      ? `${tx('SCREEN')} ${t.n}${t.title ? ' — ' + t.title : ''}`
+      : `${tx('PODIUM')} ${t.n}`;
+    const b = el('button', 'bw-target' + (BW.sel === t.id ? ' on' : ''),
+      `<span>${esc(label)}</span>`);
+    b.onclick = () => bwPost('pick', { sel: t.id });
+    tg.appendChild(b);
+  });
+
+  const addS = el('button', 'bw-target add', `+ ${esc(tx('SCREEN'))}`);
+  addS.onclick = () => bwPost('place', { kind: 's' });
+  tg.appendChild(addS);
+
+  const addP = el('button', 'bw-target add', `+ ${esc(tx('PODIUM'))}`);
+  addP.onclick = () => bwPost('place', { kind: 'p' });
+  tg.appendChild(addP);
+
   if (BW.targets.length > 1) {
-    const tg = el('div', 'bw-targets');
-    BW.targets.forEach((t) => {
-      const label = t.kind === 's'
-        ? `${tx('SCREEN')} ${t.n}${t.title ? ' — ' + t.title : ''}`
-        : `${tx('PODIUM')} ${t.n}`;
-      const b = el('button', 'bw-target' + (BW.sel === t.id ? ' on' : ''),
-        `<span>${esc(label)}</span>`);
-      b.onclick = () => bwPost('pick', { sel: t.id });
-      tg.appendChild(b);
-    });
-    host.appendChild(tg);
+    const del = el('button', 'bw-target del', `<svg><use href="#i-x"/></svg>`);
+    del.title = tx('REMOVE THIS ONE');
+    del.onclick = () => bwPost('remove');
+    tg.appendChild(del);
   }
+
+  host.appendChild(tg);
 
   // --- the two things that are not a nudge --------------------------------
   const foot = el('div', 'bw-foot');
