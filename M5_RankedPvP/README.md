@@ -333,6 +333,11 @@ Plus `/givepvprp <id> <amount> <reason>` — a positive amount compensates, a
 negative one deducts. Each command can be renamed or disabled in
 `Config.Commands`.
 
+From the **server console** (not chat, and no permission involved because the
+console is already the server): `m5boardrefresh` rebuilds the world
+leaderboard's standings straight away, pushes them to every player and prints
+the top ten — see [7f](#nobody-on-it-yet--m5_rankedpvp_board_seedsql).
+
 ---
 
 ## 7a. Party size and the ranked queue
@@ -657,8 +662,10 @@ is `Config.Avatars.source`:
   Put a bot token in `Config.Avatars.discord.botToken`; the bot needs no
   permissions and does not have to be in your server, reading a public avatar
   only needs the token. Results are cached for `cacheTime` seconds because
-  Discord rate limits hard. **Leave the token empty and it silently falls back
-  to the default image** — nothing breaks.
+  Discord rate limits hard. **Leave the token empty and nobody ever gets their
+  real picture** — everyone keeps the Discord placeholder. It does not break
+  anything, and the server says so in the console once, on the first player
+  asked for, rather than failing quietly.
 - **`'template'`** — build the URL yourself from the discord id, no API call:
   `template = 'https://my-cdn.example.com/avatars/%s.png'`.
 - **`'none'`** — always the default.
@@ -671,6 +678,20 @@ The lookup is server side and only the finished URL reaches the UI — the bot
 token stays in `Config_Server.lua`. If an image fails to load in game, the
 player's initial shows in its place; the letter is always drawn underneath, so
 there is no broken-image state.
+
+**Waiting for Discord.** Asking Discord costs a round trip, and the menu opens
+long before it comes back, so the card has to show *something* in the meantime.
+That something is the player's real Discord default avatar, worked out from the
+account id on the spot with no call at all — the grey/blurple crest they
+actually have — instead of an empty square. The answer is asked for as soon as
+they spawn, not when they first open the menu, so by the time they look it is
+usually already there.
+
+When the answer does land the player is told, and their card redraws itself. A
+picture that arrives and is never announced is the same as no picture at all:
+the card was built from the placeholder and nothing would ever replace it,
+which reads in game as "the avatar never loads". It is now pushed the moment
+the lookup settles, whether it succeeded or failed.
 
 ### Custom cards and portraits — the player brings the picture
 
@@ -772,6 +793,54 @@ at — it only costs something when it *changes*. So:
   corners is eight sines and cosines, and none of it changes while the board
   hangs there, so the result is kept and only worked out again when the board
   actually moves.
+* **The peds do not flicker in and out.** The top three are spawned at
+  `podium.podiumDistance` and only despawned at a quarter further out again, so
+  standing exactly on the line does not spawn and delete three peds every
+  couple of seconds.
+
+The editor used to be the expensive part, and is not any more:
+
+* **Dragging a handle no longer rebuilds the menu.** A drag reports the cursor
+  thirty times a second; each report used to send the whole panel state back to
+  the interface and redraw every row of it — thirty full rebuilds a second
+  while the mouse moved. The numbers now settle when you let go of the handle,
+  which is the only moment you read them anyway.
+* **The focus camera only moves when something moved.** `ركّز عليه` recomputed
+  its position every frame from values that had not changed. It now returns
+  immediately unless the thing being edited or the orbit around it actually
+  changed.
+
+**If it is still too heavy**, in the order worth trying:
+
+| lever | where | what it buys |
+|---|---|---|
+| `screens.textureWidth` / `textureHeight` | Config_Client.lua | the floor cost. A DUI is a real browser; 1280×720 is one. 960×540 is noticeably cheaper and still readable at four metres — keep 16:9. |
+| `keepAlive` | Config_Client.lua | how long the browser lingers after you walk away. Lower it on a server where people pass the board constantly. |
+| `screens.distance` | Config_Client.lua | how far out the board starts existing. Nothing at all is paid outside it. |
+| `podium.enabled` | Config_Client.lua | the three peds are ordinary peds with real clothing; switching them off is the single biggest saving. |
+| `refresh` | Config_Server.lua | how often the standings are rebuilt and pushed. Every push repaints the page on every machine that can see a board. |
+
+### Nobody on it yet — `m5_rankedpvp_board_seed.sql`
+
+The board reads the ladder, and the ladder is built from matches that have been
+played. On a new server that is nobody, so the board is empty and looks broken.
+
+`m5_rankedpvp_board_seed.sql` puts a player on it by hand. Change the three
+values at the top — user id, name, RP — and run it; every write is an upsert, so
+running it again on the same player updates instead of duplicating. It does not
+invent a rank badge: after the rows exist, **Admin → Points → Set RP** on the
+same id recalculates the rank, the division and the placement state properly
+from `Config.Ranks`.
+
+The board rebuilds itself on `Config.WorldBoard.refresh` (five minutes by
+default). To see it immediately, in the **server console**:
+
+```
+m5boardrefresh
+```
+
+which rebuilds the standings, pushes them to everyone, and prints the top ten so
+you can check the rows landed where you expected.
 
 ### Where it goes — `Config.WorldBoard` (Config_Client.lua)
 

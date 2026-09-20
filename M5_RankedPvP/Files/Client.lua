@@ -2929,10 +2929,11 @@ function wbTick(me, podiumAcc)
     podiumAcc = podiumAcc + (sleep == 0 and 16 or sleep)
     if podiumAcc >= 900 then
         podiumAcc = 0
+        local far = podium.podiumDistance * (WB.spawned and 1.25 or 1.0)
         local near = false
         for i = 1, #podium.podium do
             local spot = podium.podium[i]
-            if spot.pos and #(me - vec3(spot.pos)) <= podium.podiumDistance then
+            if spot.pos and #(me - vec3(spot.pos)) <= far then
                 near = true break
             end
         end
@@ -3413,6 +3414,13 @@ local function wbcAim()
     if not it then return end
 
     local tx, ty, tz = it.pos.x + 0.0, it.pos.y + 0.0, it.pos.z + 0.0
+    if WBC.lx == tx and WBC.ly == ty and WBC.lz == tz
+       and WBC.lyaw == WBC.yaw and WBC.lpitch == WBC.pitch and WBC.ldist == WBC.dist then
+        return
+    end
+    WBC.lx, WBC.ly, WBC.lz = tx, ty, tz
+    WBC.lyaw, WBC.lpitch, WBC.ldist = WBC.yaw, WBC.pitch, WBC.dist
+
     local yaw = math.rad(WBC.yaw)
     local pit = math.rad(WBC.pitch)
     local cp  = math.cos(pit)
@@ -3436,6 +3444,7 @@ local function wbcEnter()
     WBC.cam = CreateCam('DEFAULT_SCRIPTED_CAMERA', true)
     if not WBC.cam then return end
     WBC.on = true
+    WBC.lx, WBC.ly, WBC.lz = nil, nil, nil
 
     wbcAim()
     SetCamActive(WBC.cam, true)
@@ -3632,9 +3641,8 @@ RegisterNUICallback('boardWorld', function(data, cb)
         return
 
     elseif action == 'drag' then
-        if wbgDragMove(tonumber(data.x) or 0.5, tonumber(data.y) or 0.5) then
-            nui(wbwPayload())
-        end
+        local moved = wbgDragMove(tonumber(data.x) or 0.5, tonumber(data.y) or 0.5)
+        if moved and not WBG.drag then nui(wbwPayload()) end
         cb('ok')
         return
 

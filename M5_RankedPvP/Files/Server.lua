@@ -3095,7 +3095,28 @@ local function fetchDiscordAvatar(userId, discordId)
                 dbg('discord avatar lookup rate limited for %s', discordId)
             end
             AvatarCache[userId] = { url = url, at = now() }
+            if Player and Player.pushCosmetics then Player.pushCosmetics(userId) end
         end, 'GET', '', { Authorization = 'Bot ' .. cfg.botToken })
+end
+
+local avatarWarned = false
+
+local function discordReady()
+    local cfg = Config.Avatars.discord
+    if cfg and cfg.botToken ~= '' then return true end
+    if not avatarWarned then
+        avatarWarned = true
+        err('Config.Avatars.source is \'discord\' but Config.Avatars.discord.botToken is empty. '
+            .. 'Nobody will ever get their real picture — every player keeps the plain Discord '
+            .. 'placeholder. Put a bot token there, or set source to \'template\' or \'none\'.')
+    end
+    return false
+end
+
+local function discordEmbedAvatar(discordId)
+    local id = tonumber(discordId)
+    if not id then return nil end
+    return ('https://cdn.discordapp.com/embed/avatars/%d.png'):format((id >> 22) % 6)
 end
 
 local function customPortraitFor(userId)
@@ -3127,9 +3148,15 @@ local function avatarFor(userId, plain)
     end
 
     if source == 'discord' and discordId then
-        if not cached then
-            AvatarCache[userId] = { url = defaultAvatar(), at = 0 }
-            Citizen.CreateThread(function() fetchDiscordAvatar(userId, discordId) end)
+        local inflight = cached and cached.pending and (now() - cached.pending) < 30
+        if not inflight then
+            local holding = (cached and cached.url) or discordEmbedAvatar(discordId) or defaultAvatar()
+            if discordReady() then
+                AvatarCache[userId] = { url = holding, at = now(), pending = now() }
+                Citizen.CreateThread(function() fetchDiscordAvatar(userId, discordId) end)
+            else
+                AvatarCache[userId] = { url = holding, at = now() }
+            end
         end
         return (AvatarCache[userId] or {}).url or defaultAvatar()
     end
@@ -9679,6 +9706,23 @@ registerCommand(Config.Commands.pvpperf, function(pd, src, args)
     notify(src, 'info', 'Perf report printed to your chat.', 'PERF')
 end)
 
+RegisterCommand('m5boardrefresh', function(src)
+    if src ~= 0 then return end
+    if not WorldBoard.on() then
+        print('[M5RP] Config.WorldBoard is switched off.')
+        return
+    end
+    WorldBoard.builtAt = 0
+    local rows = WorldBoard.build()
+    WorldBoard.push()
+    print(('[M5RP] world board rebuilt: %d players, season %s, mode %s')
+        :format(#rows, tostring(Season.id()), tostring(WorldBoard.pool)))
+    for i = 1, math.min(#rows, 10) do
+        print(('  %2d. %-20s %6d RP  %s'):format(
+            i, tostring(rows[i].name), rows[i].rp, tostring(rows[i].rank)))
+    end
+end, true)
+
 RegisterCommand('m5rankinfo', function(src, args)
     if src ~= 0 then return end
 
@@ -9751,6 +9795,8 @@ AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
         if not pd then return end
         Bans.load(user_id)
         Missions.ensure(pd)
+
+        avatarFor(user_id)
 
         local info = Reconnects[user_id]
         if info and info.expires > now() and Matches[info.matchId] then
