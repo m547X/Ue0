@@ -60,6 +60,7 @@ const S = {
   hist: { page: 1 },
   profile: null,
   admin: null, admTab: null, admTargetValue: '', admLookup: null,
+  admFilter: '', admReasonValue: '',
 
   rooms: [], room: null,
   cm: {
@@ -2530,7 +2531,9 @@ function admTarget() {
   return /^[0-9]+$/.test(raw) ? raw : '';
 }
 function admReason() {
-  return ($('adm-reason') && $('adm-reason').value.trim()) || '';
+  const live = $('adm-reason');
+  if (live) S.admReasonValue = live.value;
+  return (S.admReasonValue || '').trim();
 }
 
 /** Runs an action, enforcing the reason and confirm flags the server declared. */
@@ -2538,16 +2541,38 @@ function admRun(action, extra) {
   const def = admDef(action);
   const payload = Object.assign({ action }, extra || {});
 
+  /* An action that names a target and has none is a mistake caught here rather
+     than a round trip that comes back "No player with that ID". */
+  if (Object.prototype.hasOwnProperty.call(payload, 'target') && !payload.target) {
+    toast('warning', tn('Load a player first.'), tn('ADMIN'));
+    const box = $('adm-target');
+    if (box) box.focus();
+    return;
+  }
+
   if (def.reason) {
     const reason = admReason();
-    if (reason.length < 3) { toast('warning', 'A reason is required for this action.', 'ADMIN'); return; }
+    if (reason.length < 3) {
+      toast('warning', tn('A reason is required for this action.'), tn('ADMIN'));
+      const box = $('adm-reason');
+      if (box) box.focus();
+      return;
+    }
     payload.reason = reason;
   }
+
   if (def.confirm) {
-    askConfirm(def.label || action, 'Confirm this action?', () => {
-      Sfx.play('click');
-      post('admin', payload);
-    });
+    // name who it lands on: "Confirm this action?" is the same question for a
+    // round restart and for wiping somebody's season
+    const p = S.admLookup;
+    const who = payload.target
+      ? (p && String(p.userId) === String(payload.target) ? `${p.name} #${p.userId}` : `#${payload.target}`)
+      : '';
+    askConfirm(tx(def.label || action),
+      who ? `${tx('Apply this to')} ${who}?` : tx('Confirm this action?'), () => {
+        Sfx.play('click');
+        post('admin', payload);
+      });
     return;
   }
 
@@ -2573,10 +2598,98 @@ function renderAdminTabs() {
     host.appendChild(b);
   });
 
+  /* Thirty-odd actions spread over five tabs is more than anyone remembers the
+     shape of. Typing "coin" gets you there without knowing which tab it is on,
+     and it searches every tab, not the one you happen to be looking at. */
+  const find = el('div', 'adm-find',
+    `<svg><use href="#i-search"/></svg>
+     <input class="inp" id="adm-filter" placeholder="${esc(tx('FIND AN ACTION'))}"
+            value="${esc(S.admFilter || '')}"/>`);
+  find.querySelector('input').oninput = (e) => {
+    S.admFilter = e.target.value;
+    renderAdmin(S.admin);
+    const n = $('adm-filter');
+    if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+  };
+  host.appendChild(find);
+
   const refresh = el('button', 'adm-tab', `<svg><use href="#i-back"/></svg>${esc(tx('REFRESH'))}`);
-  refresh.style.marginLeft = 'auto';
   refresh.onclick = () => post('admin', { action: 'dashboard' });
   host.appendChild(refresh);
+}
+
+/** The strip of numbers across the top of MONITOR: the shape of the server in
+ *  one line, so an admin knows whether anything needs them before reading on. */
+function admStats(d) {
+  const inMatch = (d.matches || []).reduce((n, m) => n + (m.players || 0), 0);
+  const flags   = (d.suspicious || []).length;
+  const cells = [
+    ['LIVE MATCHES', (d.matches || []).length, ''],
+    ['PLAYERS IN MATCH', inMatch, ''],
+    ['IN QUEUE', (d.searching || []).length, ''],
+    ['CUSTOM ROOMS', (d.rooms || []).length, ''],
+    ['FLAGGED', flags, flags ? 'bad' : ''],
+    ['RANKED QUEUE', d.frozen ? tx('FROZEN') : tx('OPEN'), d.frozen ? 'bad' : 'good']
+  ];
+  return `<div class="adm-stats">${cells.map(([l, v, c]) =>
+    `<div class="adm-stat ${c}"><b>${esc(v)}</b><span>${esc(tx(l))}</span></div>`).join('')}</div>`;
+}
+
+/** The player every player-action points at, drawn as a card once loaded so
+ *  you can see who you are about to ban before you ban them. */
+function admTargetBar() {
+  const p = S.admLookup;
+  const chip = (cls, text) => `<span class="tchip ${cls}">${esc(text)}</span>`;
+
+  let who;
+  if (!p) {
+    who = `<div class="adm-who empty">
+      <svg><use href="#i-user"/></svg>
+      <span>${esc(tx('NO PLAYER LOADED'))}</span></div>`;
+  } else {
+    const chips = [
+      chip(p.online ? 'good' : 'off', tx(p.online ? 'ONLINE' : 'OFFLINE')),
+      p.bans ? chip('bad', `${tx('BANNED')} · ${p.bans}`) : '',
+      p.cooldown ? chip('warn', `${tx('COOLDOWN')} · ${p.cooldown}s`) : '',
+      p.flags ? chip('warn', `${tx('FLAGS')} · ${p.flags}`) : '',
+      p.customCard ? chip('', tx('CARD SLOT')) : '',
+      p.customPortrait ? chip('', tx('PORTRAIT SLOT')) : ''
+    ].filter(Boolean).join('');
+
+    who = `<div class="adm-who">
+      <div class="av">${avatarInner(p)}</div>
+      <div class="adm-who-main">
+        <div class="adm-who-name"><b>${esc(p.name)}</b><i class="pid">#${esc(p.userId)}</i></div>
+        <div class="adm-who-chips">${chips}</div>
+      </div>
+      <div class="adm-who-nums">
+        <div><b style="color:${esc(p.rankColor || 'var(--text)')}">${esc(p.rank)}</b><span>${esc(tx('RANK'))}</span></div>
+        <div><b>${num(p.rp)}</b><span>RP</span></div>
+        <div><b>${num(p.level)}</b><span>${esc(tx('LEVEL'))}</span></div>
+        <div><b>${num(p.coins)}</b><span>${esc(tx('COINS'))}</span></div>
+      </div>
+      <button class="mini" data-adm="clearTarget">${esc(tx('CLEAR'))}</button>
+    </div>`;
+  }
+
+  return `<div class="adm-target">
+    <div class="adm-target-in">
+      <div class="fld">
+        <span class="lbl">${esc(tx('TARGET PLAYER'))}</span>
+        <div class="idrow">
+          <input class="inp" id="adm-target" inputmode="numeric" maxlength="10"
+                 placeholder="${esc(tx('PLAYER ID'))}" value="${esc(S.admTargetValue || '')}"/>
+          <button class="btn" data-adm="lookupInput">${esc(tx('LOAD'))}</button>
+        </div>
+      </div>
+      <div class="fld">
+        <span class="lbl">${esc(tx('REASON'))}</span>
+        <input class="inp" id="adm-reason" value="${esc(S.admReasonValue || '')}"
+               placeholder="${esc(tx('Written into the audit log'))}"/>
+      </div>
+    </div>
+    ${who}
+  </div>`;
 }
 
 function renderAdmin(d) {
@@ -2588,115 +2701,127 @@ function renderAdmin(d) {
   const tab  = S.admTab;
   const list = (rows, fn, empty) => (rows && rows.length) ? rows.map(fn).join('') : `<div class="empty">${empty}</div>`;
 
-  /* ---------- shared target bar ---------- */
-  const targetBar = `
-    <div class="adm-target">
-      <div><span class="lbl">${esc(tx('TARGET PLAYER'))}</span>
-        <input class="inp" id="adm-target" inputmode="numeric" maxlength="10"
-               placeholder="${esc(tx('PLAYER ID'))}" value="${esc(S.admTargetValue || '')}"/></div>
-      <div><span class="lbl">${esc(tx('REASON'))}</span>
-        <input class="inp" id="adm-reason" placeholder="Required for most actions"/></div>
-      <div><span class="lbl">${esc(tx('STATUS'))}</span>
-        <div class="who ${S.admLookup ? 'on' : ''}" id="adm-who">
-          <span class="dot"></span>
-          ${S.admLookup
-            ? `<b>${esc(S.admLookup.name)}</b> · ${esc(S.admLookup.rank)} · ${num(S.admLookup.rp)} RP`
-            : esc(tx('no player loaded'))}
-          <button class="mini" data-adm="lookupInput" style="margin-left:6px">${esc(tx('LOAD'))}</button>
-        </div></div>
-    </div>`;
+  const targetBar = admTargetBar();
 
-  /* one action row: name, fields, single button */
+  const needle = (S.admFilter || '').trim().toLowerCase();
+  let shown = 0;
+
+  /* One action, as a card. A card rather than a full-width row because a row
+     stretches one small number field across the whole screen and fits six
+     actions on it; there are thirty. */
   const act = (action, opts) => {
     if (!admCan(action)) return '';
     const def = admDef(action);
     const o = opts || {};
-    // hints may carry markup, so they are translated but not escaped. A row
-    // with controls still shows its hint, printed underneath them.
-    const middle = o.fields
-      ? `<div class="act-fields">${o.fields}${
-           o.hint ? `<div class="act-note">${tx(o.hint)}</div>` : ''}</div>`
-      : `<div class="act-hint">${tx(o.hint || '')}</div>`;
+    const label = tx(def.label || action);
 
-    return `<div class="act ${o.danger ? 'danger' : ''}">
-      <div class="act-name"><b>${esc(tx(def.label || action))}</b><span>${esc(def.permission || action)}</span></div>
-      ${middle}
-      <button class="btn ${o.danger ? '' : 'ghost'}" data-adm="${esc(o.run || action)}">${esc(tx(o.button || 'APPLY'))}</button>
+    if (needle && !(label + ' ' + action + ' ' + (def.permission || ''))
+          .toLowerCase().includes(needle)) return '';
+    shown++;
+
+    // hints carry markup, so they are translated but not escaped
+    const tags = [
+      def.reason ? `<span class="act-tag need">${esc(tx('REASON'))}</span>` : '',
+      def.confirm ? `<span class="act-tag warn">${esc(tx('CONFIRMS'))}</span>` : ''
+    ].join('');
+
+    return `<div class="act ${o.danger ? 'danger' : ''}" title="${esc(def.permission || action)}">
+      <div class="act-head">
+        <b>${esc(label)}</b>
+        <div class="act-tags">${tags}</div>
+      </div>
+      ${o.fields ? `<div class="act-fields">${o.fields}</div>` : ''}
+      ${o.hint ? `<div class="act-hint">${tx(o.hint)}</div>` : ''}
+      <button class="btn ${o.danger ? 'danger' : 'ghost'}" data-adm="${esc(o.run || action)}">${esc(tx(o.button || 'APPLY'))}</button>
     </div>`;
   };
+
+  /** A heading inside the grid of actions, so a long tab reads as a few short
+   *  lists instead of one wall. It disappears with the actions under it. */
+  const sec = (title, body) => body.trim()
+    ? `<div class="adm-sec"><span>${esc(tx(title))}</span></div>${body}` : '';
 
   let html = '';
 
   /* ------------------------------------------------------- MONITOR */
   if (tab === 'monitor') {
-    html = `<div class="adm-cols">
-      <div class="card"><span class="card-tag">LIVE MATCHES · ${(d.matches || []).length}</span>
+    /* Live matches get the wide column: they carry the most on a row and are
+       the reason anyone opens this tab. The rest stack beside them. */
+    html = admStats(d) + `<div class="adm-mon">
+      <div class="card"><span class="card-tag">${esc(tx('LIVE MATCHES'))} · ${(d.matches || []).length}
+        ${admCan('stopSpectate') ? `<button class="mini right" data-adm="stopSpectate">${esc(tx('STOP SPECTATING'))}</button>` : ''}</span>
         <div class="alist">${list(d.matches, (m) => `<div class="arow">
-          <b>${esc(m.mode)}</b>
-          <span class="grow">${esc(m.map)} · ${esc(m.state)} · R${m.round} · ${m.scores.a}-${m.scores.b} · ${m.players}P</span>
-          ${admCan('spectate') ? `<button class="mini" data-adm="spectate" data-match="${esc(m.id)}">WATCH</button>` : ''}
-          ${admCan('restartRound') ? `<button class="mini" data-adm="restartRound" data-match="${esc(m.id)}">RESTART</button>` : ''}
-          ${admCan('endMatch') ? `<button class="mini" data-adm="endMatch" data-match="${esc(m.id)}">STOP</button>` : ''}
-        </div>`, 'NO LIVE MATCHES')}</div>
-        ${admCan('stopSpectate') ? '<button class="btn ghost wide" style="margin-top:11px" data-adm="stopSpectate">STOP SPECTATING</button>' : ''}
+          <b class="tag">${esc(m.mode)}</b>
+          <span class="grow">${esc(m.map)}<i> · ${esc(m.state)} · R${m.round} · ${m.players}P</i></span>
+          <span class="score">${m.scores.a}<em>-</em>${m.scores.b}</span>
+          ${admCan('spectate') ? `<button class="mini" data-adm="spectate" data-match="${esc(m.id)}">${esc(tx('WATCH'))}</button>` : ''}
+          ${admCan('restartRound') ? `<button class="mini" data-adm="restartRound" data-match="${esc(m.id)}">${esc(tx('RESTART'))}</button>` : ''}
+          ${admCan('endMatch') ? `<button class="mini danger" data-adm="endMatch" data-match="${esc(m.id)}">${esc(tx('STOP'))}</button>` : ''}
+        </div>`, tx('NO LIVE MATCHES'))}</div>
       </div>
 
-      <div class="card"><span class="card-tag">IN QUEUE · ${(d.searching || []).length}</span>
+      <div class="adm-mon-side">
+      <div class="card"><span class="card-tag">${esc(tx('IN QUEUE'))} · ${(d.searching || []).length}</span>
         <div class="alist">${list(d.searching, (p) => `<div class="arow"><b>${esc(p.name)}</b>
-          <span class="grow">${esc(p.mode)} · ${esc(p.rank)}${p.mmr ? ` · MMR ${p.mmr}` : ''}</span>
-          <span>${p.waited}s</span></div>`, 'QUEUE EMPTY')}</div></div>
+          <span class="grow"><i>${esc(p.mode)} · ${esc(p.rank)}${p.mmr ? ` · MMR ${p.mmr}` : ''}</i></span>
+          <span class="waited">${p.waited}s</span></div>`, tx('QUEUE EMPTY'))}</div></div>
 
-      <div class="card"><span class="card-tag">CUSTOM ROOMS · ${(d.rooms || []).length}</span>
+      <div class="card"><span class="card-tag">${esc(tx('CUSTOM ROOMS'))} · ${(d.rooms || []).length}</span>
         <div class="alist">${list(d.rooms, (r) => `<div class="arow"><b>${esc(r.name)}</b>
-          <span class="grow">${esc(r.host)} · ${r.players}/${r.maxPlayers} · ${esc(r.state)}${r.code ? ` · ${esc(r.code)}` : ''}</span>
-          ${admCan('closeRoom') ? `<button class="mini" data-adm="closeRoom" data-room="${esc(r.id)}">CLOSE</button>` : ''}
-        </div>`, 'NO ROOMS')}</div></div>
+          <span class="grow"><i>${esc(r.host)} · ${r.players}/${r.maxPlayers} · ${esc(r.state)}${r.code ? ` · ${esc(r.code)}` : ''}</i></span>
+          ${admCan('closeRoom') ? `<button class="mini danger" data-adm="closeRoom" data-room="${esc(r.id)}">${esc(tx('CLOSE'))}</button>` : ''}
+        </div>`, tx('NO ROOMS'))}</div></div>
 
-      <div class="card"><span class="card-tag">FLAGGED PLAYERS</span>
+      <div class="card"><span class="card-tag">${esc(tx('FLAGGED PLAYERS'))} · ${(d.suspicious || []).length}</span>
         <div class="alist">${list(d.suspicious, (f) => `<div class="arow"><b>${esc(f.name || f.user_id)}</b>
-          <span class="grow">${f.flags} flags</span><span class="sev">SEV ${f.score}</span>
-          ${admCan('playerLookup') ? `<button class="mini" data-adm="lookup" data-target="${f.user_id}">INSPECT</button>` : ''}
-        </div>`, 'NOTHING FLAGGED')}</div></div>
+          <span class="grow"><i>${f.flags} ${esc(tx('flags'))}</i></span><span class="sev">SEV ${f.score}</span>
+          ${admCan('playerLookup') ? `<button class="mini" data-adm="lookup" data-target="${f.user_id}">${esc(tx('INSPECT'))}</button>` : ''}
+        </div>`, tx('NOTHING FLAGGED'))}</div></div>
+      </div>
     </div>`;
   }
 
   /* -------------------------------------------------------- MATCH */
   if (tab === 'match') {
-    html = targetBar + `<div class="adm-list">
-      ${act('kickFromMatch', { button: 'REMOVE', danger: true,
-        hint: 'Takes the target out of their current match.' })}
-      ${act('movePlayer', { button: 'MOVE', fields:
-        `<input class="inp" id="adm-match" placeholder="Match id"/>
-         <select id="adm-team"><option value="1">Team A</option><option value="2">Team B</option></select>` })}
-      ${act('freeze', { button: 'FREEZE', run: 'freezeOn', danger: true,
-        hint: `Ranked queue is currently <b style="color:${d.frozen ? 'var(--lose)' : 'var(--win)'}">${d.frozen ? 'FROZEN' : 'OPEN'}</b>.` })}
-      ${admCan('freeze') ? `<div class="act">
-        <div class="act-name"><b>Unfreeze Queue</b><span>pvp.admin.freeze</span></div>
-        <div class="act-hint">Re-opens ranked matchmaking.</div>
-        <button class="btn ghost" data-adm="freezeOff">UNFREEZE</button></div>` : ''}
+    const frozen = d.frozen;
+    html = targetBar + `<div class="adm-grid">
+      ${sec('THIS PLAYER',
+        act('kickFromMatch', { button: 'REMOVE', danger: true,
+          hint: 'Takes the target out of their current match.' }) +
+        act('movePlayer', { button: 'MOVE', fields:
+          `<input class="inp" id="adm-match" placeholder="${esc(tx('Match id'))}"/>
+           <select id="adm-team"><option value="1">${esc(tx('Team A'))}</option><option value="2">${esc(tx('Team B'))}</option></select>`,
+          hint: 'Swaps them onto the other side of a match that is already running.' }))}
 
-      ${act('startBotMatch', { button: 'START', fields: `
-        <select id="adm-bot-diff">${botDifficultyOptions()}</select>
-        <select id="adm-bot-count">${[1, 2, 3, 4, 5]
-          .map((n) => `<option value="${n}">${n} ${tx(n === 1 ? 'BOT' : 'BOTS')}</option>`).join('')}</select>
-        <select id="adm-bot-rounds">${[1, 3, 5, 7, 9]
-          .map((n) => `<option value="${n}"${n === 5 ? ' selected' : ''}>${n} ${tx('ROUNDS')}</option>`).join('')}</select>
-        <select id="adm-bot-map"><option value="">${esc(tx('RANDOM MAP'))}</option>${
-          ((S.boot && S.boot.maps) || [])
-            .map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('')}</select>`,
-        hint: 'Practice duel against AI on your own screen. Always unranked — no RP, MMR or stats.' })}
-      ${admCan('startBotMatch') ? `<div class="act">
-        <div class="act-name"><b>${esc(tx('Stop Bot Match'))}</b><span>pvp.admin.botmatch</span></div>
-        <div class="act-hint">${esc(tx('Ends your practice session and returns you to the world.'))}</div>
-        <button class="btn ghost" data-adm="stopBotMatch">${esc(tx('STOP'))}</button></div>` : ''}
+      ${sec('THE QUEUE',
+        act('freeze', { button: frozen ? 'UNFREEZE' : 'FREEZE',
+          run: frozen ? 'freezeOff' : 'freezeOn', danger: !frozen,
+          hint: `Ranked matchmaking is <b style="color:${frozen ? 'var(--lose)' : 'var(--win)'}">${
+            frozen ? tx('FROZEN') : tx('OPEN')}</b>. ${
+            tx(frozen ? 'Nobody can start a ranked search.' : 'Freezing stops new ranked searches; matches already running carry on.')}` }))}
+
+      ${sec('PRACTICE',
+        act('startBotMatch', { button: 'START', fields: `
+          <select id="adm-bot-diff">${botDifficultyOptions()}</select>
+          <select id="adm-bot-count">${[1, 2, 3, 4, 5]
+            .map((n) => `<option value="${n}">${n} ${tx(n === 1 ? 'BOT' : 'BOTS')}</option>`).join('')}</select>
+          <select id="adm-bot-rounds">${[1, 3, 5, 7, 9]
+            .map((n) => `<option value="${n}"${n === 5 ? ' selected' : ''}>${n} ${tx('ROUNDS')}</option>`).join('')}</select>
+          <select id="adm-bot-map"><option value="">${esc(tx('RANDOM MAP'))}</option>${
+            ((S.boot && S.boot.maps) || [])
+              .map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('')}</select>`,
+          hint: 'Practice duel against AI on your own screen. Always unranked — no RP, MMR or stats.' }) +
+        act('stopBotMatch', { button: 'STOP',
+          hint: 'Ends your practice session and returns you to the world.' }))}
     </div>
 
-    <div class="card" style="margin-top:16px"><span class="card-tag">LIVE MATCHES</span>
-      <div class="alist">${list(d.matches, (m) => `<div class="arow"><b>${esc(m.id)}</b>
-        <span class="grow">${esc(m.mode)} · ${esc(m.map)} · ${esc(m.state)}</span>
-        ${admCan('spectate') ? `<button class="mini" data-adm="spectate" data-match="${esc(m.id)}">WATCH</button>` : ''}
-        ${admCan('endMatch') ? `<button class="mini" data-adm="endMatch" data-match="${esc(m.id)}">STOP</button>` : ''}
-      </div>`, 'NO LIVE MATCHES')}</div></div>`;
+    <div class="card" style="margin-top:16px"><span class="card-tag">${esc(tx('LIVE MATCHES'))} · ${(d.matches || []).length}</span>
+      <div class="alist">${list(d.matches, (m) => `<div class="arow"><b class="tag">${esc(m.id)}</b>
+        <span class="grow">${esc(m.map)}<i> · ${esc(m.mode)} · ${esc(m.state)}</i></span>
+        <span class="score">${m.scores.a}<em>-</em>${m.scores.b}</span>
+        ${admCan('spectate') ? `<button class="mini" data-adm="spectate" data-match="${esc(m.id)}">${esc(tx('WATCH'))}</button>` : ''}
+        ${admCan('endMatch') ? `<button class="mini danger" data-adm="endMatch" data-match="${esc(m.id)}">${esc(tx('STOP'))}</button>` : ''}
+      </div>`, tx('NO LIVE MATCHES'))}</div></div>`;
   }
 
   /* ------------------------------------------------------- POINTS */
@@ -2704,37 +2829,49 @@ function renderAdmin(d) {
     const rankOptions = ((S.boot && S.boot.ranks) || [])
       .map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
 
-    html = targetBar + `<div class="adm-list">
-      ${act('addRP', { button: 'GRANT', fields:
-        `<input class="inp" id="adm-rp-add" type="number" placeholder="RP to grant"/>` })}
-      ${act('removeRP', { button: 'DEDUCT', danger: true, fields:
-        `<input class="inp" id="adm-rp-rem" type="number" placeholder="RP to deduct"/>` })}
-      ${act('setRP', { button: 'SET', fields:
-        `<input class="inp" id="adm-rp-set" type="number" placeholder="Exact RP total"/>` })}
-      ${act('setRank', { button: 'APPLY', fields: `<select id="adm-rank">${rankOptions}</select>` })}
-      ${act('addXP', { button: 'GRANT XP', fields:
-        `<input class="inp" id="adm-xp" type="number" placeholder="XP"/>` })}
-      ${act('giveCoins', { button: 'GIVE', fields:
-        `<input class="inp" id="adm-coins-add" type="number" placeholder="Coins to give"/>`,
-        hint: 'Coins are spent in the Store on cards and titles.' })}
-      ${act('takeCoins', { button: 'TAKE', danger: true, fields:
-        `<input class="inp" id="adm-coins-rem" type="number" placeholder="Coins to take"/>` })}
-      ${act('allowCard', { button: 'ALLOW', fields:
-        `<input class="inp" id="adm-card-img" type="text" placeholder="Picture to start them with (optional)"/>`,
-        hint: 'Opens a card slot in their store that they fill in themselves. Leave the box empty to let them choose.' })}
-      ${act('resetCard', { button: 'RESET',
-        hint: 'Wipes the picture they chose and leaves the slot open for a new one.' })}
-      ${act('denyCard', { button: 'REMOVE', danger: true,
-        hint: 'Closes the slot and takes the card back. If they are wearing it they go back to the default.' })}
-      ${act('allowPortrait', { button: 'ALLOW', fields:
-        `<input class="inp" id="adm-portrait-img" type="text" placeholder="Picture to start them with (optional)"/>`,
-        hint: 'The same for their profile picture. This is a separate permission from the card one.' })}
-      ${act('resetPortrait', { button: 'RESET',
-        hint: 'Puts them back on their Discord picture, with the slot still open.' })}
-      ${act('denyPortrait', { button: 'REMOVE', danger: true,
-        hint: 'Closes the slot and puts them back on their Discord picture.' })}
-      ${act('resetStats', { button: 'RESET', danger: true,
-        hint: 'Wipes stats, rank and MMR for the current season only.' })}
+    html = targetBar + `<div class="adm-grid">
+      ${sec('RANK AND POINTS',
+        act('addRP', { button: 'GRANT', fields:
+          `<input class="inp" id="adm-rp-add" type="number" placeholder="${esc(tx('RP to grant'))}"/>`,
+          hint: 'Adds to what they have. Use it to put back RP a crash took away.' }) +
+        act('removeRP', { button: 'DEDUCT', danger: true, fields:
+          `<input class="inp" id="adm-rp-rem" type="number" placeholder="${esc(tx('RP to deduct'))}"/>` }) +
+        act('setRP', { button: 'SET', fields:
+          `<input class="inp" id="adm-rp-set" type="number" placeholder="${esc(tx('Exact RP total'))}"/>`,
+          hint: 'Replaces the total outright rather than adding to it.' }) +
+        act('setRank', { button: 'APPLY', fields: `<select id="adm-rank">${rankOptions}</select>`,
+          hint: 'Also finishes their placement matches if they had not.' }) +
+        act('addXP', { button: 'GRANT XP', fields:
+          `<input class="inp" id="adm-xp" type="number" placeholder="XP"/>` }))}
+
+      ${sec('COINS',
+        act('giveCoins', { button: 'GIVE', fields:
+          `<input class="inp" id="adm-coins-add" type="number" placeholder="${esc(tx('Coins to give'))}"/>`,
+          hint: 'Coins are spent in the Store on cards and titles.' }) +
+        act('takeCoins', { button: 'TAKE', danger: true, fields:
+          `<input class="inp" id="adm-coins-rem" type="number" placeholder="${esc(tx('Coins to take'))}"/>` }))}
+
+      ${sec('CUSTOM CARD',
+        act('allowCard', { button: 'ALLOW', fields:
+          `<input class="inp" id="adm-card-img" type="text" placeholder="${esc(tx('Picture to start them with (optional)'))}"/>`,
+          hint: 'Opens a card slot in their store that they fill in themselves. Leave the box empty to let them choose.' }) +
+        act('resetCard', { button: 'RESET',
+          hint: 'Wipes the picture they chose and leaves the slot open for a new one.' }) +
+        act('denyCard', { button: 'REMOVE', danger: true,
+          hint: 'Closes the slot and takes the card back. If they are wearing it they go back to the default.' }))}
+
+      ${sec('CUSTOM PORTRAIT',
+        act('allowPortrait', { button: 'ALLOW', fields:
+          `<input class="inp" id="adm-portrait-img" type="text" placeholder="${esc(tx('Picture to start them with (optional)'))}"/>`,
+          hint: 'The same for their profile picture. This is a separate permission from the card one.' }) +
+        act('resetPortrait', { button: 'RESET',
+          hint: 'Puts them back on their Discord picture, with the slot still open.' }) +
+        act('denyPortrait', { button: 'REMOVE', danger: true,
+          hint: 'Closes the slot and puts them back on their Discord picture.' }))}
+
+      ${sec('CANNOT BE UNDONE',
+        act('resetStats', { button: 'RESET', danger: true,
+          hint: 'Wipes stats, rank and MMR for the current season only.' }))}
     </div>`;
   }
 
@@ -2745,25 +2882,28 @@ function renderAdmin(d) {
     const durations = ((S.boot && S.boot.banDurations) || [])
       .map((b) => `<option value="${b.seconds}">${esc(b.label)}</option>`).join('');
 
-    html = targetBar + `<div class="adm-list">
-      ${act('ban', { button: 'BAN', danger: true, fields:
-        `<select id="adm-bantype">${types}</select><select id="adm-bandur">${durations}</select>` })}
-      ${act('unban', { button: 'UNBAN', hint: 'Lifts every active ranked ban on the target.' })}
-      ${act('clearCooldown', { button: 'CLEAR', hint: 'Removes an abandon or decline cooldown.' })}
+    html = targetBar + `<div class="adm-grid">
+      ${sec('THIS PLAYER',
+        act('ban', { button: 'BAN', danger: true, fields:
+          `<select id="adm-bantype">${types}</select><select id="adm-bandur">${durations}</select>`,
+          hint: 'A ranked ban only. It does not touch their access to the server.' }) +
+        act('unban', { button: 'UNBAN', hint: 'Lifts every active ranked ban on the target.' }) +
+        act('clearCooldown', { button: 'CLEAR', hint: 'Removes an abandon or decline cooldown.' }))}
     </div>
 
     <div class="adm-cols" style="margin-top:16px">
-      <div class="card"><span class="card-tag">ACTIVE RANKED BANS</span>
+      <div class="card"><span class="card-tag">${esc(tx('ACTIVE RANKED BANS'))} · ${(d.bans || []).length}</span>
         <div class="alist">${list(d.bans, (b) => `<div class="arow"><b>${esc(b.name || b.user_id)}</b>
-          <span class="grow">${esc(b.type)} · ${esc(b.reason)} · by ${esc(b.admin)}</span>
-          ${admCan('unban') ? `<button class="mini" data-adm="unbanRow" data-target="${b.user_id}" data-ban="${b.id}">UNBAN</button>` : ''}
-        </div>`, 'NO ACTIVE BANS')}</div></div>
+          <span class="grow"><i>${esc(b.type)} · ${esc(b.reason)} · ${esc(tx('by'))} ${esc(b.admin)}</i></span>
+          ${admCan('playerLookup') ? `<button class="mini" data-adm="lookup" data-target="${b.user_id}">${esc(tx('INSPECT'))}</button>` : ''}
+          ${admCan('unban') ? `<button class="mini" data-adm="unbanRow" data-target="${b.user_id}" data-ban="${b.id}">${esc(tx('UNBAN'))}</button>` : ''}
+        </div>`, tx('NO ACTIVE BANS'))}</div></div>
 
-      <div class="card"><span class="card-tag">ANTI-BOOST FLAGS</span>
+      <div class="card"><span class="card-tag">${esc(tx('ANTI-BOOST FLAGS'))} · ${(d.suspicious || []).length}</span>
         <div class="alist">${list(d.suspicious, (f) => `<div class="arow"><b>${esc(f.name || f.user_id)}</b>
-          <span class="grow">${f.flags} flags</span><span class="sev">SEV ${f.score}</span>
-          ${admCan('playerLookup') ? `<button class="mini" data-adm="lookup" data-target="${f.user_id}">INSPECT</button>` : ''}
-        </div>`, 'NOTHING FLAGGED')}</div></div>
+          <span class="grow"><i>${f.flags} ${esc(tx('flags'))}</i></span><span class="sev">SEV ${f.score}</span>
+          ${admCan('playerLookup') ? `<button class="mini" data-adm="lookup" data-target="${f.user_id}">${esc(tx('INSPECT'))}</button>` : ''}
+        </div>`, tx('NOTHING FLAGGED'))}</div></div>
     </div>`;
   }
 
@@ -2772,34 +2912,44 @@ function renderAdmin(d) {
     const modes = ((S.boot && S.boot.allModes) || [])
       .map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join('');
 
-    html = `<div class="adm-list">
-      ${act('newSeason', { button: 'START SEASON', danger: true,
-        hint: 'Archives the season, pays rewards and opens the next one.' })}
-      ${act('toggleMode', { button: 'ENABLE', run: 'modeOn',
-        fields: `<select id="adm-mode">${modes}</select>` })}
-      ${admCan('toggleMode') ? `<div class="act">
-        <div class="act-name"><b>Disable Mode</b><span>pvp.admin.mode</span></div>
-        <div class="act-hint">Uses the mode selected above.</div>
-        <button class="btn ghost" data-adm="modeOff">DISABLE</button></div>` : ''}
+    html = `<div class="adm-grid">
+      ${sec('MODES',
+        act('toggleMode', { button: 'ENABLE', run: 'modeOn',
+          fields: `<select id="adm-mode">${modes}</select>`,
+          hint: 'Puts the chosen mode back in the queue for everyone.' }) +
+        act('toggleMode', { button: 'DISABLE', run: 'modeOff',
+          fields: `<select id="adm-mode-off">${modes}</select>`,
+          hint: 'Takes the chosen mode out of the queue. Matches already running carry on.' }))}
+
+      ${sec('THE SEASON',
+        act('newSeason', { button: 'START SEASON', danger: true,
+          hint: 'Archives the season, pays out its rewards and opens the next one.' }))}
     </div>
 
     <div class="adm-cols" style="margin-top:16px">
-      <div class="card"><span class="card-tag">SEASONS</span>
-        <div class="alist">${list(d.seasons, (x) => `<div class="arow"><b>#${x.number} ${esc(x.name)}</b>
-          <span class="grow">${esc(String(x.start_at || '').slice(0, 10))} → ${esc(String(x.end_at || '').slice(0, 10))}</span>
-          <span>${x.active ? 'ACTIVE' : 'ARCHIVED'}</span></div>`, 'NO SEASONS')}</div></div>
+      <div class="card"><span class="card-tag">${esc(tx('SEASONS'))}</span>
+        <div class="alist">${list(d.seasons, (x) => `<div class="arow">
+          <b class="tag">#${x.number}</b><b>${esc(x.name)}</b>
+          <span class="grow"><i>${esc(String(x.start_at || '').slice(0, 10))} → ${esc(String(x.end_at || '').slice(0, 10))}</i></span>
+          <span class="tchip ${x.active ? 'good' : 'off'}">${esc(tx(x.active ? 'ACTIVE' : 'ARCHIVED'))}</span>
+        </div>`, tx('NO SEASONS'))}</div></div>
 
-      ${admCan('auditLog') ? `<div class="card"><span class="card-tag">AUDIT LOG · LAST 30</span>
+      ${admCan('auditLog') ? `<div class="card"><span class="card-tag">${esc(tx('AUDIT LOG'))} · ${esc(tx('LAST 30'))}</span>
         <div class="alist">${list(d.audit, (a) => `<div class="audit-row">
           <span class="act-tag">${esc(a.action)}</span>
           <span>${esc(a.admin_name)}${a.target_name ? ` → ${esc(a.target_name)}` : ''}${
             a.amount ? ` · ${a.amount > 0 ? '+' : ''}${a.amount}` : ''}${a.reason ? ` · ${esc(a.reason)}` : ''}</span>
           <span class="when">${esc(String(a.created_at || '').replace('T', ' ').slice(0, 16))}</span>
-        </div>`, 'NOTHING LOGGED YET')}</div></div>` : ''}
+        </div>`, tx('NOTHING LOGGED YET'))}</div></div>` : ''}
     </div>`;
   }
 
-  if (!html) html = '<div class="locked-note">YOU HAVE NO PERMISSIONS IN THIS SECTION</div>';
+  if (!html) html = `<div class="locked-note">${esc(tx('YOU HAVE NO PERMISSIONS IN THIS SECTION'))}</div>`;
+  /* A search that matches nothing must say so — an empty tab reads as a
+     permission problem, which sends people looking in the wrong place. */
+  if (needle && !shown && tab !== 'monitor') {
+    html += `<div class="locked-note">${esc(tx('NO ACTION MATCHES'))} “${esc(S.admFilter)}”</div>`;
+  }
   host.innerHTML = html;
 
   /* The target is a user id only — a name could match two accounts and point a
@@ -2811,6 +2961,20 @@ function renderAdmin(d) {
       if (clean !== targetInput.value) targetInput.value = clean;
       S.admTargetValue = clean;
     };
+    // typing an id and pressing enter is the whole job; reaching for LOAD is not
+    targetInput.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (admTarget()) post('admin', { action: 'playerLookup', target: admTarget() });
+    };
+  }
+
+  /* The reason survives a redraw. Without this, loading the player wiped the
+     reason you had just typed for the ban you were about to place. */
+  const reasonInput = $('adm-reason');
+  if (reasonInput) {
+    reasonInput.oninput = () => { S.admReasonValue = reasonInput.value; };
   }
 
   host.querySelectorAll('[data-adm]').forEach((b) => { b.onclick = () => admAction(b); });
@@ -2872,7 +3036,14 @@ function admAction(btn) {
 
     case 'newSeason':     admRun('newSeason', {}); break;
     case 'modeOn':        admRun('toggleMode', { mode: val('adm-mode'), value: true }); break;
-    case 'modeOff':       admRun('toggleMode', { mode: val('adm-mode'), value: false }); break;
+    case 'modeOff':       admRun('toggleMode', { mode: val('adm-mode-off') || val('adm-mode'), value: false }); break;
+
+    case 'clearTarget':
+      S.admLookup = null;
+      S.admTargetValue = '';
+      Sfx.play('click');
+      renderAdmin(S.admin);
+      break;
   }
 }
 
@@ -3969,8 +4140,21 @@ window.addEventListener('message', (e) => {
         else if (p.action === 'playerLookup') {
           S.profile = p.result;
           if (p.result) {
-            S.admLookup = { name: p.result.name, rank: p.result.rank, rp: p.result.rp };
-            S.admTargetValue = String(p.result.userId);
+            /* The target card shows what you need before acting on somebody:
+               who they are, what they hold, and whether they are already
+               banned, on a cooldown or flagged. */
+            const r = p.result;
+            S.admLookup = {
+              userId: r.userId, name: r.name, avatar: r.avatar,
+              rank: r.rank, rankColor: r.rankColor, rp: r.rp,
+              level: r.level, coins: r.coins, online: r.online === true,
+              bans: (r.bans || []).length,
+              cooldown: Math.max(0, Math.round(r.cooldown || 0)),
+              flags: (r.flags || []).length,
+              customCard: r.customCard === true,
+              customPortrait: r.customPortrait === true
+            };
+            S.admTargetValue = String(r.userId);
           }
           if (S.page === 'admin') renderAdmin(S.admin); else showPage('profile');
         }

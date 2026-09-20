@@ -359,6 +359,29 @@ Open it with `/pvpadmint` or the ADMIN tab. The panel has five sections —
 Monitor, Matches, Points, Punish, System — and **renders only the controls the
 caller is allowed to use**; everything else is absent, not greyed out.
 
+### Working in it
+
+The panel is five tabs and about thirty actions, so:
+
+* **MONITOR** opens on a strip of numbers — live matches, players in them, the
+  queue, rooms, flags, and whether ranked is frozen — then the lists those
+  numbers came from, each row with the buttons that act on it.
+* **The target bar** is sticky at the top of every player tab. Type an id and
+  press Enter; the card fills in with their name, rank, RP, level and coins,
+  and chips for what is already on them — online, banned, on a cooldown,
+  flagged, and whether they hold a custom card or portrait slot. INSPECT on any
+  list row loads them the same way.
+* **Actions are cards**, grouped under headings, so a tab is a few short lists
+  instead of one long one. A card wears a **REASON** chip when the server will
+  demand one and a **CONFIRMS** chip when it will ask twice; hovering it shows
+  the permission it needs.
+* **FIND AN ACTION** searches every tab by name, so you do not have to remember
+  which one *Give Coins* lives on.
+
+An action that lands on a player refuses to fire with no player loaded or with
+the reason left empty, and says which is missing — rather than sending it and
+showing you the server's rejection. A confirm names who it lands on.
+
 ### Two layers of permission
 
 ```lua

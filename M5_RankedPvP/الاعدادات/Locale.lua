@@ -60,7 +60,6 @@ Locale.ar = {
     ['WEAPON']                    = 'السلاح',
     ['KILL RULE']                 = 'قاعدة القتل',
     ['FULL BODY']                 = 'الجسم كامل',
-    ['HEADSHOT ONLY']             = 'الرأس فقط',
     ['PICK ONE IN EACH']          = 'اختر واحد من كل قسم',
     ['LEAVE']                     = 'مغادرة',
     ['SWAP']                      = 'تبديل',
@@ -117,7 +116,6 @@ Locale.ar = {
     ['invited you to']            = 'دعاك إلى',
     ['their party']               = 'مجموعته',
     ['their room']                = 'غرفته',
-    ['You are not in a room.']    = 'أنت لست داخل غرفة.',
     ['That player is already in the room.'] = 'هذا اللاعب موجود بالغرفة أصلاً.',
     ['That player is banned from this room.'] = 'هذا اللاعب محظور من هذي الغرفة.',
     ['That player cannot join custom games.'] = 'هذا اللاعب ممنوع من الغرف الخاصة.',
@@ -430,6 +428,122 @@ Locale.ar = {
     ['Training']                  = 'التدريب',
     ['Admin']                     = 'الإدارة',
     ['ADMIN CONTROL']             = 'لوحة الإدارة',
+    -- ------------------------------------------------------- لوحة الإدارة
+    ['FIND AN ACTION']            = 'دوّر على أمر',
+    ['NO ACTION MATCHES']         = 'ما فيه أمر يطابق',
+    ['YOU HAVE NO PERMISSIONS IN THIS SECTION'] = 'ما عندك أي صلاحية بهذا القسم',
+
+    -- شريط الأرقام فوق
+    ['LIVE MATCHES']              = 'مباريات شغّالة',
+    ['PLAYERS IN MATCH']          = 'لاعبين داخل مباريات',
+    ['IN QUEUE']                  = 'بالطابور',
+    ['CUSTOM ROOMS']              = 'غرف مخصصة',
+    ['FLAGGED']                   = 'مشبوهين',
+    ['RANKED QUEUE']              = 'طابور المصنّف',
+    ['OPEN']                      = 'مفتوح',
+    ['FROZEN']                    = 'مجمّد',
+
+    -- بطاقة اللاعب المستهدف
+    ['NO PLAYER LOADED']          = 'ما فيه لاعب محمّل',
+    ['ONLINE']                    = 'متصل',
+    ['OFFLINE']                   = 'غير متصل',
+    ['BANNED']                    = 'محظور',
+    ['COOLDOWN']                  = 'حظر مؤقت',
+    ['FLAGS']                     = 'إنذارات',
+    ['CARD SLOT']                 = 'خانة بطاقة',
+    ['PORTRAIT SLOT']             = 'خانة صورة',
+    ['RANK']                      = 'الرتبة',
+    ['LEVEL']                     = 'المستوى',
+    ['CLEAR']                     = 'مسح',
+    ['Written into the audit log'] = 'ينكتب بسجل الإدارة',
+    ['Load a player first.']      = 'حمّل لاعب أول.',
+    ['Apply this to']             = 'تطبّق هذا على',
+    ['Confirm this action?']      = 'تأكيد هذا الأمر؟',
+    ['CONFIRMS']                  = 'يطلب تأكيد',
+
+    -- عناوين الأقسام
+    ['THIS PLAYER']               = 'هذا اللاعب',
+    ['THE QUEUE']                 = 'الطابور',
+    ['PRACTICE']                  = 'تدريب',
+    ['RANK AND POINTS']           = 'الرتبة والنقاط',
+    ['CUSTOM CARD']               = 'البطاقة الخاصة',
+    ['CUSTOM PORTRAIT']           = 'الصورة الخاصة',
+    ['CANNOT BE UNDONE']          = 'ما ينرجع فيه',
+    ['MODES']                     = 'الأطوار',
+    ['THE SEASON']                = 'الموسم',
+
+    -- أزرار
+    ['GRANT']                     = 'إعطاء',
+    ['GRANT XP']                  = 'إعطاء خبرة',
+    ['DEDUCT']                    = 'خصم',
+    ['SET']                       = 'تعيين',
+    ['GIVE']                      = 'إعطاء',
+    ['TAKE']                      = 'سحب',
+    ['ALLOW']                     = 'سماح',
+    ['BAN']                       = 'حظر',
+    ['UNBAN']                     = 'فك الحظر',
+    ['ENABLE']                    = 'تشغيل',
+    ['DISABLE']                   = 'إيقاف',
+    ['START SEASON']              = 'ابدأ موسم',
+    ['WATCH']                     = 'مشاهدة',
+    ['RESTART']                   = 'إعادة',
+    ['INSPECT']                   = 'فحص',
+    ['STOP SPECTATING']           = 'إيقاف المشاهدة',
+
+    -- قوائم فاضية وتفاصيل
+    ['NO LIVE MATCHES']           = 'ما فيه مباريات شغّالة',
+    ['QUEUE EMPTY']               = 'الطابور فاضي',
+    ['NO ROOMS']                  = 'ما فيه غرف',
+    ['FLAGGED PLAYERS']           = 'لاعبين مشبوهين',
+    ['NOTHING FLAGGED']           = 'ما فيه أحد مشبوه',
+    ['ACTIVE RANKED BANS']        = 'حظر المصنّف الفعّال',
+    ['NO ACTIVE BANS']            = 'ما فيه حظر فعّال',
+    ['ANTI-BOOST FLAGS']          = 'إنذارات رفع النقاط',
+    ['SEASONS']                   = 'المواسم',
+    ['NO SEASONS']                = 'ما فيه مواسم',
+    ['AUDIT LOG']                 = 'سجل الإدارة',
+    ['LAST 30']                   = 'آخر ٣٠',
+    ['NOTHING LOGGED YET']        = 'ما ينسجّل شي بعد',
+    ['flags']                     = 'إنذار',
+    ['by']                        = 'من',
+
+    -- خانات الإدخال
+    ['RP to grant']               = 'نقاط تعطيها',
+    ['RP to deduct']              = 'نقاط تخصمها',
+    ['Exact RP total']            = 'المجموع النهائي',
+    ['Coins to give']             = 'عملات تعطيها',
+    ['Coins to take']             = 'عملات تسحبها',
+    ['Picture to start them with (optional)'] = 'صورة تبدأ بها (اختياري)',
+    ['Match id']                  = 'رقم المباراة',
+    ['Team A']                    = 'فريق أ',
+    ['Team B']                    = 'فريق ب',
+
+    -- شروحات الأوامر
+    ['Adds to what they have. Use it to put back RP a crash took away.'] =
+        'تنضاف لي عنده. استخدمها ترجّع نقاط راحت بسبب انقطاع.',
+    ['Replaces the total outright rather than adding to it.'] =
+        'تستبدل المجموع كامل بدل ما تنضاف له.',
+    ['Also finishes their placement matches if they had not.'] =
+        'وتخلّص مباريات التحديد حقه إذا ما كان خلّصها.',
+    ['Swaps them onto the other side of a match that is already running.'] =
+        'ينقله للفريق الثاني بمباراة شغّالة.',
+    ['A ranked ban only. It does not touch their access to the server.'] =
+        'حظر من المصنّف فقط. ما له علاقة بدخوله السيرفر.',
+    ['Lifts every active ranked ban on the target.'] = 'يفك كل حظر مصنّف فعّال عليه.',
+    ['Removes an abandon or decline cooldown.'] = 'يشيل عقوبة الانسحاب أو الرفض.',
+    ['Takes the target out of their current match.'] = 'يطلّعه من مباراته الحالية.',
+    ['Wipes stats, rank and MMR for the current season only.'] =
+        'يمسح الإحصائيات والرتبة والـ MMR للموسم الحالي فقط.',
+    ['Nobody can start a ranked search.'] = 'ما أحد يقدر يبدأ بحث مصنّف.',
+    ['Freezing stops new ranked searches; matches already running carry on.'] =
+        'التجميد يوقف البحث الجديد، والمباريات الشغّالة تكمل.',
+    ['Puts the chosen mode back in the queue for everyone.'] =
+        'يرجّع الطور المختار للطابور للكل.',
+    ['Takes the chosen mode out of the queue. Matches already running carry on.'] =
+        'يشيل الطور المختار من الطابور، والمباريات الشغّالة تكمل.',
+    ['Archives the season, pays out its rewards and opens the next one.'] =
+        'يأرشف الموسم ويوزّع مكافآته ويفتح الي بعده.',
+
     ['BOARD EDITOR']              = 'محرّر اللوحة',
     ['MATCH HISTORY']             = 'سجل المباريات',
     ['YOUR STATISTICS']           = 'إحصائياتك',

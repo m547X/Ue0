@@ -8141,6 +8141,10 @@ function Admin.handle(adminPd, action, data)
         profile.flags = DB.query('SELECT * FROM m5_anti_boost_flags WHERE user_id = ? ORDER BY id DESC LIMIT 25', { id }) or {}
         profile.cooldown = Penalty.cooldownLeft(id)
         profile.online = srcOf(id) ~= nil
+        profile.coins  = (Store.load(id) or {}).coins or 0
+        profile.avatar = avatarFor(id)
+        profile.customCard    = Store.customAllowed(id, 'card') ~= nil
+        profile.customPortrait = Store.customAllowed(id, 'portrait') ~= nil
         profile.audit = DB.query([[SELECT action, admin_name, amount, reason, created_at
                                    FROM m5_admin_logs WHERE target_id = ?
                                    ORDER BY id DESC LIMIT 15]], { id }) or {}

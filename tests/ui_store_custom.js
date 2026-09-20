@@ -300,8 +300,10 @@ const CARD_ONLY = {
   check('  and a way to wipe the picture without closing the slot',
         [await page.locator('[data-adm="resetCard"]').count(),
          await page.locator('[data-adm="resetPortrait"]').count()], [1, 1]);
+  // the permission string is on the card rather than printed under every name:
+  // an owner wiring up permissions wants it, nobody using the panel does
   check('  each naming its own permission',
-        await page.locator('.act .act-name span').allInnerTexts(),
+        await page.locator('.act').evaluateAll((ns) => ns.map((n) => n.title)),
         ['pvp.admin.custom.card', 'pvp.admin.custom.card', 'pvp.admin.custom.card',
          'pvp.admin.custom.portrait', 'pvp.admin.custom.portrait', 'pvp.admin.custom.portrait']);
 
