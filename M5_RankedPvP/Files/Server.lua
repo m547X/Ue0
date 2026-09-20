@@ -3735,6 +3735,7 @@ end
 function Match.startRound(m)
     m.round = m.round + 1
     m.roundStartMs = ms()
+    m.tradeUntil = nil
     m.firstBloodTaken = m.firstBloodTaken or false
 
     for _, mp in pairs(m.players) do
@@ -4087,6 +4088,28 @@ function Match.registerKill(m, killerId, victimId, weapon, headshot, distance)
     return true
 end
 
+function Match.tradeWindow()
+    return math.max(0, math.floor(tonumber(Config.Match.tradeWindow) or 0))
+end
+
+function Match.resolveElimination(m)
+    if m.state ~= 'LIVE' then return end
+    m.tradeUntil = nil
+
+    local aliveA = aliveCount(m, 1)
+    local aliveB = aliveCount(m, 2)
+
+    if aliveA == 0 and aliveB == 0 then
+        Match.endRound(m, 0, 'TRADE')
+    elseif aliveA == 0 then
+        Match.endRound(m, 2, 'ELIMINATION')
+        Match.checkAce(m, 2)
+    elseif aliveB == 0 then
+        Match.endRound(m, 1, 'ELIMINATION')
+        Match.checkAce(m, 1)
+    end
+end
+
 function Match.evaluateRound(m)
     if m.state ~= 'LIVE' then return end
 
@@ -4106,15 +4129,34 @@ function Match.evaluateRound(m)
     local aliveA = aliveCount(m, 1)
     local aliveB = aliveCount(m, 2)
 
-    if aliveA == 0 and aliveB == 0 then
-        Match.endRound(m, 0, 'DRAW')
-    elseif aliveA == 0 then
-        Match.endRound(m, 2, 'ELIMINATION')
-        Match.checkAce(m, 2)
-    elseif aliveB == 0 then
-        Match.endRound(m, 1, 'ELIMINATION')
-        Match.checkAce(m, 1)
+    if aliveA > 0 and aliveB > 0 then
+        m.tradeUntil = nil
+        return
     end
+
+    if aliveA == 0 and aliveB == 0 then
+        Match.resolveElimination(m)
+        return
+    end
+
+    local window = Match.tradeWindow()
+    if window <= 0 then
+        Match.resolveElimination(m)
+        return
+    end
+
+    if m.tradeUntil then return end
+    m.tradeUntil = ms() + window
+
+    local matchId, roundNo = m.id, m.round
+    SetTimeout(window, function()
+        if Matches[matchId] ~= m then return end
+        if m.state ~= 'LIVE' or m.round ~= roundNo then
+            m.tradeUntil = nil
+            return
+        end
+        Match.resolveElimination(m)
+    end)
 end
 
 function Match.checkAce(m, winnerTeam)
@@ -4965,6 +5007,11 @@ function Match.tick(m)
     end
 
     if m.state == 'LIVE' then
+        if m.tradeUntil and t >= m.tradeUntil then
+            Match.resolveElimination(m)
+            if m.state ~= 'LIVE' then return end
+        end
+
         Match.checkAFK(m)
         Match.checkComa(m)
         Match.pushHud(m, false)

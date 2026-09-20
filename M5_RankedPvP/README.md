@@ -197,6 +197,39 @@ it.
 SELECT * FROM m5_player_ranks WHERE season_id = 0;   -- damage from older builds
 ```
 
+### Trade kills — when both players die
+
+Nothing in a shooter arrives at the same instant. Two players fire, both
+bullets land, and the two death reports reach the server milliseconds apart —
+and that gap is their ping, not their aim.
+
+The round used to end on the first of those reports. The second death then
+arrived into a round whose state was no longer `LIVE`, so `registerKill`
+dropped it: no death on that player's record, no kill for whoever fired it,
+nothing in the kill feed, and **the round to whoever had the better
+connection**.
+
+`Config.Match.tradeWindow` (300 ms) fixes that. When the last player on a side
+goes down the round is *held open* for that long, so a bullet already in flight
+still lands:
+
+* both sides end up at zero alive → the round is a **draw**, reason `TRADE`,
+  neither side scores, and the round is replayed — the same rule the round
+  timer already used for an even board;
+* nobody trades → the window runs out and the round goes to the side still
+  standing, exactly as before;
+* either way the second death is a real death, with the kill, the K/D and the
+  kill-feed line that go with it.
+
+Set it to `0` for the old behaviour. It delays the round-end banner by roughly
+its own length, which is the price of the fight deciding the round instead of
+the ping. The window is resolved by a timer and re-checked on the match tick,
+so a busy tick cannot leave a round hanging.
+
+A drawn round adds nothing to either score, so `rounds` counts *decided*
+rounds — a best-of-5 with one trade is played over six. `maxMatchDuration`
+remains the backstop.
+
 ---
 
 ## 4. Headshot — one shot kill, no distance falloff
