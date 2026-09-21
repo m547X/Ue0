@@ -71,7 +71,8 @@ AddTextComponentSubstringPlayerName = native()
 EndTextCommandDisplayText = native()
 math_abs = math.abs
 
-function ms() return 1000 end
+CLOCK = 1000
+function ms() return CLOCK end
 function playerPed() NATIVES = NATIVES + 1 return 100 end
 function TriggerServerEvent() end
 
@@ -99,25 +100,40 @@ do
     src .. '\nreturn pushActivity, drawTeammateTags', 'hot'))()
 end
 
---- One frame of the two functions that walk the roster.
-local function frame()
+--- One frame of the two functions that walk the roster. Sixteen milliseconds
+--- pass, because a frame is where the whole cost lives and several of these
+--- functions only do their work once a clock has moved on.
+local function frame(shooting)
+  CLOCK = CLOCK + 16
   NATIVES, ALLOCS = 0, 0
   local ped = 100
   local pos = vector3(5, 5, 0)
   NATIVES, ALLOCS = 0, 0            -- discount the setup
   drawTeammateTags(ped, pos)
-  pushActivity(ped, pos)
+  pushActivity(ped, pos, shooting)
   return NATIVES, ALLOCS
 end
 
+--- Sixteen frames is a quarter of a second, which is the window the activity
+--- probe works on, so this is the honest per-frame average rather than the one
+--- frame in sixteen that pays for it.
+local function average(frames)
+  local nat, alloc = 0, 0
+  for _ = 1, frames do
+    local n, a = frame(false)
+    nat, alloc = nat + n, alloc + a
+  end
+  return nat / frames, alloc / frames
+end
+
 print('--- one frame, eight players on the server, four of them teammates ---')
-frame()                                   -- warm the roster cache
-local n, a = frame()
+frame(false)                              -- warm the roster cache
+local n, a = frame(false)
 print(('all four in view    %d natives, %d allocations  (%d/s, %d/s)')
   :format(n, a, n * 60, a * 60))
 
 ON_SCREEN = false
-local nb, ab = frame()
+local nb, ab = frame(false)
 print(('all four behind you %d natives, %d allocations  (%d/s, %d/s)')
   :format(nb, ab, nb * 60, ab * 60))
 ON_SCREEN = true
@@ -133,11 +149,12 @@ print()
 check('the roster is not re-fetched every frame',
       CL:find('TAG_ROSTER_EVERY', 1, true) ~= nil, true)
 
--- Four teammates means four GetEntityCoords, and that native hands back a
--- vector — so four is the floor, not zero. What went is the roster table, the
--- eight server-id lookups and the four vector subtractions the distance check
--- used to build.
-check('a frame allocates only what the natives hand back', a, 4)
+-- Three teammates to draw means three GetEntityCoords, and that native hands
+-- back a vector — so three is the floor, not zero. What went is the roster
+-- table, the eight server-id lookups and the three vector subtractions the
+-- distance check used to build, and now the camera vector too: the activity
+-- probe is asleep on this frame, so nothing reads the camera.
+check('a frame allocates only what the natives hand back', a, 3)
 
 -- A plate that would not land on screen is not drawn, and that is ten native
 -- calls each — so looking away from your team costs a fraction of looking at
@@ -157,24 +174,46 @@ for _ = 1, 10 do frame() end
 GetActivePlayers = realGAP
 check('ten frames in a row rebuild the roster no more than once', seen <= 1, true)
 
--- Standing still costs more than moving, because a player who has already
--- moved is already active and the camera never has to be asked.
+-- ==========================================================================
+-- the activity probe
+-- ==========================================================================
+-- Whether the player is still there is worth knowing every few hundred
+-- milliseconds, not sixty times a second — the answer is only ever sent every
+-- three seconds anyway. A player standing still is the expensive case, because
+-- that is the one where the camera and the movement keys have to be asked, so
+-- that is the one the probe is measured on.
+local camReads = 0
+local realCam = GetGameplayCamRot
+GetGameplayCamRot = function(...) camReads = camReads + 1 return realCam(...) end
+
+State.lastPos = vector3(5, 5, 0)          -- standing exactly where we are
+State.lastCamHeading = 90                 -- and looking the same way
+for _ = 1, 60 do frame(false) end         -- one second of standing still
+GetGameplayCamRot = realCam
+check('standing still, one second asks the camera about four times',
+      camReads >= 3 and camReads <= 5, true)
+
+-- A player who has moved is active on the position alone, so the camera and
+-- the three control reads never happen at all.
 State.lastPos = vector3(0, 0, 0)
-local moving = select(1, frame())
-local still  = select(1, frame())     -- lastPos is now where we are
+CLOCK = CLOCK + 300                       -- let the probe come round again
+local moving = select(1, frame(false))
+CLOCK = CLOCK + 300
+local still  = select(1, frame(false))    -- lastPos is now where we are
 check('a player who moved skips the camera read', moving < still, true)
 
--- With nobody else on the server the roster is empty and the only work left is
--- the activity check, which is where the floor is.
+-- With nobody else on the server the roster is empty and the activity probe is
+-- asleep on most frames, so the frame is free.
 PLAYERS = { 0 }
 State.teamOfServerId = { [10] = 1 }
 State.team = 2                            -- so nobody, including me, is a teammate
-frame()                                   -- the team changed, so let the roster settle
-local n3, a3 = frame()
+frame(false)                              -- the team changed, so let the roster settle
+local n3, a3 = average(16)
 print()
-print(('alone on the server %d natives, %d allocations'):format(n3, a3))
-check('alone on the server the frame is nearly free', n3 <= 10, true)
-check('  and allocates only the camera vector',      a3, 1)
+print(('alone on the server %.2f natives, %.2f allocations per frame')
+  :format(n3, a3))
+check('alone on the server the frame is nearly free', n3 <= 1.0, true)
+check('  and allocates almost nothing',               a3 <= 0.2, true)
 
 print()
 print(fails == 0 and ('ALL PASS (%d checks)'):format(checks)

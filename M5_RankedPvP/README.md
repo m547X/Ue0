@@ -102,6 +102,43 @@ The client runs:
 
 Nothing runs for players who are not using the PvP system.
 
+### What one frame of a live round costs
+
+The match thread is the only thing running per frame, and `tests/bench_hotpath.lua`
+runs the real functions out of `Client.lua` against counted stubs, so these are
+measured numbers rather than an estimate. Standing in a 4v4 with three
+teammates in front of you: **43 native calls and 3 allocations a frame**, and
+all three allocations are vectors the engine itself hands back. Look away from
+your team and it is 13. Alone on the server it rounds to **a quarter of a
+native call a frame**.
+
+The rules that keep it there, each one guarded by a check in that file:
+
+* **Nothing is asked for twice.** Whether you are shooting is read once a frame
+  and handed to everything that wants to know; your health is read once and
+  passed to the death check rather than read again.
+* **The teammate list is not rebuilt every frame.** `GetActivePlayers` returns a
+  fresh table, so calling it sixty times a second is sixty tables a second. It
+  is walked twice a second and the result kept.
+* **A nameplate that would not land on screen is not drawn** — that is ten
+  native calls each, so looking away from your team genuinely costs less.
+* **Distances are compared squared.** `#(a - b)` builds a vector and takes a
+  square root to answer a question that `dx*dx + dy*dy + dz*dz` answers without
+  either. Nothing that only compares a distance takes a square root any more.
+* **Whether you are still there is sampled four times a second**, not sixty.
+  The answer is only ever sent to the server every three seconds, so asking the
+  camera and the movement keys on every frame in between was asking a question
+  nobody was listening for. A player who has moved is active on their position
+  alone and never reaches that check at all.
+
+On the server, the scoreboard goes out about once a second for as long as a
+match runs. It used to build a fresh table per player per push — three hundred
+pushes in a five-minute 5v5, ten tables each. The rows are now reused and only
+their fields rewritten, and the team names, which cannot change once a match is
+running, are worked out once instead of twice a second. `tests/hud_payload.lua`
+holds both sides of that: no new tables, and the numbers on them still right
+after a kill, a death and a player leaving.
+
 ### vRP integration (Dunko)
 
 Calls go straight through vRP's own Proxy and Tunnel — there is no abstraction

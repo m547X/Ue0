@@ -788,15 +788,16 @@ Citizen.CreateThread(function()
         do
             local ped  = playerPed()
             local pos  = GetEntityCoords(ped)
-            local dist = #(pos - point)
+            local dx, dy, dz = pos.x - point.x, pos.y - point.y, pos.z - point.z
+            local distSq = dx * dx + dy * dy + dz * dz
 
-            if dist > 150.0 then
+            if distSq > 22500.0 then
                 wait = T.idleFar
                 State.nearPoint = false
-            elseif dist > 50.0 then
+            elseif distSq > 2500.0 then
                 wait = T.idleMid
                 State.nearPoint = false
-            elseif dist > cfg.drawDistance then
+            elseif distSq > cfg.drawDistance * cfg.drawDistance then
                 wait = T.idleNear
                 State.nearPoint = false
             else
@@ -813,7 +814,7 @@ Citizen.CreateThread(function()
                         cfg.marker.rotate == true, nil, nil, false)
                 end
 
-                if dist <= cfg.distance then
+                if distSq <= cfg.distance * cfg.distance then
                     State.nearPoint = true
                     drawMarkerText(point.x, point.y, point.z + 0.9, L.openPrompt)
                     if IsControlJustReleased(0, 38) then
@@ -1236,10 +1237,10 @@ local function displayHealth(ped)
     return math.floor(((raw - floor) / (maxHp - floor)) * maxHp + 0.5)
 end
 
-local function isDown(ped)
+local function isDown(ped, health)
     if IsEntityDead(ped) then return true end
 
-    local hp = GetEntityHealth(ped) - 100
+    local hp = (health or GetEntityHealth(ped)) - 100
     if hp <= 0 then return true end
 
     local floor = comaFloor()
@@ -1249,10 +1250,11 @@ local function isDown(ped)
     return false
 end
 
-local function combatScan(ped)
+local function combatScan(ped, shooting)
     ped = ped or playerPed()
 
-    if IsPedShooting(ped) then
+    if shooting == nil then shooting = IsPedShooting(ped) end
+    if shooting then
         reportShot(false, ped)
     end
 
@@ -1286,7 +1288,7 @@ local function combatScan(ped)
     State.lastHealth = health
     State.lastArmor  = armor
 
-    if isDown(ped) and not State.reportedDeath then
+    if isDown(ped, health) and not State.reportedDeath then
         State.reportedDeath = true
         State.alive = false
 
@@ -1425,9 +1427,15 @@ RegisterCommand('pvpzone', function()
     nui({ action = 'toast', kind = 'info', message = line, title = 'ZONE' })
 end, false)
 
-local ACTIVITY_MOVE_SQ = 1.5 * 1.5
+local ACTIVITY_MOVE_SQ  = 1.5 * 1.5
+local ACTIVITY_PROBE_MS = 250
+local nextActivityProbe = 0
 
-local function pushActivity(ped, pos)
+local function pushActivity(ped, pos, shooting)
+    local t = ms()
+    if t < nextActivityProbe then return end
+    nextActivityProbe = t + ACTIVITY_PROBE_MS
+
     ped = ped or playerPed()
     pos = pos or GetEntityCoords(ped)
 
@@ -1438,16 +1446,16 @@ local function pushActivity(ped, pos)
     local heading
     local acted = moved
     if not acted then
+        if shooting == nil then shooting = IsPedShooting(ped) end
         heading = GetGameplayCamRot(2).z
         acted = math_abs(((heading - State.lastCamHeading + 180) % 360) - 180) >= 4.0
-             or IsPedShooting(ped) or IsControlPressed(0, 24)
+             or shooting or IsControlPressed(0, 24)
              or IsControlPressed(0, 25) or IsControlPressed(0, 38)
     end
 
     if acted then
         State.lastPos = pos
         if heading then State.lastCamHeading = heading end
-        local t = ms()
         if (t - State.lastActivityPush) > 3000 then
             State.lastActivityPush = t
             TriggerServerEvent('m5rp:sv:activity')
@@ -1561,12 +1569,13 @@ startMatchThread = function()
             if liveCombat then
                 local ped = playerPed()
                 local pos = GetEntityCoords(ped)
+                local shooting = IsPedShooting(ped)
 
-                combatScan(ped)
+                combatScan(ped, shooting)
                 applyMatchRestrictions()
                 boundaryCheck(pos)
                 rearmGuard(ped)
-                pushActivity(ped, pos)
+                pushActivity(ped, pos, shooting)
 
                 if State.spawnProtectUntil > ms() then
                     SetEntityInvincible(ped, true)
@@ -2446,6 +2455,7 @@ local WB = {
     rows    = {},
     season  = nil,
     peds    = {},
+    pedAt   = {},
     spawned = false,
     sent    = false,
     layout  = nil,
@@ -2472,13 +2482,16 @@ local function wbLayout()
     local c = Config.WorldBoard or {}
 
     if wbFromConfig then
-        local scc = c.screens or {}
-        local pcc = c.podium  or {}
-        wbFromConfig.screensEnabled = scc.enabled ~= false
-        wbFromConfig.podiumEnabled  = pcc.enabled ~= false
-        for i = 1, #wbFromConfig.screens do
-            local spot = (scc.spots or {})[i]
-            if spot then wbFromConfig.screens[i].enabled = spot.enabled ~= false end
+        local scc = c.screens
+        local pcc = c.podium
+        wbFromConfig.screensEnabled = not scc or scc.enabled ~= false
+        wbFromConfig.podiumEnabled  = not pcc or pcc.enabled ~= false
+        local spots = scc and scc.spots
+        if spots then
+            for i = 1, #wbFromConfig.screens do
+                local spot = spots[i]
+                if spot then wbFromConfig.screens[i].enabled = spot.enabled ~= false end
+            end
         end
         return wbFromConfig
     end
@@ -2732,7 +2745,7 @@ local function screenCorners(spot)
            c[7], c[8], c[9], c[10], c[11], c[12]
 end
 
-local function drawScreen(spot, dist, ex, ey, ez)
+local function drawScreen(spot, ex, ey, ez)
     if not DUI.ready or not DUI.live or not DUI.avail then return end
 
     local a = math.floor(tonumber(spot.opacity) or 255)
@@ -2773,6 +2786,7 @@ local function wbDespawn()
         end
     end
     WB.peds = {}
+    WB.pedAt = {}
     WB.spawned = false
 end
 
@@ -2830,7 +2844,10 @@ local function wbSpawn(cfg)
                         end
                     end
 
-                    WB.peds[#WB.peds + 1] = ped
+                    local n = #WB.peds + 1
+                    WB.peds[n] = ped
+                    local at = GetEntityCoords(ped)
+                    WB.pedAt[n] = { x = at.x, y = at.y, z = at.z + 1.05 }
                 end
             end
         end
@@ -2879,14 +2896,17 @@ function wbTick(me, podiumAcc)
     local anyNear = false
     local eyeX, eyeY, eyeZ
     if screens then
+        local mx, my, mz = me.x, me.y, me.z
         for i = 1, #screens do
             local spot = screens[i]
-            local far  = tonumber(spot.distance) or 35.0
-            if spot.enabled ~= false and spot.pos then
-                local d = #(me - vec3(spot.pos))
-                if d <= far then
+            local p    = spot.pos
+            if spot.enabled ~= false and p then
+                local far = tonumber(spot.distance) or 35.0
+                local dx, dy, dz = mx - p.x, my - p.y, mz - p.z
+                local d2  = dx * dx + dy * dy + dz * dz
+                if d2 <= far * far then
                     anyNear = true
-                    if World3dToScreen2d(spot.pos.x, spot.pos.y, spot.pos.z) then
+                    if World3dToScreen2d(p.x, p.y, p.z) then
                         sleep = 0
                         if duiCreate() then
                             duiFlush()
@@ -2894,12 +2914,12 @@ function wbTick(me, podiumAcc)
                                 local cam = GetFinalRenderedCamCoord()
                                 eyeX, eyeY, eyeZ = cam.x, cam.y, cam.z
                             end
-                            drawScreen(spot, d, eyeX, eyeY, eyeZ)
+                            drawScreen(spot, eyeX, eyeY, eyeZ)
                         end
                     elseif sleep > WB_NEAR then
                         sleep = WB_NEAR
                     end
-                elseif d <= far * 1.6 then
+                elseif d2 <= (far * 1.6) * (far * 1.6) then
                     anyNear = true
                     if sleep > WB_NEAR then sleep = WB_NEAR end
                 end
@@ -2930,11 +2950,13 @@ function wbTick(me, podiumAcc)
     if podiumAcc >= 900 then
         podiumAcc = 0
         local far = podium.podiumDistance * (WB.spawned and 1.25 or 1.0)
+        local farSq = far * far
         local near = false
         for i = 1, #podium.podium do
-            local spot = podium.podium[i]
-            if spot.pos and #(me - vec3(spot.pos)) <= far then
-                near = true break
+            local p = podium.podium[i].pos
+            if p then
+                local dx, dy, dz = me.x - p.x, me.y - p.y, me.z - p.z
+                if (dx * dx + dy * dy + dz * dz) <= farSq then near = true break end
             end
         end
         if near and not WB.spawned then
@@ -2946,14 +2968,14 @@ function wbTick(me, podiumAcc)
 
     if WB.spawned and (Config.WorldBoard.podium or {}).showNames ~= false then
         for i = 1, #WB.peds do
-            local p   = WB.peds[i]
+            local pos = WB.pedAt[i]
             local row = WB.rows[i]
-            if row and DoesEntityExist(p) then
-                local pos = GetEntityCoords(p)
-                if #(me - pos) <= 14.0
-                   and World3dToScreen2d(pos.x, pos.y, pos.z + 1.05) then
+            if row and pos then
+                local dx, dy, dz = me.x - pos.x, me.y - pos.y, me.z - pos.z
+                if (dx * dx + dy * dy + dz * dz) <= 196.0
+                   and World3dToScreen2d(pos.x, pos.y, pos.z) then
                     sleep = 0
-                    SetDrawOrigin(pos.x, pos.y, pos.z + 1.05, 0)
+                    SetDrawOrigin(pos.x, pos.y, pos.z, 0)
                     DrawRect(0.0, 0.0, 0.058, 0.026, 8, 10, 14, 170)
                     wbText(row.plate or '', 0.0, -0.010, 0.32, 240, 240, 245, 255, 'centre')
                     wbText(row.under or '', 0.0, 0.001, 0.24,

@@ -3170,6 +3170,11 @@ local function teamNameFor(m, team)
     local fixed = (cfg.fixed and cfg.fixed[team]) or (team == 2 and 'TEAM B' or 'TEAM A')
     if cfg.mode ~= 'leader' then return fixed end
 
+    local cache = m.teamNames
+    if not cache then cache = {} m.teamNames = cache end
+    local known = cache[team]
+    if known then return known end
+
     local members = teamPlayers(m, team)
     if #members == 0 then return fixed end
 
@@ -3191,8 +3196,14 @@ local function teamNameFor(m, team)
     end
     if not pick then return fixed end
 
-    if #members == 1 and cfg.soloIsPlain ~= false then return pick.name end
-    return (cfg.pattern or "%s'S TEAM"):format(pick.name)
+    local name
+    if #members == 1 and cfg.soloIsPlain ~= false then
+        name = pick.name
+    else
+        name = (cfg.pattern or "%s'S TEAM"):format(pick.name)
+    end
+    cache[team] = name
+    return name
 end
 
 local function byTeamThenScore(a, b)
@@ -3201,26 +3212,38 @@ local function byTeamThenScore(a, b)
 end
 
 local function playerListPayload(m)
-    local out, byUser = {}, {}
-    local aliveA, aliveB = 0, 0
+    local out    = m.hudRows
+    local byUser = m.hudByUser
+    if not out then out = {} m.hudRows = out end
+    if not byUser then byUser = {} m.hudByUser = byUser end
+    for userId in pairs(byUser) do byUser[userId] = nil end
+
+    local n, aliveA, aliveB = 0, 0, 0
     for userId, mp in pairs(m.players) do
         if mp.alive and mp.connected then
             if mp.team == 2 then aliveB = aliveB + 1 else aliveA = aliveA + 1 end
         end
         local s = srcOf(userId)
-        local row = {
-            userId = userId, serverId = s,
-            name = mp.name, team = mp.team,
-            alive = mp.alive, connected = mp.connected,
-            kills = mp.kills, deaths = mp.deaths, assists = mp.assists,
-            headshots = mp.headshots, damage = math.floor(mp.damage),
-            score = mp.score, rank = mp.rankName, rankId = mp.rankId,
-            avatar = avatarFor(userId),
-            ping = s and (GetPlayerPing(s) or 0) or 0
-        }
-        out[#out + 1] = row
+
+        n = n + 1
+        local row = out[n]
+        if not row then row = {} out[n] = row end
+
+        row.userId, row.serverId = userId, s
+        row.name, row.team       = mp.name, mp.team
+        row.alive, row.connected = mp.alive, mp.connected
+        row.kills, row.deaths    = mp.kills, mp.deaths
+        row.assists, row.headshots = mp.assists, mp.headshots
+        row.damage  = math.floor(mp.damage)
+        row.score   = mp.score
+        row.rank, row.rankId = mp.rankName, mp.rankId
+        row.avatar  = avatarFor(userId)
+        row.ping    = s and (GetPlayerPing(s) or 0) or 0
+
         byUser[userId] = row
     end
+    for i = #out, n + 1, -1 do out[i] = nil end
+
     table.sort(out, byTeamThenScore)
     return out, byUser, aliveA, aliveB
 end
@@ -3317,6 +3340,7 @@ function Match.addPlayer(m, userId, team)
     if not pd then return false end
 
     Player.useMode(pd, m.mode)
+    m.teamNames = nil
 
     m.players[userId] = {
         userId    = userId,
@@ -3450,6 +3474,7 @@ function Match.createFromReady(rc)
             i = i + 1
             mp.team = i
         end
+        m.teamNames = nil
     end
 
     for a in pairs(m.players) do
@@ -3912,22 +3937,27 @@ function Match.pushHud(m, force)
 
     local board, byUser, aliveA, aliveB = playerListPayload(m)
 
-    local payload = {
-        matchId  = m.id,
-        state    = m.state,
-        round    = m.round,
-        maxRounds= m.settings.rounds,
-        scores   = { a = m.scores[1], b = m.scores[2] },
-        time     = timeLeft,
-        aliveA   = aliveA,
-        aliveB   = aliveB,
-        teamA    = teamNameFor(m, 1),
-        teamB    = teamNameFor(m, 2),
-        overtime = m.overtimeCount > 0,
-        killLimit= m.settings.killLimit,
-        ffa      = m.ffa,
-        scoreboard = board
-    }
+    local payload = m.hudPayload
+    if not payload then
+        payload = { scores = {} }
+        m.hudPayload = payload
+    end
+
+    payload.matchId   = m.id
+    payload.state     = m.state
+    payload.round     = m.round
+    payload.maxRounds = m.settings.rounds
+    payload.scores.a  = m.scores[1]
+    payload.scores.b  = m.scores[2]
+    payload.time      = timeLeft
+    payload.aliveA    = aliveA
+    payload.aliveB    = aliveB
+    payload.teamA     = teamNameFor(m, 1)
+    payload.teamB     = teamNameFor(m, 2)
+    payload.overtime  = m.overtimeCount > 0
+    payload.killLimit = m.settings.killLimit
+    payload.ffa       = m.ffa
+    payload.scoreboard = board
 
     for userId, mp in pairs(m.players) do
         local row = byUser[userId]
@@ -9946,7 +9976,7 @@ Citizen.CreateThread(function()
         acc.mm = acc.mm + dt
         if acc.mm >= Config.Matchmaking.tickInterval then
             acc.mm = 0
-            if Matchmaker.waiting() then
+            if hasQueue then
                 local ok, e = pcall(Matchmaker.tick)
                 if not ok then err('matchmaking tick failed: %s', tostring(e)) end
             end

@@ -122,7 +122,7 @@ check('  a tilted board is shorter in height than it is long',
 -- 2. what is actually drawn
 -- ==========================================================================
 POLY = {}
-M.draw(spot, 5.0)
+M.draw(spot)
 check('nothing is drawn before the texture exists', #POLY, 0)
 
 check('the board is built on demand', M.create(), true)
@@ -131,7 +131,7 @@ check('the board is built on demand', M.create(), true)
 -- lost, and a texture drawn before it is there is whatever was in memory.
 POLY = {}
 M.flush()
-M.draw(spot, 5.0)
+M.draw(spot)
 check('nothing is drawn while the page is still opening', #POLY, 0)
 check('  and nothing is sent to it either',                #SENT, 0)
 
@@ -142,7 +142,7 @@ M.flush(); M.flush()
 check('  and only once',                         #SENT, 1)
 
 POLY = {}
-M.draw(spot, 5.0)
+M.draw(spot)
 
 check('a quad is two triangles a side', #POLY, 4)
 check('  drawn from the board texture', POLY[1].txd, 'm5rp_board_txd')
@@ -190,19 +190,19 @@ check('  and it is not the same winding as the front',
 -- At heading 0 the board reads from the south, so an eye to the south gets the
 -- front pair and an eye to the north gets the back pair — never four.
 POLY = {}
-M.draw(spot, 5.0, 100.0, 190.0, 30.0)
+M.draw(spot, 100.0, 190.0, 30.0)
 check('standing in front of it draws one side only', #POLY, 2)
 check('  and it is the readable one',
       cornerOf(POLY[1], 0.0, 0.0) ~= nil, true)
 
 POLY = {}
-M.draw(spot, 5.0, 100.0, 210.0, 30.0)
+M.draw(spot, 100.0, 210.0, 30.0)
 check('standing behind it draws the other side', #POLY, 2)
 check('  which is the same quad wound the other way',
       POLY[1].p[1][1] == 100.0 + 4.0 or POLY[1].p[1][1] == 100.0 - 4.0, true)
 
 POLY = {}
-M.draw(spot, 5.0)
+M.draw(spot)
 check('with no eye given, both sides are drawn', #POLY, 4)
 
 -- the corners are eight sines and cosines; they do not change while the board
@@ -230,7 +230,7 @@ check('  and the board really did turn', before[1] ~= after[1], true)
 M.park()
 check('walking away blanks the page', URLS[#URLS], 'about:blank')
 POLY = {}
-M.draw(spot, 5.0)
+M.draw(spot)
 check('  and nothing is drawn while it is parked', #POLY, 0)
 
 SENT = {}
@@ -244,7 +244,7 @@ check('  then the rows go out once more',          #SENT, 1)
 M.destroy()
 check('stopping the resource forgets the page', M.dui.ready, false)
 POLY = {}
-M.draw(spot, 5.0)
+M.draw(spot)
 check('  and nothing is drawn after that', #POLY, 0)
 
 print(fails > 0 and ('\n%d FAILED of %d'):format(fails, checks)
