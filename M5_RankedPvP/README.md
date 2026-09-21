@@ -348,6 +348,23 @@ The result is clamped between `minimumGain/maximumGain` and
 MMR is a separate hidden Elo with a confidence term, used only for matchmaking
 and visible to staff (`Config.MMR.visibleTo`).
 
+### One ladder per mode
+
+`Config.RankPools.perMode` is on by default, so 1v1, 2v2 and 5v5 are **separate
+ladders**. Radiant at 1v1 says nothing about 2v2: until you play it you are
+Unranked there, with no row on that ladder at all. `shared` puts several modes
+on one ladder (`['tdm'] = 'objective'`), and `perMode = false` puts everything
+on `default`.
+
+The menu's **Leaderboard** tabs are those ladders: each tab lists everyone
+holding RP in that mode, highest first, and the card on the left shows **your**
+rank on the ladder you are looking at — not the one you are best at. A tab with
+nothing under it means that ladder is genuinely empty, which on a new server it
+is; the demo SQL in [7f](#ten-made-up-players-to-see-the-board-at-all--m5_rankedpvp_board_demosql)
+fills it. Placement is not a gate on being listed: a player mid-placement shows
+with their real RP and an Unranked badge, because hiding everyone until they
+finish makes a new server's leaderboard look broken rather than empty.
+
 ---
 
 ## 7. Commands
@@ -947,6 +964,13 @@ already connected straight away, and anyone who joins later when they load in.
 Nobody has to restart and nothing has to be copied into `Config_Client.lua`;
 the spots in the config are only the starting point for a server that has never
 placed one. **Reset** puts everybody back on those config spots.
+
+It is read back on the next start and cleaned the same way it was cleaned on
+the way in, so a row that has been hand-edited into something unusable is
+dropped and the config spots are used rather than leaving the board nowhere. If
+the write did not land — the table missing, the database user unable to write
+to it — the editor says so on screen instead of reporting a save, because the
+board looks placed either way until the restart that loses it.
 
 If the board is nowhere to be seen, it is almost always one of three things,
 in this order: nobody has placed it and you are not standing at the example

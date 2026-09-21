@@ -2124,6 +2124,13 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 .brow .who .tier svg{width:17px;height:17px;flex:none}
 .brow .who .av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:12px;
   font-weight:700;background:var(--panel-3);color:#fff;flex:none}
+/* both leaderboard portraits: the picture over the initial, the initial left
+   underneath so a picture that will not load reveals the letter again */
+.lb-me .av,.brow .who .av{position:relative;overflow:hidden}
+.lb-me .av .ini,.brow .who .av .ini{display:grid;place-items:center;width:100%;height:100%;
+  font-weight:700;color:#fff}
+.lb-me .av img,.brow .who .av img{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;border-radius:inherit;display:block}
 .brow .who b{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brow.top1 .who b{color:var(--red)}
 .lb-foot{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px;

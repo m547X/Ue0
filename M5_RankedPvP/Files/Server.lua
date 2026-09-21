@@ -7374,7 +7374,8 @@ local function decorateRow(row, showMMR)
         hsPercent = kills > 0 and round((hs / kills) * 100, 1) or 0,
         mvp       = tonumber(row.mvp) or 0,
         streak    = tonumber(row.win_streak) or 0,
-        level     = tonumber(row.level) or 1
+        level     = tonumber(row.level) or 1,
+        avatar    = avatarFor(tonumber(row.user_id) or 0)
     }
 end
 
@@ -7391,7 +7392,7 @@ function Board.global(page, showMMR, pool)
                                 LEFT JOIN m5_players p ON p.user_id = r.user_id
                                 LEFT JOIN m5_player_stats s ON s.user_id = r.user_id AND s.season_id = r.season_id
                                 LEFT JOIN m5_player_mmr m ON m.user_id = r.user_id AND m.season_id = r.season_id AND m.mode = r.mode
-                                WHERE r.season_id = ? AND r.mode = ? AND r.placement_done = 1
+                                WHERE r.season_id = ? AND r.mode = ?
                                 ORDER BY r.rp DESC, s.wins DESC
                                 LIMIT ? OFFSET ?]], { Season.id(), pool, size, offset }) or {}
         local out = {}
@@ -7774,11 +7775,23 @@ end
 WorldBoard = { rows = {}, builtAt = 0, pool = nil, layout = nil }
 
 function WorldBoard.loadLayout()
-    local row = DB.single('SELECT layout FROM m5_world_board WHERE id = 1')
-    WorldBoard.layout = row and jsonDecode(row.layout, nil) or nil
-    if WorldBoard.layout then
+    local row    = DB.single('SELECT layout FROM m5_world_board WHERE id = 1')
+    local stored = row and row.layout
+
+    local clean = nil
+    if type(stored) == 'string' and stored ~= '' then
+        clean = WorldBoard.sanitiseLayout(jsonDecode(stored, nil))
+    end
+
+    WorldBoard.layout = clean
+
+    if clean then
         log('world board layout loaded (%d screens, %d podium spots)',
-            #(WorldBoard.layout.screens or {}), #(WorldBoard.layout.podium or {}))
+            #(clean.screens or {}), #(clean.podium or {}))
+    elseif stored ~= nil then
+        err('there is a saved world board layout in m5_world_board but it could '
+         .. 'not be read, so the spots in Config_Client.lua are being used instead. '
+         .. 'Place it again with /pvpboard.')
     end
 end
 
@@ -7860,6 +7873,17 @@ function WorldBoard.saveLayout(userId, raw)
         { jsonEncode(clean), userId, sqlDate(now()) })
 
     WorldBoard.push()
+
+    local back = DB.scalar('SELECT layout FROM m5_world_board WHERE id = 1')
+    if type(back) ~= 'string' or back == '' then
+        err('the world board layout did not save: m5_world_board is still empty '
+         .. 'after writing to it. Check that the table exists and that the '
+         .. 'database user may write to it.')
+        return false, 'The board is placed for now, but it did NOT save — it '
+                   .. 'will be gone when the server restarts. The server console '
+                   .. 'says why.'
+    end
+
     return true
 end
 
@@ -9254,7 +9278,7 @@ RegisterNetEvent('m5rp:sv:fetch', function(what, data)
         elseif board == 'friends' then
             rows = Board.recent(pd.userId, showMMR)
         elseif mode then
-            rows = Board.byMode(mode, page, showMMR)
+            rows = Board.global(page, showMMR, Player.poolOf(mode))
             mine = Board.modeStats(pd.userId, mode)
         else
             rows = Board.global(page, showMMR, Player.poolOf(data.mode))

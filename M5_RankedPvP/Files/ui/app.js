@@ -2118,11 +2118,17 @@ function renderBoard(d) {
   const modeCfg = ((S.boot && S.boot.modes) || []).find((m) => m.id === S.lb.mode);
   const p = S.boot && S.boot.player;
 
+  /* The rank beside the mode has to be the rank on THAT mode's ladder. It used
+     to read straight off the boot payload, which carries the default ladder —
+     so a player who is Radiant at 1v1 and has never played 2v2 was shown as
+     "Radiant · 2V2" on every tab. */
+  const mineForMode = p ? playerForMode(S.lb.mode) : null;
+
   $('lb-me').innerHTML = p ? `
-    <div class="av">${esc(initial(p.name))}</div>
+    <div class="av">${avatarInner(p)}</div>
     <div class="who">
       <b>${esc(p.name)} [${p.userId}]</b>
-      <span>${crestInline(p.tier, p.rankColor)} ${esc(p.rank)} · ${esc((modeCfg && modeCfg.label) || S.lb.mode)}</span>
+      <span>${crestInline(mineForMode.tier, mineForMode.rankColor)} ${esc(tx(mineForMode.rank || 'Unranked'))} · ${esc((modeCfg && modeCfg.label) || S.lb.mode)}</span>
     </div>` : '';
 
   const st = d.stats;
@@ -2136,14 +2142,20 @@ function renderBoard(d) {
 
   const body = $('lb-body');
   body.innerHTML = '';
-  if (!rows.length) { body.appendChild(el('div', 'empty', 'NO RANKED MATCHES IN THIS MODE YET')); return; }
+  /* The board lists the ladder, so anybody with RP in this mode is on it
+     whether or not they have played recently. Nothing here means the ladder is
+     genuinely empty, not that the matches have aged out. */
+  if (!rows.length) {
+    body.appendChild(el('div', 'empty', tx('NOBODY IS ON THIS LADDER YET')));
+    return;
+  }
 
   rows.forEach((r) => {
     const row = el('div', 'brow' + (r.position === 1 ? ' top1' : '') + (r.userId === me ? ' you' : ''), `
       <span class="pos">${r.position}</span>
       <span class="who">
         <span class="tier" style="color:${r.rankColor}">${crestInline(r.tier, r.rankColor)}${esc(r.rank)}</span>
-        <span class="av">${esc(initial(r.name))}</span>
+        <span class="av">${avatarInner(r)}</span>
         <b>${esc(r.name)}</b>
       </span>
       <span>${num(r.points !== undefined ? r.points : r.rp)}</span>
