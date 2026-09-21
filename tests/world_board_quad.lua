@@ -35,7 +35,8 @@ ENV.Config = { WorldBoard = { screens = { textureWidth = 1280, textureHeight = 7
 ENV.WB = { rows = {}, season = 'SEASON 1' }
 ENV.vec3 = function(p) return { x = p.x + 0.0, y = p.y + 0.0, z = p.z + 0.0 } end
 ENV.json = { encode = function(t) return t end }
-ENV.ms = function() return 0 end
+CLOCK = 0
+ENV.ms = function() return CLOCK end
 ENV.GetCurrentResourceName = function() return 'M5_RankedPvP' end
 ENV.CreateDui = function() return 1 end
 ENV.GetDuiHandle = function() return 'handle' end
@@ -134,6 +135,18 @@ M.flush()
 M.draw(spot)
 check('nothing is drawn while the page is still opening', #POLY, 0)
 check('  and nothing is sent to it either',                #SENT, 0)
+
+-- But it cannot wait for ever. A browser that never reports itself available —
+-- and there is no way to tell that apart from one that is merely slow — used
+-- to mean a board that was never drawn at all, which looks exactly like a
+-- board that was never placed. After a few seconds it is drawn regardless:
+-- blank is visible and can be reasoned about, invisible cannot.
+POLY = {}
+CLOCK = 10000
+M.draw(spot)
+check('a page that never opens still gets a board', #POLY > 0, true)
+check('  and still nothing has been sent to it',    #SENT, 0)
+CLOCK = 0
 
 AVAIL = true
 M.flush()

@@ -2579,10 +2579,14 @@ local DUI = {
     avail   = false,
     dirty   = false,
     msg     = nil,
+    liveAt  = 0,
+    warned  = false,
     w       = 1280,
     h       = 720,
     lastKey = ''
 }
+
+local DUI_GRACE = 4000
 
 local function duiSize()
     local sc = (Config.WorldBoard or {}).screens or {}
@@ -2632,11 +2636,14 @@ local function duiPush()
 end
 
 local function duiFlush()
-    if not DUI.dirty or not DUI.live or not DUI.obj or not DUI.msg then return end
+    if not DUI.live or not DUI.obj then return end
+
     if not DUI.avail then
         if not IsDuiAvailable(DUI.obj) then return end
         DUI.avail = true
     end
+
+    if not DUI.dirty or not DUI.msg then return end
     SendDuiMessage(DUI.obj, DUI.msg)
     DUI.dirty = false
 end
@@ -2658,6 +2665,7 @@ local function duiWake()
     SetDuiUrl(DUI.obj, duiUrl())
     DUI.live    = true
     DUI.avail   = false
+    DUI.liveAt  = ms()
     DUI.lastKey = ''
     duiPush()
 end
@@ -2693,6 +2701,7 @@ local function duiCreate()
     CreateRuntimeTextureFromDuiHandle(DUI.txdObj, DUI.tex, DUI.handle)
 
     DUI.ready, DUI.live, DUI.avail = true, true, false
+    DUI.liveAt  = ms()
     DUI.lastKey = ''
     duiPush()
     return true
@@ -2760,7 +2769,8 @@ local function screenCorners(spot)
 end
 
 local function drawScreen(spot, ex, ey, ez)
-    if not DUI.ready or not DUI.live or not DUI.avail then return end
+    if not DUI.ready or not DUI.live then return end
+    if not DUI.avail and (ms() - (DUI.liveAt or 0)) < DUI_GRACE then return end
 
     local a = math.floor(tonumber(spot.opacity) or 255)
     local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(spot)
@@ -3892,6 +3902,61 @@ RegisterNUICallback('boardEdit', function(data, cb)
     cb('ok')
 end)
 
+local function wbReport()
+    local me = GetEntityCoords(playerPed())
+    local l  = WB.edit or wbLayout() or {}
+    local screens = l.screens or {}
+
+    print('')
+    print('[M5RP] ---- world board ----')
+    print(('  resource      : %s'):format(GetCurrentResourceName()))
+    print(('  page url      : %s'):format(duiUrl()))
+    print(('  config on     : %s'):format(tostring(wbOn())))
+    print(('  server said   : %s'):format(
+        WB.off and 'SWITCHED OFF' or (WB.ready and 'rows received' or 'nothing yet')))
+    print(('  rows          : %d   season %s   asks %d'):format(
+        #(WB.rows or {}), tostring(WB.season), WB.asks or 0))
+    print(('  layout        : %s   screens %d   podium %d'):format(
+        WB.layout and 'saved on the server' or 'from Config_Client.lua',
+        #screens, #(l.podium or {})))
+    print(('  dui           : made %s  ready %s  live %s  page-open %s  waiting-to-send %s'):format(
+        tostring(DUI.made), tostring(DUI.ready), tostring(DUI.live),
+        tostring(DUI.avail), tostring(DUI.dirty)))
+    print(('  texture       : %s / %s   %dx%d'):format(
+        tostring(DUI.txd), tostring(DUI.tex), DUI.w, DUI.h))
+
+    if #screens == 0 then
+        print('  NO SCREENS in the layout — nothing can be drawn.')
+    end
+
+    for i = 1, #screens do
+        local s = screens[i]
+        local p = s.pos or {}
+        local dx = (tonumber(p.x) or 0) - me.x
+        local dy = (tonumber(p.y) or 0) - me.y
+        local dz = (tonumber(p.z) or 0) - me.z
+        local d  = math.sqrt(dx * dx + dy * dy + dz * dz)
+        local far = tonumber(s.distance) or 35.0
+        local onScreen = World3dToScreen2d(tonumber(p.x) or 0.0,
+                                           tonumber(p.y) or 0.0,
+                                           tonumber(p.z) or 0.0)
+        print(('  screen %d      : %.2f %.2f %.2f  h %.0f  w %.1fm  on %s'):format(
+            i, tonumber(p.x) or 0, tonumber(p.y) or 0, tonumber(p.z) or 0,
+            tonumber(s.h) or 0, tonumber(s.width) or 0, tostring(s.enabled ~= false)))
+        print(('                  you are %.1fm away, seen from %.0fm -> %s, in view -> %s'):format(
+            d, far, d <= far and 'IN RANGE' or 'TOO FAR', tostring(onScreen)))
+    end
+
+    print('[M5RP] ---------------------')
+    print('')
+end
+
 if Config.ClientCommands.board and Config.ClientCommands.board.enabled then
-    RegisterCommand(Config.ClientCommands.board.name, wbEditOpen, false)
+    RegisterCommand(Config.ClientCommands.board.name, function(_, args)
+        if args and args[1] and tostring(args[1]):lower() == 'status' then
+            wbReport()
+            return
+        end
+        wbEditOpen()
+    end, false)
 end

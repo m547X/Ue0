@@ -970,6 +970,28 @@ whether you are inside its own SEEN FROM distance**, whether the page has
 finished loading, and whether you are looking at a placed layout or at the
 config spots. A red entry there is the answer.
 
+### When it is still not there — `/pvpboard status`
+
+The same command that opens the editor, with `status` after it, prints the
+whole chain to F8 and stops the guessing:
+
+```
+/pvpboard status
+```
+
+It names the resource and the `nui://` URL the page is loaded from, whether the
+client config has the board on, what the server has said (rows, nothing yet, or
+switched off) and how many times it has been asked, whether the layout came
+from the database or from `Config_Client.lua`, the state of the browser and the
+runtime texture, and then **for every screen**: where it is, how far you are
+standing from it, whether that is inside its own view distance, and whether its
+centre is actually on your screen this frame.
+
+One of those lines is always the answer. `NO SCREENS in the layout` means
+nothing can be drawn at all; `TOO FAR` means the panel exists and you are
+outside `SEEN FROM`; `made false` means the page was never built, and the
+console will have said why.
+
 ### Silence and "off" are different answers
 
 Switched off on the server (`Config.WorldBoard.enabled = false` in
