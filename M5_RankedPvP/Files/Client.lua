@@ -2452,6 +2452,7 @@ end)
 
 local WB = {
     ready   = false,
+    off     = false,
     rows    = {},
     season  = nil,
     peds    = {},
@@ -2661,6 +2662,17 @@ local function duiWake()
     duiPush()
 end
 
+local function duiFailed(why)
+    if DUI.warned then return false end
+    DUI.warned = true
+    if not (Config.Console and Config.Console.errors == false) then
+        print(('^1[M5RP][error] the leaderboard page could not be built (%s), so '
+            .. 'the board will be an empty outline. Check that Files/ui/board.html '
+            .. 'is listed in the files block of fxmanifest.lua.^7'):format(why))
+    end
+    return false
+end
+
 local function duiCreate()
     if DUI.made then
         if DUI.ready and not DUI.live then duiWake() end
@@ -2670,13 +2682,13 @@ local function duiCreate()
 
     DUI.w, DUI.h = duiSize()
     DUI.obj = CreateDui(duiUrl(), DUI.w, DUI.h)
-    if not DUI.obj then return false end
+    if not DUI.obj then return duiFailed('CreateDui') end
 
     DUI.handle = GetDuiHandle(DUI.obj)
-    if not DUI.handle then return false end
+    if not DUI.handle then return duiFailed('GetDuiHandle') end
 
     DUI.txdObj = duiMakeTxd()
-    if not DUI.txdObj then return false end
+    if not DUI.txdObj then return duiFailed('CreateRuntimeTxd') end
 
     CreateRuntimeTextureFromDuiHandle(DUI.txdObj, DUI.tex, DUI.handle)
 
@@ -2869,6 +2881,15 @@ end
 
 RegisterNetEvent('m5rp:cl:worldBoard', function(payload)
     if not payload then return end
+
+    if payload.off then
+        WB.off, WB.ready = true, false
+        duiPark()
+        wbDespawn()
+        return
+    end
+
+    WB.off    = false
     WB.ready  = true
     WB.rows   = payload.rows or {}
     WB.season = payload.season
@@ -2896,7 +2917,7 @@ local WB_ASK_EVERY = 5000
 function wbTick(me, podiumAcc)
     local sleep = WB_FAR
 
-    if not WB.ready then return sleep, podiumAcc end
+    if WB.off then return sleep, podiumAcc end
 
     local screens = wbScreens()
     local anyNear = false
@@ -3004,7 +3025,7 @@ Citizen.CreateThread(function()
     while true do
         local sleep = WB_FAR
 
-        if not WB.ready then
+        if not WB.ready and not WB.off then
             local t = ms()
             if t >= (WB.askAt or 0) then
                 local ped = playerPed()
@@ -3097,6 +3118,7 @@ local function wbEditStatus()
 
     return {
         ready   = WB.ready == true,
+        off     = WB.off == true,
         rows    = #(WB.rows or {}),
         page    = DUI.live == true and DUI.avail == true,
         placed  = WB.layout ~= nil,

@@ -970,6 +970,22 @@ whether you are inside its own SEEN FROM distance**, whether the page has
 finished loading, and whether you are looking at a placed layout or at the
 config spots. A red entry there is the answer.
 
+### Silence and "off" are different answers
+
+Switched off on the server (`Config.WorldBoard.enabled = false` in
+**Config_Server.lua**) is said out loud: the client is told, and draws nothing
+on purpose.
+
+Everything else is silence — the question reached the server before the
+player's profile had loaded, the event was lost, the server errored — and
+silence now draws the board anyway, empty, with **NO RANKED PLAYERS YET** on
+it. An empty board is visible and can be walked up to; a board that draws
+nothing looks identical to one that was never placed, and that is the state
+that costs an afternoon. The client keeps asking every five seconds until it
+gets an answer and says so in F8 if six tries go by with none, so a board
+showing an empty table for more than a moment means the rows are not arriving,
+not that nobody is on the ladder.
+
 **Saving places it for the whole server, not for you.** The layout goes into
 `m5_world_board`, and every player is sent it with the standings — the ones
 already connected straight away, and anyone who joins later when they load in.

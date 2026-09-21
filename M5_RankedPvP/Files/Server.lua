@@ -9040,22 +9040,26 @@ end)
 
 RegisterNetEvent('m5rp:sv:worldBoard', function(pedModel)
     local src = source
-    local userId = SrcToUser[src]
-    if not userId then return end
 
-    local hash = tonumber(pedModel)
-    if hash and hash ~= 0 then
-        local pd = Players[userId]
-        if pd and pd.pedModel ~= hash then
-            pd.pedModel = hash
-            DB.update('UPDATE m5_players SET ped_model = ? WHERE user_id = ?', { hash, userId })
+    if not WorldBoard.on() then
+        TriggerClientEvent('m5rp:cl:worldBoard', src, { off = true })
+        return
+    end
+
+    local userId = SrcToUser[src]
+    if userId then
+        local hash = tonumber(pedModel)
+        if hash and hash ~= 0 then
+            local pd = Players[userId]
+            if pd and pd.pedModel ~= hash then
+                pd.pedModel = hash
+                DB.update('UPDATE m5_players SET ped_model = ? WHERE user_id = ?', { hash, userId })
+            end
         end
     end
 
-    if WorldBoard.on() then
-        if #WorldBoard.rows == 0 then WorldBoard.build() end
-        WorldBoard.push(src)
-    end
+    if #WorldBoard.rows == 0 then WorldBoard.build() end
+    WorldBoard.push(src)
 end)
 
 RegisterNetEvent('m5rp:sv:queue', function(action, mode, autoFill)

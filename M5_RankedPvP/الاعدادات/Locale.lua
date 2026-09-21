@@ -90,6 +90,10 @@ Locale.ar = {
     --   الصفحة   = صفحة board.html فتحت بالذاكرة ولا لا
     ['ROWS FROM THE SERVER']      = 'صفوف من السيرفر',
     ['WAITING FOR THE SERVER']    = 'ننتظر رد السيرفر',
+    -- السيرفر قال صراحة إن اللوحة مطفية عنده (Config.WorldBoard.enabled = false
+    -- بـ Config_Server.lua). هذا جواب، مو سكوت — والسكوت شي ثاني: وقت السكوت
+    -- تنرسم اللوحة فاضية عشان تشوفها، ووقت هذا ما ينرسم شي بقصد.
+    ['SWITCHED OFF ON THE SERVER'] = 'مطفية بكونفيق السيرفر',
     ['SCREENS']                   = 'الشاشات',
     ['NEAREST SCREEN']            = 'أقرب شاشة',
     ['NO SCREEN TO WALK TO']      = 'ما فيه شاشة مفعّلة',

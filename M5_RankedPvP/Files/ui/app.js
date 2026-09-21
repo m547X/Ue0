@@ -1555,9 +1555,16 @@ function beStatus(st) {
     `<span class="be-st ${ok ? 'ok' : 'no'}">${ok ? '✓' : '✕'} ${esc(text)}</span>`;
 
   const bits = [];
-  bits.push(line(st.ready, st.ready
-    ? `${tx('ROWS FROM THE SERVER')}: ${st.rows}`
-    : tx('WAITING FOR THE SERVER')));
+  /* Off on the server is a different answer from silence, and only one of them
+     is a problem: the server says so out loud, and then nothing is drawn on
+     purpose. Silence draws an empty board instead, so it can be seen. */
+  if (st.off) {
+    bits.push(line(false, tx('SWITCHED OFF ON THE SERVER')));
+  } else {
+    bits.push(line(st.ready, st.ready
+      ? `${tx('ROWS FROM THE SERVER')}: ${st.rows}`
+      : tx('WAITING FOR THE SERVER')));
+  }
   bits.push(line(st.screens > 0, `${tx('SCREENS')}: ${st.screens}`));
 
   if (st.nearest === undefined || st.nearest === null) {

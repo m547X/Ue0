@@ -160,15 +160,31 @@ end
 -- A fresh server has no qualified players, and this used to return before
 -- drawing anything — so the spot was simply empty and read as broken rather
 -- than as an empty table.
-WB.ready, WB.rows = false, {}
-local sleep = tick(0)
-check('before the server has said anything, nothing is drawn', DRAWS, 0)
-check('  and the thread sleeps',                               sleep, 2000)
-
 WB.ready, WB.rows = true, {}
-sleep = tick(0)
+local sleep = tick(0)
 check('a board with no players still draws its frame', DRAWS > 0, true)
 check('  and runs at frame rate while you look at it', sleep, 0)
+
+-- Silence is not the same as "no board". If the server has not answered — the
+-- question arrived before the player's profile loaded, the event was lost, the
+-- server errored — the board used to draw nothing at all: no panel, no reason
+-- given, and the editor showing an outline around thin air. It draws the empty
+-- page now, which is visible and says NO RANKED PLAYERS YET on it.
+WB.ready, WB.rows, WB.off = false, {}, false
+sleep = tick(0)
+check('silence from the server still draws the board', DRAWS > 0, true)
+
+-- Being switched off on the server IS an answer, and the only one that means
+-- draw nothing. The server says it out loud rather than going quiet, so the
+-- two cases cannot be confused.
+WB.off = true
+sleep = tick(0)
+check('switched off on the server draws nothing', DRAWS, 0)
+check('  and the thread goes back to sleep',      sleep, 2000)
+check('the client stops asking once it is told no',
+      CL:find('if not WB.ready and not WB.off then', 1, true) ~= nil, true)
+
+WB.ready, WB.off = true, false
 
 -- ==========================================================================
 -- 1. what it costs when nobody is near it
@@ -486,7 +502,7 @@ check('  and the board is back where the config puts it', DRAWS > 0, true)
 local askBlock = CL:match('while true do%s*\n%s*local sleep = WB_FAR.-Citizen%.Wait%(sleep%)')
 check('the ask loop is in the file', askBlock ~= nil, true)
 check('  it keeps asking until the server answers',
-      askBlock:find('if not WB.ready then', 1, true) ~= nil, true)
+      askBlock:find('if not WB.ready and not WB.off then', 1, true) ~= nil, true)
 check('  on a timer rather than every frame',
       askBlock:find('WB_ASK_EVERY', 1, true) ~= nil, true)
 check('  and says so out loud if the answer never comes',
