@@ -2011,6 +2011,7 @@ function Penalty.apply(userId, kind, matchId, preLive)
 end
 
 local Store
+local avatarFor
 
 local Parties = {}
 local Invites  = {}
@@ -2035,7 +2036,8 @@ local function partyPayload(party)
                 leader = (uidv == party.leader),
                 ready  = party.ready[uidv] == true,
                 state  = mpd.state,
-                cosmetics = Store.cosmetics(uidv)
+                cosmetics = Store.cosmetics(uidv),
+                avatar = avatarFor(uidv)
             }
         end
     end
@@ -3125,7 +3127,7 @@ local function customPortraitFor(userId)
     return Store.customImage(userId, 'portrait')
 end
 
-local function avatarFor(userId, plain)
+function avatarFor(userId, plain)
     if not plain then
         local granted = customPortraitFor(userId)
         if granted then return granted end
@@ -9836,6 +9838,11 @@ AddEventHandler('vRP:playerSpawn', function(user_id, source, first_spawn)
             })
         end
         TriggerClientEvent('m5rp:cl:boot', src, Server_BootPayload(pd))
+
+        if WorldBoard.on() then
+            if #WorldBoard.rows == 0 then WorldBoard.build() end
+            WorldBoard.push(src)
+        end
     end)
 end)
 

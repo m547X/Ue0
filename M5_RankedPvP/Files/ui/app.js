@@ -877,6 +877,18 @@ function renderSlots() {
     const avVars = frameVars(cos && cos.avatar);
     const fxVars = cosmeticVars(cos);
 
+    /* The player's picture, the same one the server resolved for every other
+       avatar in the interface. It lies over the initial rather than replacing
+       it, so a picture that will not load reveals the letter again instead of
+       leaving a hole. Your own seat can read it off the boot payload, which is
+       there before the party push arrives. */
+    const avSrc = imgUrl(m.avatar
+      || (isMe && p && p.avatar)
+      || '');
+    const avImg = avSrc
+      ? `<img class="slot-pic" src="${esc(avSrc)}" alt="" loading="lazy" onerror="this.remove()"/>`
+      : '';
+
     /* The plate is tinted by the player's tier, so the whole bottom of the
        card carries their rank colour rather than the accent. */
     const plateTier = color ? ` style="--tier:${esc(color)}"` : '';
@@ -911,7 +923,7 @@ function renderSlots() {
       ${effectLayers(cos && cos.effect)}
       ${decoLayer(cos && cos.frame, 'card')}
       <div class="slot-top">
-        <div class="slot-av${avFx}"${avVars ? ` style="${avVars}"` : ''}>${esc(initial(m.name))}${avDeco}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
+        <div class="slot-av${avFx}"${avVars ? ` style="${avVars}"` : ''}>${esc(initial(m.name))}${avImg}${avDeco}${m.leader ? '<span class="slot-flag">★</span>' : ''}</div>
         <div class="slot-name">${esc(m.name)}${m.userId ? ` [${m.userId}]` : ''}</div>
         ${cos && cos.title
           ? `<div class="slot-title"${cos.titleColor ? ` style="color:${esc(cos.titleColor)}"` : ''}>${esc(String(cos.title).toUpperCase())}</div>`
@@ -3659,6 +3671,12 @@ function renderShowcase(d) {
   side(2, 'sc-list-b');
 
   host.classList.remove('hidden');
+  /* The match HUD belongs to the round, not to the wait before it: a score of
+     0-0, a clock at 0:00 and an empty magazine sitting over the map card say
+     nothing and cover it. It is put away for as long as this is up, with a
+     class of its own so whatever else decided the HUD was hidden still holds
+     when this one lifts. */
+  hudMuted(true);
   clearTimeout(renderShowcase._t);
   renderShowcase._t = setTimeout(hideShowcase, (cfg.duration || 8) * 1000);
 }
@@ -3666,6 +3684,12 @@ function hideShowcase() {
   clearTimeout(renderShowcase._t);
   const host = $('showcase');
   if (host) host.classList.add('hidden');
+  hudMuted(false);
+}
+/** Hides the match HUD without touching whether it is meant to be shown. */
+function hudMuted(on) {
+  const hud = $('hud');
+  if (hud) hud.classList.toggle('muted', !!on);
 }
 
 /** Name, portrait and id on the player card — fixed for the whole match. */

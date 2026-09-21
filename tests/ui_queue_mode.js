@@ -225,6 +225,104 @@ const party = (ids, autoMode) => ({
   check('  you are still on the centre line', r.offCentre <= 1, true);
   check('  and the far end of the row is reachable', r.firstReachable, true);
 
+  // ======================================================================
+  // 5. the picture on a lobby seat
+  // ======================================================================
+  // Every other avatar in the interface draws the player's picture over their
+  // initial. The lobby seat drew only the initial — there was no <img> in the
+  // markup at all and the party payload carried no avatar to put in one — so
+  // the biggest portrait on screen was the one place that never showed a face.
+  const seats = async (members) => {
+    await page.evaluate((m) => {
+      window.__send({ action: 'party', data: { id: 'p1', leader: 1, members: m } });
+    }, members);
+    await page.waitForTimeout(120);
+    return page.evaluate(() => Array.from(
+      document.querySelectorAll('#party-slots .slot-av')).map((n) => {
+        const img = n.querySelector('img');
+        const box = n.getBoundingClientRect();
+        const ib  = img && img.getBoundingClientRect();
+        return {
+          src: img ? img.getAttribute('src') : null,
+          initial: (n.childNodes[0] || {}).textContent || '',
+          // it has to cover the letter, not sit next to it
+          covers: !!ib && Math.round(ib.width) === Math.round(box.width)
+                       && Math.round(ib.height) === Math.round(box.height),
+          round: !!img && getComputedStyle(img).borderRadius !== '0px'
+        };
+      }));
+  };
+
+  // a real one-pixel image, so the picture actually loads here rather than
+  // leaving a failed request behind for the no-errors check at the end
+  const PIX = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+
+  let s = await seats([
+    { userId: 1, name: 'ME', rankId: 2, leader: true, ready: true, avatar: PIX },
+    { userId: 2, name: 'OTHER', rankId: 2, ready: true, avatar: PIX + '#2' }
+  ]);
+  check('a seat draws the picture the server resolved', s[0].src, PIX);
+  check('  for the other players too', s[1].src, PIX + '#2');
+  check('  over the whole portrait',   s[0].covers, true);
+  check('  cut to the same circle',    s[0].round, true);
+  check('  with the initial still underneath as the fallback',
+        s[0].initial, 'M');
+
+  // A player with no picture at all is the old behaviour, unchanged: the
+  // letter, and no broken image icon next to it.
+  s = await seats([{ userId: 1, name: 'ME', rankId: 2, leader: true, ready: true }]);
+  check('no picture leaves the initial alone', s[0].src, null);
+  check('  and the letter is still there',     s[0].initial, 'M');
+
+  // ======================================================================
+  // 6. the map card is not shared with the match HUD
+  // ======================================================================
+  // The card that names the map and both rosters comes up before the first
+  // round. The HUD came up with it, so a score of 0-0, a clock at 0:00 and an
+  // empty magazine sat over the card saying nothing and covering it.
+  const hudShown = () => page.evaluate(() => {
+    const h = document.getElementById('hud');
+    return {
+      hidden: h.classList.contains('hidden'),
+      muted: h.classList.contains('muted'),
+      opacity: getComputedStyle(h).opacity,
+      showcase: !document.getElementById('showcase').classList.contains('hidden')
+    };
+  });
+
+  await page.evaluate(() => window.__send({ action: 'matchSetup', data: {
+    matchId: 'm1', mode: '1v1', modeLabel: '1V1',
+    map: { id: 'mc', name: 'MINECRAFT' },
+    teamNames: { 1: 'TEAM A', 2: 'TEAM B' },
+    roster: [{ userId: 1, name: 'ME', team: 1, rank: 'Gold' },
+             { userId: 2, name: 'BOT', team: 2, rank: 'Gold' }],
+    settings: { rounds: 9, roundsToWin: 5 },
+    hudCfg: { showcase: { enabled: true, duration: 8 } }
+  } }));
+  await page.waitForTimeout(120);
+  let h = await hudShown();
+  check('the map card is up', h.showcase, true);
+  check('  and the HUD is out of the way while it is', h.muted, true);
+  check('  which means it is not on screen',           h.opacity, '0');
+  check('  without being switched off',                h.hidden, false);
+
+  // Once the card goes, the HUD is back — the round is about to start.
+  await page.evaluate(() => window.hideShowcase());
+  await page.waitForTimeout(450);          // it fades back rather than snapping
+  h = await hudShown();
+  check('the card goes and the HUD comes back', h.muted, false);
+  check('  on screen again',                    h.opacity, '1');
+
+  // And a HUD that was switched off entirely stays off: stepping back for the
+  // card must not be able to turn it on.
+  await page.evaluate(() => {
+    window.__send({ action: 'hudVisible', value: false });
+    window.__send({ action: 'showcase' });
+  });
+  await page.waitForTimeout(80);
+  h = await hudShown();
+  check('a HUD switched off stays off through all of it', h.hidden, true);
+
   check('no script error the whole way through', errors, []);
 
   await browser.close();

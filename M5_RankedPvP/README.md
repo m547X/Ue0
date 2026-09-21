@@ -692,8 +692,8 @@ exports.M5_RankedPvP:getMatchInfo()
 
 ### Avatars — `Config.Avatars`
 
-Every player in the HUD and the scoreboard shows a picture. Where it comes from
-is `Config.Avatars.source`:
+Every player in the HUD, the scoreboard and the lobby seats shows a picture.
+Where it comes from is `Config.Avatars.source`:
 
 - **`'discord'`** — the real avatar of the player's linked Discord account.
   Put a bot token in `Config.Avatars.discord.botToken`; the bot needs no
@@ -940,6 +940,22 @@ dragging a panel across a plaza is not sixty clicks. **PUT IT WHERE I STAND**
 drops the panel at eye height turned back towards you, or stands a podium spot
 on the floor facing the way you face. Save writes it; cancel throws it away;
 reset asks first and then restores the config.
+
+**Saving places it for the whole server, not for you.** The layout goes into
+`m5_world_board`, and every player is sent it with the standings — the ones
+already connected straight away, and anyone who joins later when they load in.
+Nobody has to restart and nothing has to be copied into `Config_Client.lua`;
+the spots in the config are only the starting point for a server that has never
+placed one. **Reset** puts everybody back on those config spots.
+
+If the board is nowhere to be seen, it is almost always one of three things,
+in this order: nobody has placed it and you are not standing at the example
+coordinates in `Config_Client.lua`; `Config.WorldBoard.enabled` is false in
+**Config_Server.lua**, which switches it off for everyone whatever the client
+config says; or the panel is there and empty because no one is on the ladder
+yet — see the demo SQL above. The client asks the server for the rows every
+five seconds until it gets an answer, and says so in F8 if six tries go by
+with nothing.
 
 ### Moving it while you look at it
 

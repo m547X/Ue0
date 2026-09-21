@@ -73,7 +73,7 @@ local M
 do
   local a = SV:find('local function defaultAvatar()', 1, true)
   local b = SV:find('local function customPortraitFor(userId)', a, true)
-  local c = SV:find('local function avatarFor(userId, plain)', 1, true)
+  local c = SV:find('function avatarFor(userId, plain)', 1, true)
   local d = SV:find('local AvatarCache = {}', 1, true)
   assert(a and b and c, 'could not slice the avatar code')
 

@@ -90,7 +90,11 @@ FreezeEntityPosition, SetEntityCanBeDamaged, SetPedConfigFlag = noop, noop, noop
 SetEntityAsMissionEntity = noop
 RequestAnimDict, HasAnimDictLoaded, TaskPlayAnim, RemoveAnimDict = noop, function() return true end, noop, noop
 Citizen = { Wait = noop }
-RegisterNetEvent, AddEventHandler = noop, noop
+-- the net handlers are kept, so the ones the server actually calls can be
+-- called here too rather than only read
+HANDLERS = {}
+RegisterNetEvent = function(name, fn) if fn then HANDLERS[name] = fn end end
+AddEventHandler = noop
 function GetCurrentResourceName() return 'M5_RankedPvP' end
 
 -- the board is a web page painted onto a texture; the page itself is checked
@@ -126,12 +130,13 @@ Config = { UI = { colors = {} }, Brand = {}, WorldBoard = {
                         { pos = vector3(6, 0, 0), h = 0.0 } } } } }
 
 -- the slice hands back the tick and the table it keeps its rows and peds in
-local wbTick, WB, DUI
+local wbTick, WB, DUI, wbLayout
 do
   local a = CL:find('local WB = {', 1, true)
   local b = CL:find('Citizen.CreateThread(function()\n    if not wbOn() then return end', a, true)
   assert(a and b, 'could not slice the world board')
-  wbTick, WB, DUI = assert(load(CL:sub(a, b - 1) .. '\nreturn wbTick, WB, DUI', 'wb'))()
+  wbTick, WB, DUI, wbLayout =
+    assert(load(CL:sub(a, b - 1) .. '\nreturn wbTick, WB, DUI, wbLayout', 'wb'))()
 end
 
 local function rows(n)
@@ -429,6 +434,68 @@ for body in CL:gmatch("AddEventHandler%('onResourceStop'.-\nend%)") do
   if body:find('wbDespawn', 1, true) then cleansUp = true end
 end
 check('  by a stop handler', cleansUp, true)
+
+-- ==========================================================================
+-- 6. the board an admin placed is the board everybody sees
+-- ==========================================================================
+-- The editor saves the layout to the server, which keeps it and sends it to
+-- every player with the rows. For a while nobody read it off the payload, so
+-- a placed board existed only for the admin who placed it, only until they
+-- reconnected — everyone else kept the example coordinates out of the config
+-- and stood in an empty street wondering where the board was.
+local onBoard = HANDLERS['m5rp:cl:worldBoard']
+check('the client listens for the board', type(onBoard), 'function')
+
+local SAVED = {
+  screens = { { pos = { x = 300.0, y = 300.0, z = 30.0 }, title = 'PLACED',
+                enabled = true, h = 90.0, pitch = 0.0, width = 6.0,
+                rows = 10, opacity = 255, distance = 18.0 } },
+  podium = { { pos = { x = 302.0, y = 300.0, z = 29.0 }, h = 90.0 } },
+  screensEnabled = true, podiumEnabled = true, podiumDistance = 25.0
+}
+
+onBoard({ rows = rows(10), season = 'S1', layout = SAVED })
+check('a saved layout is taken off the payload', wbLayout(), SAVED)
+check('  and it is the placed board that is listed',
+      wbLayout().screens[1].title, 'PLACED')
+
+-- and it is not only stored, it is what gets drawn
+DRAWS = 0
+wbTick(vector3(0, 0, 0), 0)
+check('nothing is drawn where the config example was', DRAWS, 0)
+DRAWS = 0
+local placedSleep = select(1, wbTick(vector3(300, 300, 30), 0))
+check('the board is drawn where it was placed', DRAWS > 0, true)
+check('  and the thread wakes up for it',        placedSleep, 0)
+
+-- Resetting it in the editor sends a payload with no layout on it, and that
+-- has to put the config back rather than leave the placed one standing.
+onBoard({ rows = rows(10), season = 'S1' })
+check('a reset puts the config back', wbLayout().screens[1].title, 'TOP')
+DRAWS = 0
+wbTick(vector3(0, 0, 0), 0)
+check('  and the board is back where the config puts it', DRAWS > 0, true)
+
+-- ==========================================================================
+-- 7. asking for the rows is not a one-off
+-- ==========================================================================
+-- The client asks the server for the board a few seconds after it starts. If
+-- the player's profile has not finished loading by then the server drops the
+-- question, and asking once meant the board never appeared for that player at
+-- all — for the rest of the session, with nothing said about it.
+local askBlock = CL:match('while true do%s*\n%s*local sleep = WB_FAR.-Citizen%.Wait%(sleep%)')
+check('the ask loop is in the file', askBlock ~= nil, true)
+check('  it keeps asking until the server answers',
+      askBlock:find('if not WB.ready then', 1, true) ~= nil, true)
+check('  on a timer rather than every frame',
+      askBlock:find('WB_ASK_EVERY', 1, true) ~= nil, true)
+check('  and says so out loud if the answer never comes',
+      askBlock:find('WB.warned', 1, true) ~= nil, true)
+
+-- The server hands it over at boot as well, so a client whose question was
+-- dropped gets the board anyway without having to ask again.
+check('the server pushes the board when a player loads in',
+      SV:find('TriggerClientEvent(\'m5rp:cl:boot\', src, Server_BootPayload(pd))\n\n        if WorldBoard.on() then', 1, true) ~= nil, true)
 
 print()
 print(fails == 0 and ('ALL PASS (%d checks)'):format(checks)

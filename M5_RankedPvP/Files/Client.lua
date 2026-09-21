@@ -2457,7 +2457,9 @@ local WB = {
     peds    = {},
     pedAt   = {},
     spawned = false,
-    sent    = false,
+    askAt   = 0,
+    asks    = 0,
+    warned  = false,
     layout  = nil,
     edit    = nil,
     awayAt  = nil
@@ -2870,6 +2872,9 @@ RegisterNetEvent('m5rp:cl:worldBoard', function(payload)
     WB.ready  = true
     WB.rows   = payload.rows or {}
     WB.season = payload.season
+
+    WB.layout = payload.layout
+
     wbFormatRows()
     duiPush()
     if WB.spawned then
@@ -2886,6 +2891,7 @@ end)
 
 local WB_FAR  = 2000
 local WB_NEAR = 400
+local WB_ASK_EVERY = 5000
 
 function wbTick(me, podiumAcc)
     local sleep = WB_FAR
@@ -2998,11 +3004,24 @@ Citizen.CreateThread(function()
     while true do
         local sleep = WB_FAR
 
-        if not WB.sent then
-            local ped = playerPed()
-            if ped and ped ~= 0 and not IsPedInjured(ped) then
-                WB.sent = true
-                TriggerServerEvent('m5rp:sv:worldBoard', GetEntityModel(ped))
+        if not WB.ready then
+            local t = ms()
+            if t >= (WB.askAt or 0) then
+                local ped = playerPed()
+                if ped and ped ~= 0 and not IsPedInjured(ped) then
+                    WB.asks  = (WB.asks or 0) + 1
+                    WB.askAt = t + WB_ASK_EVERY
+                    TriggerServerEvent('m5rp:sv:worldBoard', GetEntityModel(ped))
+                end
+            end
+            if WB.asks and WB.asks >= 6 and not WB.warned then
+                WB.warned = true
+                if not (Config.Console and Config.Console.errors == false) then
+                    print('^1[M5RP][error] the world leaderboard asked the server '
+                        .. 'for its rows six times and got no answer, so nothing will be '
+                        .. 'drawn. Check Config.WorldBoard.enabled in Config_Server.lua, '
+                        .. 'and that the resource finished starting.^7')
+                end
             end
         end
 
