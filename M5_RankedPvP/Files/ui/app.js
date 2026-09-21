@@ -126,8 +126,120 @@ function crestSymbol(tier) {
   if (!tier || tier === 'UNRANKED') return '#hex';
   return '#hex-chev';
 }
-function crest(tier, color) {
-  return `<svg viewBox="0 0 100 100" style="color:${color || '#5A616D'}"><use href="${crestSymbol(tier)}"/></svg>`;
+/* A picture for a weapon, named after the weapon:
+ *
+ *     Files/ui/img/weapons/WEAPON_CARBINERIFLE.png
+ *
+ * Nothing has to be listed anywhere — drop the folder in and the icons appear.
+ * Whether a file is there can only be found out by asking for it, so each
+ * weapon is asked about once and the answer kept; a weapon with no picture
+ * calls nothing back and keeps the drawn silhouette it has always had.
+ */
+const WEAPON_ART = {};
+function weaponArt(name, found) {
+  if (!name) return;
+  const src = `img/weapons/${name}.png`;
+  const known = WEAPON_ART[name];
+  if (known === true) { found(src); return; }
+  if (known === false || known === 'asking') return;
+
+  WEAPON_ART[name] = 'asking';
+  const probe = new Image();
+  probe.onload  = () => { if (WEAPON_ART[name] === 'asking') WEAPON_ART[name] = true; found(src); };
+  probe.onerror = () => { if (WEAPON_ART[name] === 'asking') WEAPON_ART[name] = false; };
+  probe.src = src;
+}
+
+/** The same picture as an <img>, for the places that draw one inline.
+ *
+ *  Only once the file is known to be there. Asking for one that is not there
+ *  is a failed request per kill per weapon on a server with no artwork, which
+ *  is noise for nothing — so the first mention of a weapon starts the asking
+ *  and goes without, and every one after it has the icon.
+ */
+function weaponIcon(name) {
+  if (!name) return '';
+  if (WEAPON_ART[name] !== true) { weaponArt(name, () => {}); return ''; }
+  return `<img class="wpn-pic" src="${esc('img/weapons/' + name + '.png')}" alt="" loading="lazy"/>`;
+}
+
+/* TitleCase, the way a folder of badges is usually named: PLATINUM -> Platinum.
+   Tiers are single words in every shipped table, so there is nothing to split. */
+function tierFolder(tier) {
+  const t = String(tier || '');
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+
+/** The badge picture for a rank, if there is one.
+ *
+ *  Two ways to have one, and neither needs the other. `img` on the rank in
+ *  Config.Ranks is the explicit one and wins — any path, any folder names.
+ *  Failing that, the file is looked for where the convention puts it:
+ *
+ *      Files/ui/img/patents/<Tier>/<Tier>_<division>.png
+ *      Files/ui/img/patents/<Tier>/<Tier>.png     (tiers with no divisions)
+ *
+ *  Nothing is checked here — a path that is not there loads nothing and the
+ *  drawn crest underneath stays visible, so a half-filled folder is fine.
+ */
+const RANK_ART = {};
+
+function rankArtPath(r, tier) {
+  const t = (r && r.tier) || tier;
+  if (!t || t === 'UNRANKED') return '';
+  const folder = tierFolder(t);
+  const div = r && r.division;
+  return `img/patents/${folder}/${folder}${div ? '_' + div : ''}.png`;
+}
+
+/* A path written in the config is relative to Files/ui/img/, the way every
+   other picture in the config is — "patents/Gold/Gold_1.png" means the file in
+   the img folder, not one next to index.html. A full URL is left alone. */
+function artUrl(src) {
+  const s = String(src || '');
+  if (!s) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return s;
+  const clean = s.replace(/^\/+/, '');
+  return clean.indexOf('img/') === 0 ? clean : 'img/' + clean;
+}
+
+function rankArt(rankId, tier) {
+  const r = ((S.boot && S.boot.ranks) || []).find((x) => x.id === rankId);
+  if (r && r.img) return artUrl(r.img);
+
+  /* The conventional path is only used once the file is known to be there.
+     Every rank is asked about once when the boot payload lands, long before
+     any crest is on screen, so this is settled by the time it is read. */
+  const path = rankArtPath(r, tier);
+  return (path && RANK_ART[path] === true) ? path : '';
+}
+
+/** Asks once, at boot, which badge files exist. */
+function probeRankArt(ranks) {
+  (ranks || []).forEach((r) => {
+    if (r.img) return;                       // named outright, nothing to look for
+    const path = rankArtPath(r);
+    if (!path || RANK_ART[path] !== undefined) return;
+    RANK_ART[path] = 'asking';
+    const probe = new Image();
+    // only ever answers the question it asked: a value set since then stands
+    probe.onload  = () => { if (RANK_ART[path] === 'asking') RANK_ART[path] = true; };
+    probe.onerror = () => { if (RANK_ART[path] === 'asking') RANK_ART[path] = false; };
+    probe.src = path;
+  });
+}
+
+/* The drawn crest is always there. A badge picture is laid over it and takes
+   itself back out if it will not load, so a rank with no artwork keeps the
+   shape it has always had rather than leaving a hole. */
+function crest(tier, color, rankId) {
+  const svg = `<svg viewBox="0 0 100 100" style="color:${color || '#5A616D'}"><use href="${crestSymbol(tier)}"/></svg>`;
+  const src = rankArt(rankId, tier);
+  if (!src) return svg;
+  /* The box is what makes the picture sit ON the crest rather than beside it,
+     and it takes the size of whichever slot the crest was going into. */
+  return `<span class="crestbox">${svg}`
+       + `<img class="crest-pic" src="${esc(src)}" alt="" loading="lazy" onerror="this.remove()"/></span>`;
 }
 /** Tinted plate derived from the map id, used when there is no artwork. */
 function mapGradient(id, forced) {
@@ -519,13 +631,16 @@ function renderIdentityAvatar() {
 function renderIdentityRank() {
   const p = playerForMode();
   $('id-rankname').textContent = tx(p.rank || 'Unranked');
-  $('id-crest').innerHTML = crest(p.tier, p.rankColor);
+  $('id-crest').innerHTML = crest(p.tier, p.rankColor, p.rankId);
 }
 
 /* ============================================================ BOOT RENDER */
 function renderBoot(data) {
   S.boot = data;
   const p = data.player;
+
+  // which rank badges exist, asked once and long before a crest is on screen
+  probeRankArt(data.ranks);
 
   $('id-name').textContent = p.name || '—';
   $('id-initial').textContent = initial(p.name);
@@ -932,7 +1047,7 @@ function renderSlots() {
       </div>
       <div class="slot-foot">
         <div class="rankplate"${plateTier}>
-          <div class="rk-crest">${crest(tier, color)}</div>
+          <div class="rk-crest">${crest(tier, color, isMe && p ? p.rankId : m.rankId)}</div>
           <div class="rk-name">${esc(String(tx(m.rank || 'Unranked')).toUpperCase())}</div>
           <div class="rk-mode">${esc(modeLabel)}</div>
           <div class="rk-track"><i style="width:${barPct}%">${barPct > 0 ? '<b></b>' : ''}</i></div>
@@ -2169,8 +2284,8 @@ function fetchBoard() {
   post('fetch', { what: 'leaderboard', board: 'mode', mode: S.lb.mode, page: S.lb.page });
 }
 
-function crestInline(tier, color) {
-  return `<svg viewBox="0 0 100 100" style="color:${color || '#5A616D'}"><use href="${crestSymbol(tier)}"/></svg>`;
+function crestInline(tier, color, rankId) {
+  return crest(tier, color, rankId);
 }
 
 function renderBoard(d) {
@@ -2190,7 +2305,7 @@ function renderBoard(d) {
     <div class="av">${avatarInner(p)}</div>
     <div class="who">
       <b>${esc(p.name)} [${p.userId}]</b>
-      <span>${crestInline(mineForMode.tier, mineForMode.rankColor)} ${esc(tx(mineForMode.rank || 'Unranked'))} · ${esc((modeCfg && modeCfg.label) || S.lb.mode)}</span>
+      <span>${crestInline(mineForMode.tier, mineForMode.rankColor, mineForMode.rankId)} ${esc(tx(mineForMode.rank || 'Unranked'))} · ${esc((modeCfg && modeCfg.label) || S.lb.mode)}</span>
     </div>` : '';
 
   const st = d.stats;
@@ -2216,7 +2331,7 @@ function renderBoard(d) {
     const row = el('div', 'brow' + (r.position === 1 ? ' top1' : '') + (r.userId === me ? ' you' : ''), `
       <span class="pos">${r.position}</span>
       <span class="who">
-        <span class="tier" style="color:${r.rankColor}">${crestInline(r.tier, r.rankColor)}${esc(r.rank)}</span>
+        <span class="tier" style="color:${r.rankColor}">${crestInline(r.tier, r.rankColor, r.rankId)}${esc(r.rank)}</span>
         <span class="av">${avatarInner(r)}</span>
         <b>${esc(r.name)}</b>
       </span>
@@ -2253,7 +2368,7 @@ function renderProfile() {
           ${p.mmr ? `<span class="tagchip">MMR ${p.mmr}</span>` : ''}
         </div>
       </div>
-      <div class="pcrest">${crest(p.tier, p.rankColor)}</div>
+      <div class="pcrest">${crest(p.tier, p.rankColor, p.rankId)}</div>
     </div>
 
     <div class="card">
@@ -3821,11 +3936,24 @@ function renderLocalHud(d) {
     renderLocalHud._gun = raw;
     $('hud-weapon-name').textContent = raw.replace('WEAPON_', '').replace(/_/g, ' ') || '—';
 
-    // configured artwork wins; anything unlisted keeps the drawn silhouette
+    /* Configured artwork wins; otherwise the file is looked for where the
+       convention puts it, named after the weapon. A background image cannot
+       report that it failed to load, so it is checked first and the drawn
+       silhouette stays until it is known to be there. */
     const art = $('gc-art');
-    const src = imgUrl((wcfg.images || {})[raw]);
-    if (src) { art.style.backgroundImage = `url("${src}")`; art.classList.add('art'); }
-    else { art.style.backgroundImage = ''; art.classList.remove('art'); }
+    const named = imgUrl((wcfg.images || {})[raw]);
+    if (named) {
+      art.style.backgroundImage = `url("${named}")`;
+      art.classList.add('art');
+    } else {
+      art.style.backgroundImage = '';
+      art.classList.remove('art');
+      weaponArt(raw, (src) => {
+        if (renderLocalHud._gun !== raw) return;   // the weapon changed again
+        art.style.backgroundImage = `url("${src}")`;
+        art.classList.add('art');
+      });
+    }
   }
 
   const clip = d.clip || 0;
@@ -3849,7 +3977,7 @@ function addKillFeed(d) {
   const tc = (t) => (t === 1 ? 'n-a' : 'n-b');
   const node = el('div', 'kf' + (mine ? ' mine' : ''), `
     ${d.killer ? `<span class="${tc(d.killerTeam)}">${esc(d.killer)}</span>` : ''}
-    <span class="kf-w">${esc(String(d.weapon || '').replace('WEAPON_', ''))}</span>
+    <span class="kf-w">${weaponIcon(d.weapon)}${esc(String(d.weapon || '').replace('WEAPON_', ''))}</span>
     ${d.headshot ? '<span class="kf-hs"><svg><use href="#i-head"/></svg>HS</span>' : ''}
     <span class="${tc(d.victimTeam)}">${esc(d.victim)}</span>`);
   host.appendChild(node);
@@ -4229,8 +4357,8 @@ function showRankChange(p) {
   const nowTier = r.tier || tierOf(r.id);
 
   $('rank-tag').textContent = tx(up ? 'RANK UP' : 'RANK DOWN');
-  $('rank-old').innerHTML = crest(wasTier, r.beforeColor);
-  $('rank-new').innerHTML = crest(nowTier, r.color);
+  $('rank-old').innerHTML = crest(wasTier, r.beforeColor, r.beforeId);
+  $('rank-new').innerHTML = crest(nowTier, r.color, r.id);
   $('rank-old-name').textContent = String(r.before || '').toUpperCase();
   $('rank-new-name').textContent = String(r.after || '').toUpperCase();
   $('rank-rp').textContent = (p.rp && p.rp.after !== undefined)

@@ -348,6 +348,46 @@ The result is clamped between `minimumGain/maximumGain` and
 MMR is a separate hidden Elo with a confidence term, used only for matchmaking
 and visible to staff (`Config.MMR.visibleTo`).
 
+### Rank badges — `Files/ui/img/patents/`
+
+The crest beside a rank is **drawn** by the interface and needs no files at
+all. Give it artwork and the picture is laid **over** that drawing, so a folder
+you have only half filled is a normal state: the ranks with a file get it, the
+rest keep the shape they always had.
+
+Two ways to have one, and neither needs the other:
+
+```
+Files/ui/img/patents/Gold/Gold_1.png       Gold I
+Files/ui/img/patents/Gold/Gold_2.png       Gold II
+Files/ui/img/patents/Radiant/Radiant.png   a tier with no divisions
+```
+
+The folder and the file are the tier in TitleCase and the number is the
+division. Nothing is listed anywhere — the page asks once, when it boots,
+which of them exist.
+
+Or name the file on the rank itself, which wins and frees the folders to be
+called anything:
+
+```lua
+{ id = 22, tier = 'IMMORTAL', division = 0, name = 'Immortal',
+  rpRequired = 2260, color = '#E0304E', img = 'patents/Ruby/Ruby_1.png' },
+```
+
+The path is relative to `Files/ui/img/`, so `patents/Ruby/Ruby_1.png` is the
+file in that folder; a full `https://` or `nui://` URL is used as written.
+Either way the pictures must live under `Files/ui/img/`, which the `files`
+block in `fxmanifest.lua` already ships whole.
+
+### Weapon pictures — `Files/ui/img/weapons/`
+
+Same idea, named after the weapon: `weapons/WEAPON_CARBINERIFLE.png`. Drop the
+folder in and the weapon card in the HUD and the kill feed use them, with no
+list to maintain. `Config.HUD.weapon.images` still wins for any single weapon,
+which is how one oddly-named file is pointed somewhere else, and a weapon with
+no picture keeps its drawn silhouette.
+
 ### One ladder per mode
 
 `Config.RankPools.perMode` is on by default, so 1v1, 2v2 and 5v5 are **separate

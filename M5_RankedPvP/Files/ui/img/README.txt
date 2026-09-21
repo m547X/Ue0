@@ -23,5 +23,26 @@ way it was made. Square artwork with a transparent middle works best — the
 portrait shows through it. A frame's `art` is a corner spray, drawn once and
 flipped into all four corners, so it only takes the built-in drawings.
 
+Two folders are read by their name alone, with nothing to list anywhere:
+
+  weapons/        weapons/WEAPON_CARBINERIFLE.png
+                  Named after the weapon exactly as the game names it. Drop a
+                  folder of them in and the weapon card and the kill feed show
+                  them; a weapon with no file keeps its drawn silhouette.
+                  Config.HUD.weapon.images still wins for any one weapon, so a
+                  single odd name can be pointed somewhere else.
+
+  patents/        patents/Gold/Gold_1.png     rank badges
+                  patents/Radiant/Radiant.png a tier with no divisions
+                  The folder and the file are the tier name in TitleCase, and
+                  the number is the division. Or name the file yourself with
+                  `img` on the rank in Config.Ranks, which wins and lets the
+                  folders be called anything — that is how a set whose folders
+                  do not match the tier names is used.
+
+Both are asked about once and the answer kept, so a half-filled folder costs
+nothing: a rank or a weapon with no picture keeps the shape that was always
+drawn for it, and the badge is laid over that shape rather than replacing it.
+
 Nothing here is required: a missing file falls back to the drawn placeholder,
 so the map vote, the store and the weapon card all render without it.

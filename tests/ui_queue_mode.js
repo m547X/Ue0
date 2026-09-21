@@ -63,7 +63,14 @@ const party = (ids, autoMode) => ({
 
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  /* A picture that turns out not to be there is not a script error: the page
+     asks whether the optional artwork exists and carries on without it when it
+     does not, so a failed request is an answer, not a fault. */
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    if (/Failed to load resource/.test(m.text())) return;
+    errors.push(m.text());
+  });
 
   await page.addInitScript(SHIM);
   await page.goto(UI);

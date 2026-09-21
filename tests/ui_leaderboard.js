@@ -46,8 +46,8 @@ const MODES = [
 
 const RANKS = [
   { id: 0,  name: 'Unranked', tier: 'UNRANKED', color: '#5A616D', rp: 0 },
-  { id: 16, name: 'Diamond I', tier: 'DIAMOND', color: '#8E6BFF', rp: 1500 },
-  { id: 23, name: 'Radiant',  tier: 'RADIANT',  color: '#FFE9A8', rp: 2600 }
+  { id: 16, name: 'Diamond I', tier: 'DIAMOND', division: 1, color: '#8E6BFF', rp: 1500 },
+  { id: 23, name: 'Radiant',  tier: 'RADIANT',  division: 0, color: '#FFE9A8', rp: 2600 }
 ];
 
 const PIX = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
@@ -99,7 +99,14 @@ const board = (mode, rows) => ({
 
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  /* A picture that turns out not to be there is not a script error: the page
+     asks whether the optional artwork exists and carries on without it when it
+     does not, so a failed request is an answer, not a fault. */
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    if (/Failed to load resource/.test(m.text())) return;
+    errors.push(m.text());
+  });
 
   await page.addInitScript(SHIM);
   await page.goto(UI);
@@ -200,6 +207,123 @@ const board = (mode, rows) => ({
   check('an empty ladder says so', empty, 'NOBODY IS ON THIS LADDER YET');
   check('  and does not blame the match history',
         /MATCH/i.test(empty || ''), false);
+
+  // ======================================================================
+  // 5. rank badge artwork
+  // ======================================================================
+  // A rank can carry a picture, and there are two ways to have one. Neither
+  // may leave a rank without a crest: the drawn one stays underneath, so a
+  // half-filled folder of badges is a normal state and not a broken one.
+  const crestOf = (sel) => page.evaluate((s) => {
+    const box = document.querySelector(s);
+    if (!box) return null;
+    const img = box.querySelector('img.crest-pic');
+    const svg = box.querySelector('svg');
+    return { src: img ? img.getAttribute('src') : null, drawn: !!svg };
+  }, sel);
+
+  // nothing on disk: the drawn crest, and no request for a picture
+  check('with no artwork the crest is still drawn',
+        await crestOf('#lb-me .who span'), { src: null, drawn: true });
+
+  /* Where the path comes from, checked on the function rather than the page:
+     a picture that is not really there takes itself back out of the document
+     the moment the browser finds that out, so the DOM is the wrong place to
+     ask what path was chosen. */
+  const paths = await page.evaluate(() => {
+    const set = (id, patch) => {
+      S.boot.ranks = S.boot.ranks.map((r) => (r.id === id ? Object.assign({}, r, patch) : r));
+    };
+    const out = {};
+
+    set(23, { img: 'patents/Ruby/Ruby_3.png' });
+    out.named = rankArt(23, 'RADIANT');
+
+    set(23, { img: 'img/patents/Ruby/Ruby_3.png' });
+    out.alreadyPrefixed = rankArt(23, 'RADIANT');
+
+    set(23, { img: 'https://cdn.example.com/r.png' });
+    out.fullUrl = rankArt(23, 'RADIANT');
+
+    set(23, { img: null });
+    RANK_ART['img/patents/Radiant/Radiant.png'] = true;
+    out.convention = rankArt(23, 'RADIANT');
+
+    RANK_ART['img/patents/Diamond/Diamond_1.png'] = true;
+    out.division = rankArt(16, 'DIAMOND');
+
+    RANK_ART['img/patents/Diamond/Diamond_1.png'] = false;
+    out.knownMissing = rankArt(16, 'DIAMOND');
+
+    delete RANK_ART['img/patents/Diamond/Diamond_1.png'];
+    out.notAskedYet = rankArt(16, 'DIAMOND');
+
+    out.unranked = rankArt(0, 'UNRANKED');
+    return out;
+  });
+
+  check('a rank that names its own picture uses it',
+        paths.named, 'img/patents/Ruby/Ruby_3.png');
+  check('  a path already inside img/ is not doubled',
+        paths.alreadyPrefixed, 'img/patents/Ruby/Ruby_3.png');
+  check('  a full URL is left alone',
+        paths.fullUrl, 'https://cdn.example.com/r.png');
+  check('a badge where the convention puts it is found',
+        paths.convention, 'img/patents/Radiant/Radiant.png');
+  check('  a division is numbered onto the file name',
+        paths.division, 'img/patents/Diamond/Diamond_1.png');
+  check('  one known not to be there is not asked for',
+        paths.knownMissing, '');
+  check('  nor is one nobody has asked about yet',
+        paths.notAskedYet, '');
+  check('  and unranked looks for nothing',
+        paths.unranked, '');
+
+  /* And on the page, with a picture that really does load: it goes over the
+     drawn crest, filling the same box, and the crest stays underneath. */
+  await page.evaluate((pix) => {
+    S.boot.ranks = S.boot.ranks.map((r) => (r.id === 23 ? Object.assign({}, r, { img: pix }) : r));
+    renderBoard({ page: 1, rows: [], stats: {} });
+  }, PIX);
+  await page.waitForTimeout(150);
+
+  const worn = await page.evaluate(() => {
+    const box = document.querySelector('#lb-me .who .crestbox');
+    if (!box) return null;
+    const img = box.querySelector('img.crest-pic');
+    if (!img) return { img: false };
+    const a = box.getBoundingClientRect(), b = img.getBoundingClientRect();
+    return {
+      img: true,
+      drawn: !!box.querySelector('svg'),
+      fills: Math.round(a.width) === Math.round(b.width)
+          && Math.round(a.height) === Math.round(b.height),
+      fit: getComputedStyle(img).objectFit
+    };
+  });
+  check('a badge that loads is worn over the crest', worn.img, true);
+  check('  with the drawn crest still under it',     worn.drawn, true);
+  check('  filling the crest\'s own box',            worn.fills, true);
+  check('  whole, not cropped square',               worn.fit, 'contain');
+
+  // ======================================================================
+  // 6. weapon artwork
+  // ======================================================================
+  // Named after the weapon, so a folder of WEAPON_*.png needs nothing listed
+  // anywhere. A weapon nobody has a picture for is asked about once.
+  const wpn = await page.evaluate(() => {
+    WEAPON_ART['WEAPON_CARBINERIFLE'] = true;
+    WEAPON_ART['WEAPON_RAYPISTOL'] = false;
+    return {
+      known: weaponIcon('WEAPON_CARBINERIFLE'),
+      missing: weaponIcon('WEAPON_RAYPISTOL'),
+      nothing: weaponIcon('')
+    };
+  });
+  check('a weapon with a picture draws it',
+        /img\/weapons\/WEAPON_CARBINERIFLE\.png/.test(wpn.known), true);
+  check('  one without draws nothing', wpn.missing, '');
+  check('  and no weapon at all is nothing', wpn.nothing, '');
 
   check('no script error the whole way through', errors, []);
 

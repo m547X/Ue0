@@ -562,7 +562,11 @@ html[dir="rtl"] .sb-row::before{left:auto;right:0}
 .kf.mine{border-right-color:var(--red);background:rgba(28,10,13,.92)}
 .kf .n-a{color:var(--team-a)}
 .kf .n-b{color:var(--team-b)}
-.kf .kf-w{color:var(--dim);font-size:10px;letter-spacing:.1em}
+.kf .kf-w{display:flex;align-items:center;gap:5px;color:var(--dim);font-size:10px;letter-spacing:.1em}
+/* the weapon's own picture beside its name, when the file is there; it takes
+   itself out if it is not, and the name stands on its own as before */
+.kf .wpn-pic{height:14px;width:auto;max-width:34px;object-fit:contain;display:block;
+  opacity:.92}
 .kf .kf-hs{color:var(--red);display:flex;align-items:center;gap:3px}
 .kf .kf-hs svg{width:12px;height:12px}
 @keyframes kfIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
@@ -1333,7 +1337,7 @@ html[dir="rtl"] .hd-title{letter-spacing:.2em}
 .id-title{font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--gold);margin-top:1px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .id-rank{display:flex;align-items:center;gap:6px;margin-top:1px}
-.id-crest{width:15px;height:15px;flex:none}
+.id-crest{position:relative;width:15px;height:15px;flex:none}
 .id-rank span{font-size:12px;color:var(--dim);letter-spacing:.06em}
 .id-xp{margin-top:7px;height:3px;border-radius:2px;background:var(--panel-3);overflow:hidden}
 .id-xp i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--red),var(--red-3));transition:width .5s var(--ease)}
@@ -2022,6 +2026,19 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 .rk-crest svg{position:relative;width:100%;height:100%;
   filter:drop-shadow(0 3px 8px rgba(0,0,0,.8))}
 
+/* A rank badge picture, laid over the drawn crest so a rank with no artwork
+   keeps the shape it always had. The box carries the size: inline next to a
+   rank name it is about a line tall, and inside one of the fixed crest slots
+   it fills it. contain, not cover — a badge is a shape, and cropping one to a
+   square cuts its corners off. */
+.crestbox{position:relative;display:inline-block;width:1.25em;height:1.25em;
+  flex:none;vertical-align:-.22em}
+.crestbox > svg{width:100%;height:100%;display:block}
+.crest-pic{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block;
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.55))}
+.id-crest .crestbox,.pcrest .crestbox,.rk-crest .crestbox,
+#rank-old .crestbox,#rank-new .crestbox{width:100%;height:100%;vertical-align:baseline}
+
 .rk-name{margin-top:7px;max-width:100%;font-size:14px;font-weight:700;letter-spacing:.14em;
   color:var(--tier);text-shadow:0 0 20px var(--tier),0 2px 6px #000;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2333,7 +2350,7 @@ html[dir="rtl"] .ft-find{align-items:flex-start}
 .pname{font-size:31px;font-weight:700}
 .ptitle{font-size:11px;letter-spacing:.24em;color:var(--gold)}
 .pmeta{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-.pcrest{width:104px;height:104px;margin-left:auto;flex:none}
+.pcrest{position:relative;width:104px;height:104px;margin-left:auto;flex:none}
 .tagchip{font-size:10px;font-weight:600;letter-spacing:.12em;padding:4px 10px;border-radius:6px;
   border:1px solid var(--edge-soft);color:var(--dim)}
 .card{padding:16px 18px;border-radius:11px;background:rgba(255,255,255,.02);border:1px solid var(--edge-soft);

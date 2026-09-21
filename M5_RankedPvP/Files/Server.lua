@@ -1050,7 +1050,8 @@ local function rankTableForClient()
         local r = Config.Ranks[i]
         out[#out + 1] = {
             id = r.id, tier = r.tier, division = r.division,
-            name = r.name, rp = r.rpRequired, color = r.color
+            name = r.name, rp = r.rpRequired, color = r.color,
+            img = r.img
         }
     end
     return out
