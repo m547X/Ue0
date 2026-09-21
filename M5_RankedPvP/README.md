@@ -879,6 +879,30 @@ m5boardrefresh
 which rebuilds the standings, pushes them to everyone, and prints the top ten so
 you can check the rows landed where you expected.
 
+### Ten made-up players, to see the board at all — `m5_rankedpvp_board_demo.sql`
+
+The seed above puts one real player on the ladder. This one fills it with **ten
+invented players** spread from Radiant down to Silver, so you can stand in front
+of the panel and see the whole thing working — the podium, the medal tints, the
+rank colours, the K/D columns, the three peds — before anybody has played a
+match. It is how you place and size the board without waiting for a season's
+worth of results.
+
+They are not accounts. Nothing can log in as them, they are never matched
+against anyone, and they take no slot; they exist only in the three tables the
+board reads, on ids 900001–900010 so they cannot collide with a real vRP user.
+
+It writes the rank badge itself, so there is nothing to do in the admin panel
+afterwards: the file carries the RP thresholds from `Config.Ranks` as a SQL
+`CASE`, and `tests/board_demo_sql.lua` checks that copy against the real config
+at every RP from zero upwards, so the two cannot drift apart unnoticed. If you
+have edited `Config.Ranks` yourself, either edit the `CASE` to match or run
+**Admin → Points → Set RP** on each id afterwards.
+
+**They are for testing.** Take them off before the server opens — the last
+block of the file is the cleanup, three `DELETE`s over that id range, and then
+`m5boardrefresh` again.
+
 ### Where it goes — `Config.WorldBoard` (Config_Client.lua)
 
 Each entry under `screens.spots` is one panel:
