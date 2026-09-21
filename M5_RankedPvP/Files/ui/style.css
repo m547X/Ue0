@@ -2623,6 +2623,14 @@ html[dir="rtl"] .sb-nmrow{direction:ltr;unicode-bidi:isolate}
    A list of the things that can be moved on the left, the controls for the
    selected one on the right, and the world behind both of them changing as
    they are used. */
+/* the checklist above the editor: each line is one reason the board could be
+   invisible, and it either passes or it does not */
+.be-status{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px 0}
+.be-st{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:7px;
+  font-size:11px;font-weight:600;letter-spacing:.04em;
+  background:var(--panel-2);border:1px solid var(--edge-soft)}
+.be-st.ok{color:var(--ok)}
+.be-st.no{color:var(--lose);border-color:rgba(255,59,78,.35)}
 .be-wrap{display:grid;grid-template-columns:260px 1fr;gap:16px;padding:16px;height:100%}
 .be-side{display:flex;flex-direction:column;gap:9px;min-height:0}
 .be-targets{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px}

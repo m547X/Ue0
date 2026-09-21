@@ -1540,9 +1540,43 @@ function bePush() {
   post('boardEdit', { action: 'update', layout: BE.layout });
 }
 
+/* Why you cannot see the board, answered in the editor rather than guessed at.
+   Every one of these is a real way for it to be invisible while everything
+   looks configured: the server has not sent the rows, the page has not opened
+   yet, or the board is a quarter of the map away and its own view distance is
+   smaller than that. */
+function beStatus(st) {
+  const host = $('be-status');
+  if (!host) return;
+  if (!st) { host.innerHTML = ''; host.classList.add('hidden'); return; }
+  host.classList.remove('hidden');
+
+  const line = (ok, text) =>
+    `<span class="be-st ${ok ? 'ok' : 'no'}">${ok ? '✓' : '✕'} ${esc(text)}</span>`;
+
+  const bits = [];
+  bits.push(line(st.ready, st.ready
+    ? `${tx('ROWS FROM THE SERVER')}: ${st.rows}`
+    : tx('WAITING FOR THE SERVER')));
+  bits.push(line(st.screens > 0, `${tx('SCREENS')}: ${st.screens}`));
+
+  if (st.nearest === undefined || st.nearest === null) {
+    bits.push(line(false, tx('NO SCREEN TO WALK TO')));
+  } else {
+    bits.push(line(st.seen === true,
+      `${tx('NEAREST SCREEN')}: ${st.nearest}m`));
+  }
+  bits.push(line(st.page, st.page ? tx('PAGE LOADED') : tx('PAGE NOT LOADED YET')));
+  bits.push(line(true, st.placed ? tx('PLACED AND SAVED') : tx('USING THE CONFIG SPOTS')));
+
+  host.innerHTML = bits.join('');
+}
+
 function beRender(d) {
   if (d && d.layout) BE.layout = d.layout;
   if (d && d.here) BE.here = d.here;
+  if (d && d.status !== undefined) BE.status = d.status;
+  beStatus(BE.status);
   if (!BE.layout) return;
 
   BE.layout.screens = BE.layout.screens || [];
@@ -1683,6 +1717,17 @@ function beBody() {
     post('boardEdit', { action: 'world', layout: BE.layout, sel: BE.sel });
   };
   body.appendChild(world);
+
+  /* The other direction: rather than dragging the board to you, go to the
+     board. Placing one across the map and then walking there is most of the
+     work of moving it. */
+  const goTo = el('button', 'btn ghost wide',
+    `<svg><use href="#i-map"/></svg> ${esc(tx('GO TO IT'))}`);
+  goTo.onclick = () => {
+    Sfx.play('click');
+    post('boardEdit', { action: 'goto', sel: BE.sel });
+  };
+  body.appendChild(goTo);
 
   const here = el('button', 'btn ghost wide',
     `<svg><use href="#i-map"/></svg> ${esc(tx('PUT IT WHERE I STAND'))}`);
@@ -2090,10 +2135,20 @@ function renderWorldEdit(d) {
     bwPost('focus', { on: true });
     renderWorldEdit();
   };
+  /* The list below switches between every board and podium spot on the
+     server, and most of them are nowhere near you. This walks you over to
+     whichever one is selected, standing in front of it, facing it. */
+  const goTo = el('button', 'bw-ghost',
+    `<svg><use href="#i-move"/></svg> ${esc(tx('GO TO IT'))}`);
+  goTo.onclick = () => {
+    BW.hidden = false;
+    bwPost('goto');
+  };
   const back = el('button', 'bw-ghost',
     `<svg><use href="#i-back"/></svg> ${esc(tx('BACK TO THE MENU'))}`);
   back.onclick = () => bwPost('back');
   foot.appendChild(here);
+  foot.appendChild(goTo);
   foot.appendChild(hide);
   foot.appendChild(back);
   host.appendChild(foot);
@@ -4736,10 +4791,15 @@ document.addEventListener('click', (e) => {
         () => post('boardEdit', { action: 'reset' }));
       break;
     case 'be-add': {
-      const h = BE.here || { x: 0, y: 0, z: 0 };
+      /* The same board the world editor makes. It used to be created a metre
+         wide, half see-through and only visible from eighteen metres, with no
+         facing at all — so adding one from here put a panel you could walk
+         past without noticing, and it read as the board not saving. */
+      const h = BE.here || { x: 0, y: 0, z: 0, h: 0 };
       BE.layout.screens.push({
         pos: { x: h.x, y: h.y, z: h.z + 1.35 }, title: '', enabled: true,
-        scale: 1.0, width: 1.0, rows: 10, opacity: 190, distance: 18.0
+        h: (((h.h || 0) + 180) % 360), pitch: 0,
+        width: 6.0, rows: 10, opacity: 255, distance: 35.0
       });
       BE.sel = 's' + (BE.layout.screens.length - 1);
       post('boardEdit', { action: 'here' });

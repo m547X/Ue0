@@ -3075,13 +3075,43 @@ local function wbEditSnapshot()
     return out
 end
 
+local function wbEditStatus()
+    local l = WB.edit or wbLayout() or {}
+    local me = GetEntityCoords(playerPed())
+
+    local nearest, which
+    local screens = l.screens or {}
+    for i = 1, #screens do
+        local p = screens[i].pos
+        if p and screens[i].enabled ~= false then
+            local dx, dy, dz = me.x - p.x, me.y - p.y, me.z - p.z
+            local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+            if not nearest or d < nearest then nearest, which = d, i end
+        end
+    end
+
+    local seen = nil
+    if nearest and screens[which] then
+        seen = nearest <= (tonumber(screens[which].distance) or 35.0)
+    end
+
+    return {
+        ready   = WB.ready == true,
+        rows    = #(WB.rows or {}),
+        page    = DUI.live == true and DUI.avail == true,
+        placed  = WB.layout ~= nil,
+        screens = #screens,
+        nearest = nearest and math.floor(nearest + 0.5) or nil,
+        which   = which,
+        seen    = seen
+    }
+end
+
 local function wbEditPush()
+    local c = GetEntityCoords(playerPed())
     nui({ action = 'boardEdit', layout = WB.edit,
-          here = (function()
-              local c = GetEntityCoords(playerPed())
-              return { x = c.x, y = c.y, z = c.z,
-                       h = GetEntityHeading(playerPed()) }
-          end)() })
+          status = wbEditStatus(),
+          here = { x = c.x, y = c.y, z = c.z, h = GetEntityHeading(playerPed()) } })
 end
 
 local function wbEditOpen()
@@ -3203,6 +3233,49 @@ local function wbwHere()
     it.pos.z = c.z + (kind == 's' and 1.35 or 0.0)
     it.h = (kind == 'p') and h or ((h + 180.0) % 360)
     if kind == 'p' then wbwRepaint() end
+end
+
+local function wbwGoTo()
+    local kind, _, it = wbwSel()
+    if not it or not it.pos then return false end
+
+    local p  = it.pos
+    local hd = math.rad(tonumber(it.h) or 0.0)
+    local sy, cy = math.sin(hd), math.cos(hd)
+
+    local x, y, z, face
+    if kind == 's' then
+        local w    = tonumber(it.width) or 6.0
+        local back = math.max(3.0, math.min(14.0, w * 1.2 + 2.0))
+        x = p.x + sy * back
+        y = p.y - cy * back
+        z = p.z - 1.35
+        face = (tonumber(it.h) or 0.0) % 360
+    else
+        x = p.x - sy * 2.5
+        y = p.y + cy * 2.5
+        z = p.z
+        face = ((tonumber(it.h) or 0.0) + 180.0) % 360
+    end
+
+    local ped = playerPed()
+    RequestCollisionAtCoord(x, y, z)
+
+    local found, groundZ = GetGroundZFor_3dCoord(x, y, z + 3.0, false)
+    if found and math.abs(groundZ - z) < 12.0 then z = groundZ end
+
+    SetEntityCoordsNoOffset(ped, x, y, z + 0.1, false, false, false)
+    SetEntityHeading(ped, face)
+
+    Citizen.CreateThread(function()
+        local until_ = ms() + 3000
+        while ms() < until_ and not HasCollisionLoadedAroundEntity(ped) do
+            RequestCollisionAtCoord(x, y, z)
+            Citizen.Wait(50)
+        end
+    end)
+
+    return true
 end
 
 local WBG = { hot = nil, drag = nil, cx = 0.5, cy = 0.5, sx = 0.0, sy = 0.0 }
@@ -3667,6 +3740,10 @@ RegisterNUICallback('boardWorld', function(data, cb)
     elseif action == 'here' then
         wbwHere()
 
+    elseif action == 'goto' then
+        wbcLeave()
+        wbwGoTo()
+
     elseif action == 'pick' then
         local id = tostring(data.sel or '')
         if id:match('^[sp]%d+$') then WBW.sel = id end
@@ -3771,6 +3848,10 @@ RegisterNUICallback('boardEdit', function(data, cb)
 
     elseif action == 'here' then
         wbEditPush()
+
+    elseif action == 'goto' then
+        WBW.sel = tostring(data.sel or WBW.sel)
+        if wbwGoTo() then wbEditPush() end
 
     elseif action == 'save' then
         TriggerServerEvent('m5rp:sv:boardLayout', 'save', data.layout)

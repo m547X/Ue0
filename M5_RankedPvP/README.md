@@ -955,8 +955,20 @@ podium spot listed; pick one and nudge it while watching it move:
 **SCREEN ON** switch. **STEP SIZE** multiplies every nudge — 0.25x to 4x — so
 dragging a panel across a plaza is not sixty clicks. **PUT IT WHERE I STAND**
 drops the panel at eye height turned back towards you, or stands a podium spot
-on the floor facing the way you face. Save writes it; cancel throws it away;
-reset asks first and then restores the config.
+on the floor facing the way you face. **GO TO IT** is the other direction: it
+puts *you* in front of the selected board, far enough back to read it and
+facing it, or beside a podium spot looking at where the ped stands — placing a
+board across the map and then walking there is most of the work of moving it.
+Save writes it; cancel throws it away; reset asks first and then restores the
+config.
+
+Across the top of the editor is a row of checks, because a board can be
+correctly configured and still invisible, and every reason for that is
+something the client already knows: whether the rows have arrived from the
+server, how many screens the layout has, how far the nearest one is **and
+whether you are inside its own SEEN FROM distance**, whether the page has
+finished loading, and whether you are looking at a placed layout or at the
+config spots. A red entry there is the answer.
 
 **Saving places it for the whole server, not for you.** The layout goes into
 `m5_world_board`, and every player is sent it with the standings — the ones

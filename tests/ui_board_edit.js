@@ -236,6 +236,86 @@ const beRow = (page, label) => page.locator('#be-body .be-row').filter({
   await page.waitForTimeout(150);
   check('  and only then resets', (await last(page)).action, 'reset');
 
+  // ======================================================================
+  // a screen added from the menu is a screen you can actually see
+  // ======================================================================
+  // It used to be created a metre wide, three quarters opaque and visible from
+  // eighteen metres, with no facing at all — so adding one put a panel edge-on
+  // in the street that you could walk straight past, which reads as the board
+  // not having saved.
+  await page.evaluate((h) => {
+    window.__send({ action: 'boardEdit', layout: {
+      screensEnabled: true, podiumEnabled: true, podiumDistance: 25,
+      screens: [], podium: [] }, here: h });
+  }, HERE);
+  await page.waitForTimeout(120);
+  await page.click('[data-action="be-add"]');
+  await page.waitForTimeout(150);
+
+  const added = await page.evaluate(() => BE.layout.screens[0]);
+  check('a new screen is six metres wide',  added.width, 6.0);
+  check('  fully opaque',                   added.opacity, 255);
+  check('  seen from a usable distance',    added.distance, 35.0);
+  check('  standing upright',               added.pitch, 0);
+  check('  turned back towards you',        Math.round(added.h), 356);
+  check('  at eye height where you stand',  Math.round(added.pos.z * 100) / 100, 41.35);
+
+  // ======================================================================
+  // going to the board, rather than dragging the board to you
+  // ======================================================================
+  await page.evaluate(() => { window.__posted = []; });
+  await page.locator('#be-body button', { hasText: 'GO TO IT' }).first().click();
+  await page.waitForTimeout(150);
+  const go = await last(page);
+  check('there is a way to walk to the selected spot', go.action, 'goto');
+  check('  saying which one',                          go.sel, 's0');
+
+  // ======================================================================
+  // why you cannot see it, said on screen
+  // ======================================================================
+  const strip = () => page.evaluate(() => Array.from(
+    document.querySelectorAll('#be-status .be-st')).map((n) => ({
+      ok: n.classList.contains('ok'), text: n.textContent.trim() })));
+
+  await page.evaluate((h) => {
+    window.__send({ action: 'boardEdit', layout: {
+      screensEnabled: true, podiumEnabled: true, podiumDistance: 25,
+      screens: [{ pos: { x: 10, y: 20, z: 30 }, title: 'TOP', enabled: true,
+                  h: 0, pitch: 0, width: 6, rows: 10, opacity: 255, distance: 35 }],
+      podium: [] },
+      here: h,
+      status: { ready: false, rows: 0, page: false, placed: false,
+                screens: 1, nearest: 240, which: 1, seen: false } });
+  }, HERE);
+  await page.waitForTimeout(150);
+
+  let st = await strip();
+  check('the editor says what is wrong', st.length, 5);
+  check('  the server has not answered',  st[0].ok, false);
+  check('  and says so',                  /WAITING/i.test(st[0].text), true);
+  check('  the screen is out of its own range', st[2].ok, false);
+  check('  with the distance on it',      /240m/.test(st[2].text), true);
+  check('  and the page is not open yet', st[3].ok, false);
+  check('  running off the config spots', /CONFIG/i.test(st[4].text), true);
+
+  await page.evaluate((h) => {
+    window.__send({ action: 'boardEdit', layout: {
+      screensEnabled: true, podiumEnabled: true, podiumDistance: 25,
+      screens: [{ pos: { x: 10, y: 20, z: 30 }, title: 'TOP', enabled: true,
+                  h: 0, pitch: 0, width: 6, rows: 10, opacity: 255, distance: 35 }],
+      podium: [] },
+      here: h,
+      status: { ready: true, rows: 10, page: true, placed: true,
+                screens: 1, nearest: 8, which: 1, seen: true } });
+  }, HERE);
+  await page.waitForTimeout(150);
+
+  st = await strip();
+  check('a board that is working says so on every line',
+        st.every((x) => x.ok), true);
+  check('  with the row count',   /10/.test(st[0].text), true);
+  check('  and that it is saved', /SAVED|محفوظة/i.test(st[4].text), true);
+
   check('nothing threw along the way', errors, []);
 
   await browser.close();
