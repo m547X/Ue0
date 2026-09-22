@@ -94,6 +94,7 @@ SetEntityInvincible, SetBlockingOfNonTemporaryEvents, SetPedCanRagdoll = noop, n
 SetPedCanBeTargetted, SetPedCanBeDraggedOut, SetPedDiesWhenInjured = noop, noop, noop
 SetPedFleeAttributes, SetPedCombatAttributes, SetEntityNoCollisionEntity = noop, noop, noop
 FreezeEntityPosition, SetEntityCanBeDamaged, SetPedConfigFlag = noop, noop, noop
+SetEntityCollision, SetEntityLodDist = noop, noop
 SetEntityAsMissionEntity = noop
 RequestAnimDict, HasAnimDictLoaded, TaskPlayAnim, RemoveAnimDict = noop, function() return true end, noop, noop
 Citizen = { Wait = noop }
@@ -200,8 +201,16 @@ WB.ready, WB.off = true, false
 -- wake the thread up, and must not draw anything.
 WB.rows = rows(10)
 
+-- Two seconds is the shortest the thread ever sleeps when nothing is near,
+-- and it sleeps longer the further away the nearest board is: a player on the
+-- other side of the map is asked about it a third as often as one who has just
+-- walked out of range.
 sleep = tick(500)
-check('a board far away sleeps for two seconds', sleep, 2000)
+check('a board far away sleeps for longer than two seconds', sleep > 2000, true)
+check('  but never longer than six',                        sleep <= 6000, true)
+
+local nearerSleep = tick(60)
+check('  and the closer one is asked about more often', nearerSleep < sleep, true)
 check('  and draws nothing at all',              DRAWS, 0)
 
 -- the band where it starts looking more often reaches half again as far as
@@ -212,7 +221,7 @@ check('walking towards it starts checking more often', sleep, 400)
 check('  but still draws nothing',                     DRAWS, 0)
 
 sleep = tick(40)
-check('further out than that it goes back to sleep',   sleep, 2000)
+check('further out than that it goes back to sleep',   sleep >= 2000, true)
 
 sleep = tick(5)
 check('standing in front of it runs at frame rate', sleep, 0)
@@ -240,7 +249,7 @@ VISIBLE = true
 -- and an empty one still costs nothing from a distance
 WB.rows = {}
 sleep = tick(500)
-check('an empty board far away still sleeps', sleep, 2000)
+check('an empty board far away still sleeps', sleep >= 2000, true)
 check('  and draws nothing',                  DRAWS, 0)
 WB.rows = rows(10)
 

@@ -76,6 +76,7 @@ SetEntityInvincible, SetBlockingOfNonTemporaryEvents, SetPedCanRagdoll = noop, n
 SetPedCanBeTargetted, SetPedCanBeDraggedOut, SetPedDiesWhenInjured = noop, noop, noop
 SetPedFleeAttributes, SetPedCombatAttributes, SetEntityNoCollisionEntity = noop, noop, noop
 FreezeEntityPosition, SetEntityCanBeDamaged, SetPedConfigFlag = noop, noop, noop
+SetEntityCollision, SetEntityLodDist = noop, noop
 SetEntityAsMissionEntity = noop
 RequestAnimDict, HasAnimDictLoaded, TaskPlayAnim, RemoveAnimDict =
   noop, function() return true end, noop, noop
@@ -172,7 +173,13 @@ print()
 -- the budget
 -- ==========================================================================
 check('across the map it costs nothing at all', farN, 0)
-check('  and sleeps two seconds between looks', farSleep, 2000)
+-- And it is asked less often the further away it is: two seconds is the
+-- shortest wait when nothing is near, six the longest, so a player on the far
+-- side of the map wakes this thread a third as often as one who has just
+-- stepped out of range. Nothing happens on those wakes either way — this is
+-- about not waking up at all.
+check('  and sleeps longer the further away it is', farSleep > 2000, true)
+check('  up to six seconds',                        farSleep <= 6000, true)
 
 -- One browser, however many frames are drawn from it. This is the whole point
 -- of the design: the texture is free to look at and only costs when it changes.

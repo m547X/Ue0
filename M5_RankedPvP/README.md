@@ -919,7 +919,7 @@ against counted stubs:
 
 | where you are | per frame |
 |---|---|
-| anywhere else on the map | **0 native calls**, thread asleep 2 s between looks |
+| anywhere else on the map | **0 native calls**, thread asleep **2–6 s** between looks — the further the nearest board, the longer |
 | standing in front of the board | **6 native calls, 1 allocation** — four `DrawSpritePoly`, the camera once, the on-screen test once |
 | looking away while standing there | 8 calls, **nothing drawn** |
 | …with the podium nameplates, from ten metres | **39** |
@@ -947,6 +947,34 @@ Below that, everything else is already paid once rather than per frame: the
 layout is read once a tick instead of twice, the corner maths and the distance
 thresholds are cached until the board moves, the page is sent rows only when
 the rows change, and the browser is built once rather than per frame.
+
+**And the three peds are scenery, not characters.** They are frozen, cannot be
+targeted, take no damage, react to nothing — and now have their collision
+switched off entirely and their LOD distance pulled in, so the game stops
+working out what three statues on a plinth are colliding with and drops them
+sooner. `podium.enabled = false` removes them altogether, and on a machine that
+is struggling that is the single biggest thing on this page: three peds with
+real clothing cost more than everything else here put together.
+
+### The lightest the board can be
+
+In order, largest first:
+
+```lua
+Config.WorldBoard.podium.enabled     = false   -- the three peds: the biggest
+Config.WorldBoard.podium.showNames   = false   -- 33 of the 39 calls a frame
+Config.WorldBoard.screens.textureWidth  = 0    -- sized from the board (default)
+Config.WorldBoard.screens.textureHeight = 0
+Config.WorldBoard.screens.keepAlive  = 15      -- hand the memory back sooner
+Config.WorldBoard.screens.distance   = 20      -- exists in a smaller circle
+```
+
+With the peds and the plates off, a player standing in front of the board pays
+**six native calls a frame** and a 800×450 texture that is painted once and
+then composites nothing. A player anywhere else on the map pays **nothing at
+all** — a thread that wakes every six seconds, compares some numbers, and goes
+back to sleep. That is the floor for a board that is a real web page; below it
+the only thing left to remove is the page itself.
 
 **If it is still too heavy**, in the order worth trying:
 

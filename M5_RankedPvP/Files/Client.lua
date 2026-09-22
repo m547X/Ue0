@@ -2893,6 +2893,8 @@ local function wbSpawn(cfg)
                     SetPedFleeAttributes(ped, 0, false)
                     SetPedCombatAttributes(ped, 46, false)
                     SetEntityNoCollisionEntity(ped, playerPed(), false)
+                    SetEntityCollision(ped, false, false)
+                    SetEntityLodDist(ped, 120)
                     FreezeEntityPosition(ped, true)
                     SetEntityCanBeDamaged(ped, false)
                     SetPedConfigFlag(ped, 185, true)
@@ -2980,6 +2982,7 @@ function wbTick(me, podiumAcc)
     local anyNear = false
     local eyeX, eyeY, eyeZ
     local drewAny = false
+    local nearestOver = nil
 
     if screens then
         local mx, my, mz = me.x, me.y, me.z
@@ -3018,9 +3021,16 @@ function wbTick(me, podiumAcc)
                 elseif d2 <= spot.__far then
                     anyNear = true
                     if sleep > WB_NEAR then sleep = WB_NEAR end
+                else
+                    local over = d2 / spot.__far
+                    if not nearestOver or over < nearestOver then nearestOver = over end
                 end
             end
         end
+    end
+
+    if sleep == WB_FAR and nearestOver then
+        sleep = WB_FAR + math.min(WB_FAR * 2, math.floor(nearestOver) * 400)
     end
 
     if anyNear then
