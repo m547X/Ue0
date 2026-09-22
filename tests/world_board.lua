@@ -36,9 +36,16 @@ SetDrawOrigin, ClearDrawOrigin = counted, counted
 DrawRect, SetTextFont, SetTextScale, SetTextColour = counted, counted, counted, counted
 BeginTextCommandDisplayText, AddTextComponentSubstringPlayerName = counted, counted
 
--- is the board in front of the camera? the test drives this directly
+-- Is a point in front of the camera? The test drives this directly, and can
+-- answer differently per point — which is the whole question for a panel wider
+-- than the screen, where the middle of it can be off screen while the thing is
+-- filling your view.
 local VISIBLE = true
-function World3dToScreen2d() return VISIBLE end
+ON_SCREEN_AT = nil               -- optional: function(x, y, z) -> boolean
+function World3dToScreen2d(x, y, z)
+  if ON_SCREEN_AT then return ON_SCREEN_AT(x, y, z) end
+  return VISIBLE
+end
 
 -- Where the eye is, so the client can drop the face pointing away from it.
 -- It is the *rendered* camera that is asked, not the gameplay one: the board
@@ -450,6 +457,35 @@ for body in CL:gmatch("AddEventHandler%('onResourceStop'.-\nend%)") do
   if body:find('wbDespawn', 1, true) then cleansUp = true end
 end
 check('  by a stop handler', cleansUp, true)
+
+-- ==========================================================================
+-- 5b. a board is bigger than the point at its middle
+-- ==========================================================================
+-- Whether to draw was decided by asking whether the board's CENTRE lands on
+-- screen. For a panel seven metres wide hung above head height, the middle of
+-- it leaves the screen long before the board does: walk up to it, look at it,
+-- and it vanishes — while the editor, which draws its own outline, still shows
+-- an outline around nothing. The corners are asked as well now.
+WB.ready, WB.off, WB.rows = true, false, rows(10)
+
+local BOARD_Z = 0.0
+ON_SCREEN_AT = function(_, _, z)
+  -- a camera looking level: the middle of the board is above the top of the
+  -- screen, its bottom edge is not
+  return z < BOARD_Z
+end
+DRAWS = 0
+wbTick(vector3(0, -5, 0), 0)
+ON_SCREEN_AT = nil
+check('a board whose middle is off screen is still drawn', DRAWS > 0, true)
+
+-- and with nothing of it on screen at all, nothing is drawn
+ON_SCREEN_AT = function() return false end
+DRAWS = 0
+local offSleep = select(1, wbTick(vector3(0, -5, 0), 0))
+ON_SCREEN_AT = nil
+check('a board with no part of it on screen is not drawn', DRAWS, 0)
+check('  and the thread stops running at frame rate',      offSleep, 400)
 
 -- ==========================================================================
 -- 6. the board an admin placed is the board everybody sees

@@ -2768,6 +2768,17 @@ local function screenCorners(spot)
            c[7], c[8], c[9], c[10], c[11], c[12]
 end
 
+local function screenInView(spot)
+    local p = spot.pos
+    if World3dToScreen2d(p.x, p.y, p.z) then return true end
+
+    local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(spot)
+    return World3dToScreen2d(tlx, tly, tlz)
+        or World3dToScreen2d(trx, try, trz)
+        or World3dToScreen2d(brx, bry, brz)
+        or World3dToScreen2d(blx, bly, blz)
+end
+
 local function drawScreen(spot, ex, ey, ez)
     if not DUI.ready or not DUI.live then return end
     if not DUI.avail and (ms() - (DUI.liveAt or 0)) < DUI_GRACE then return end
@@ -2943,7 +2954,7 @@ function wbTick(me, podiumAcc)
                 local d2  = dx * dx + dy * dy + dz * dz
                 if d2 <= far * far then
                     anyNear = true
-                    if World3dToScreen2d(p.x, p.y, p.z) then
+                    if screenInView(spot) then
                         sleep = 0
                         if duiCreate() then
                             duiFlush()
@@ -3937,14 +3948,16 @@ local function wbReport()
         local dz = (tonumber(p.z) or 0) - me.z
         local d  = math.sqrt(dx * dx + dy * dy + dz * dz)
         local far = tonumber(s.distance) or 35.0
-        local onScreen = World3dToScreen2d(tonumber(p.x) or 0.0,
-                                           tonumber(p.y) or 0.0,
-                                           tonumber(p.z) or 0.0)
+        local onScreen = screenInView(s)
+        local centre = World3dToScreen2d(tonumber(p.x) or 0.0,
+                                         tonumber(p.y) or 0.0,
+                                         tonumber(p.z) or 0.0)
         print(('  screen %d      : %.2f %.2f %.2f  h %.0f  w %.1fm  on %s'):format(
             i, tonumber(p.x) or 0, tonumber(p.y) or 0, tonumber(p.z) or 0,
             tonumber(s.h) or 0, tonumber(s.width) or 0, tostring(s.enabled ~= false)))
-        print(('                  you are %.1fm away, seen from %.0fm -> %s, in view -> %s'):format(
-            d, far, d <= far and 'IN RANGE' or 'TOO FAR', tostring(onScreen)))
+        print(('                  you are %.1fm away, seen from %.0fm -> %s, in view -> %s (centre %s)'):format(
+            d, far, d <= far and 'IN RANGE' or 'TOO FAR',
+            tostring(onScreen), tostring(centre)))
     end
 
     print('[M5RP] ---------------------')

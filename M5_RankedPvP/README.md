@@ -877,6 +877,11 @@ at — it only costs something when it *changes*. So:
   network call, and it compares each payload against the last one and drops it
   if the rows are identical. A repaint is paid for by every machine that can
   see the board, so it does not happen for nothing.
+* **It only runs at frame rate while a board is actually on screen** — its
+  centre or any of its four corners. The corners matter: a seven-metre panel
+  hung above head height has its middle off the top of the screen long before
+  the board itself is out of view, and asking only about the centre meant
+  walking up to a board made it disappear.
 * **Two triangles.** The panel is a quad drawn with `DrawSpritePoly`. You can
   only stand on one side of a flat panel, so the side facing away from your
   camera is not drawn at all: standing in front of a board costs **two**
