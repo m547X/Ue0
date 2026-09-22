@@ -2788,30 +2788,19 @@ WB_TEST_UNTIL = 0
 local function drawQuad(spot, ex, ey, ez, txd, tex, a)
     local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(spot)
 
-    local side = 0
-    if ex then
-        local c = spot.__quad
-        local d = (ex - c.px) * c.nx + (ey - c.py) * c.ny + (ez - c.pz) * c.nz
-        side = d >= 0.0 and 1 or -1
-    end
+    DrawSpritePoly(tlx, tly, tlz, trx, try, trz, brx, bry, brz,
+                   255, 255, 255, a, txd, tex,
+                   0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0)
+    DrawSpritePoly(tlx, tly, tlz, brx, bry, brz, blx, bly, blz,
+                   255, 255, 255, a, txd, tex,
+                   0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
 
-    if side >= 0 then
-        DrawSpritePoly(tlx, tly, tlz, trx, try, trz, brx, bry, brz,
-                       255, 255, 255, a, txd, tex,
-                       0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0)
-        DrawSpritePoly(tlx, tly, tlz, brx, bry, brz, blx, bly, blz,
-                       255, 255, 255, a, txd, tex,
-                       0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
-    end
-
-    if side <= 0 then
-        DrawSpritePoly(brx, bry, brz, trx, try, trz, tlx, tly, tlz,
-                       255, 255, 255, a, txd, tex,
-                       1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        DrawSpritePoly(blx, bly, blz, brx, bry, brz, tlx, tly, tlz,
-                       255, 255, 255, a, txd, tex,
-                       0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
-    end
+    DrawSpritePoly(brx, bry, brz, trx, try, trz, tlx, tly, tlz,
+                   255, 255, 255, a, txd, tex,
+                   1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    DrawSpritePoly(blx, bly, blz, brx, bry, brz, tlx, tly, tlz,
+                   255, 255, 255, a, txd, tex,
+                   0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
 end
 
 local function drawScreen(spot, ex, ey, ez)
@@ -4007,6 +3996,16 @@ if Config.ClientCommands.board and Config.ClientCommands.board.enabled then
         end
 
         if sub == 'test' then
+            RequestStreamedTextureDict('commonmenu', false)
+            local waited = 0
+            while not HasStreamedTextureDictLoaded('commonmenu') and waited < 2000 do
+                Citizen.Wait(50)
+                waited = waited + 50
+            end
+            if not HasStreamedTextureDictLoaded('commonmenu') then
+                print('[M5RP] could not load the test texture; the result would not mean anything.')
+                return
+            end
             WB_TEST_UNTIL = ms() + 15000
             print('[M5RP] drawing the board as a plain grey panel for 15 seconds.')
             print('[M5RP]   a panel appears -> the shape and the place are right, and it is')

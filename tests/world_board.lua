@@ -218,12 +218,15 @@ sleep = tick(5)
 check('standing in front of it runs at frame rate', sleep, 0)
 check('  and that is when it draws',                DRAWS > 0, true)
 
--- what a player standing in front of it pays, every frame, for as long as
--- they stand there: two triangles and one question about where the eye is
+-- What a player standing in front of it pays, every frame, for as long as they
+-- stand there: four triangles, both windings of the same quad. Drawing only
+-- the facing pair halves that and is not worth it — which winding the engine
+-- culls is not something a script can ask, and getting it backwards makes the
+-- board invisible from both sides with nothing on screen to say so.
 camCalls()
 DRAWS = 0
 tick(5)
-check('  which costs two triangles, not four',  DRAWS, 2)
+check('  which costs four triangles, both windings',  DRAWS, 4)
 check('  and asks for the camera once a frame', camCalls(), 1)
 
 -- facing away is as good as being far away: the distance check alone would

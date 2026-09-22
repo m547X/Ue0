@@ -882,12 +882,15 @@ at — it only costs something when it *changes*. So:
   hung above head height has its middle off the top of the screen long before
   the board itself is out of view, and asking only about the centre meant
   walking up to a board made it disappear.
-* **Two triangles.** The panel is a quad drawn with `DrawSpritePoly`. You can
-  only stand on one side of a flat panel, so the side facing away from your
-  camera is not drawn at all: standing in front of a board costs **two**
-  triangles per frame, not four. It still reads from behind — walk round it and
-  you get the other two instead. No prop is spawned and no game texture is
-  replaced.
+* **Four triangles.** The panel is a quad drawn with `DrawSpritePoly`, both
+  windings of it, so it reads from either side. Only drawing the side facing
+  your camera halves that, and it was written that way for a while — but
+  `DrawSpritePoly` is single sided and which winding the engine treats as the
+  front is not something a script can ask. Get it backwards and the facing pair
+  is the culled one, so the board is invisible from the front *and* from the
+  back while every flag in the client says it is being drawn — indistinguishable
+  from a board that was never placed. Two triangles a frame are not worth that.
+  No prop is spawned and no game texture is replaced.
 * **The corner maths runs once.** Turning a heading and a tilt into four world
   corners is eight sines and cosines, and none of it changes while the board
   hangs there, so the result is kept and only worked out again when the board

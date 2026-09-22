@@ -196,27 +196,34 @@ check('  and it is not the same winding as the front',
       POLY[1].p[1][1] ~= POLY[3].p[1][1] or POLY[1].p[1][3] ~= POLY[3].p[1][3], true)
 
 -- ==========================================================================
--- 2b. what the player in front of it actually pays
+-- 2b. both windings, every time
 -- ==========================================================================
--- A flat panel has two sides and you can only be on one of them, so drawing
--- both is half the work thrown away, every frame, for everyone standing there.
--- At heading 0 the board reads from the south, so an eye to the south gets the
--- front pair and an eye to the north gets the back pair — never four.
+-- A flat panel has two sides and you can only stand on one of them, so for a
+-- while only the facing pair was drawn — two triangles instead of four, and
+-- the saving is real. It is not worth it.
+--
+-- DRAW_SPRITE_POLY is single sided, and which winding the engine treats as
+-- the front is not something a script can ask. Get it the wrong way round and
+-- the facing pair is the culled one — so the board is invisible from the
+-- front AND from the back, while every flag in the client says it is being
+-- drawn. That is exactly what it looks like when a board was never placed,
+-- and there is nothing on screen to tell the two apart.
+--
+-- Four triangles a frame is not a cost worth that risk, so both windings are
+-- drawn and one of them is guaranteed to be the one that shows.
 POLY = {}
 M.draw(spot, 100.0, 190.0, 30.0)
-check('standing in front of it draws one side only', #POLY, 2)
-check('  and it is the readable one',
+check('standing in front of it, both windings go out', #POLY, 4)
+check('  and the readable one is among them',
       cornerOf(POLY[1], 0.0, 0.0) ~= nil, true)
 
 POLY = {}
 M.draw(spot, 100.0, 210.0, 30.0)
-check('standing behind it draws the other side', #POLY, 2)
-check('  which is the same quad wound the other way',
-      POLY[1].p[1][1] == 100.0 + 4.0 or POLY[1].p[1][1] == 100.0 - 4.0, true)
+check('standing behind it, the same four', #POLY, 4)
 
 POLY = {}
 M.draw(spot)
-check('with no eye given, both sides are drawn', #POLY, 4)
+check('with no eye given, still four', #POLY, 4)
 
 -- the corners are eight sines and cosines; they do not change while the board
 -- hangs there, so they are worked out once and kept
