@@ -1037,6 +1037,17 @@ nothing can be drawn at all; `TOO FAR` means the panel exists and you are
 outside `SEEN FROM`; `made false` means the page was never built, and the
 console will have said why.
 
+When every line is green and there is still nothing there, the question left is
+whether the panel is being drawn in the wrong place or drawn with nothing on
+it, and those look identical. `/pvpboard test` separates them: for fifteen
+seconds the same quad is drawn with a plain game texture instead of the
+leaderboard page.
+
+* a grey panel appears → the size, the place and the facing are all right, and
+  it is the page that is not painting onto it;
+* nothing appears → the panel is not where you are looking, whatever the
+  coordinates say.
+
 ### Silence and "off" are different answers
 
 Switched off on the server (`Config.WorldBoard.enabled = false` in

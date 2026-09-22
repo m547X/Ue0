@@ -2571,6 +2571,7 @@ local DUI = {
     obj     = nil,
     handle  = nil,
     txdObj  = nil,
+    texObj  = nil,
     txd     = 'm5rp_board_txd',
     tex     = 'm5rp_board',
     made    = false,
@@ -2698,7 +2699,8 @@ local function duiCreate()
     DUI.txdObj = duiMakeTxd()
     if not DUI.txdObj then return duiFailed('CreateRuntimeTxd') end
 
-    CreateRuntimeTextureFromDuiHandle(DUI.txdObj, DUI.tex, DUI.handle)
+    DUI.texObj = CreateRuntimeTextureFromDuiHandle(DUI.txdObj, DUI.tex, DUI.handle)
+    if not DUI.texObj then return duiFailed('CreateRuntimeTextureFromDuiHandle') end
 
     DUI.ready, DUI.live, DUI.avail = true, true, false
     DUI.liveAt  = ms()
@@ -2716,7 +2718,7 @@ end
 
 local function duiDestroy()
     if DUI.obj then DestroyDui(DUI.obj) end
-    DUI.obj, DUI.handle, DUI.txdObj = nil, nil, nil
+    DUI.obj, DUI.handle, DUI.txdObj, DUI.texObj = nil, nil, nil, nil
     DUI.made, DUI.ready, DUI.live = false, false, false
     DUI.avail, DUI.dirty, DUI.msg = false, false, nil
     DUI.lastKey = ''
@@ -2779,11 +2781,9 @@ local function screenInView(spot)
         or World3dToScreen2d(blx, bly, blz)
 end
 
-local function drawScreen(spot, ex, ey, ez)
-    if not DUI.ready or not DUI.live then return end
-    if not DUI.avail and (ms() - (DUI.liveAt or 0)) < DUI_GRACE then return end
+WB_TEST_UNTIL = 0
 
-    local a = math.floor(tonumber(spot.opacity) or 255)
+local function drawQuad(spot, ex, ey, ez, txd, tex, a)
     local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(spot)
 
     local side = 0
@@ -2795,21 +2795,35 @@ local function drawScreen(spot, ex, ey, ez)
 
     if side >= 0 then
         DrawSpritePoly(tlx, tly, tlz, trx, try, trz, brx, bry, brz,
-                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       255, 255, 255, a, txd, tex,
                        0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0)
         DrawSpritePoly(tlx, tly, tlz, brx, bry, brz, blx, bly, blz,
-                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       255, 255, 255, a, txd, tex,
                        0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
     end
 
     if side <= 0 then
         DrawSpritePoly(brx, bry, brz, trx, try, trz, tlx, tly, tlz,
-                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       255, 255, 255, a, txd, tex,
                        1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         DrawSpritePoly(blx, bly, blz, brx, bry, brz, tlx, tly, tlz,
-                       255, 255, 255, a, DUI.txd, DUI.tex,
+                       255, 255, 255, a, txd, tex,
                        0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
     end
+end
+
+local function drawScreen(spot, ex, ey, ez)
+    local a = math.floor(tonumber(spot.opacity) or 255)
+
+    if ms() < WB_TEST_UNTIL then
+        drawQuad(spot, ex, ey, ez, 'commonmenu', 'gradient_bgd', a)
+        return
+    end
+
+    if not DUI.ready or not DUI.live then return end
+    if not DUI.avail and (ms() - (DUI.liveAt or 0)) < DUI_GRACE then return end
+
+    drawQuad(spot, ex, ey, ez, DUI.txd, DUI.tex, a)
 end
 
 local function wbDespawn()
@@ -3933,8 +3947,9 @@ local function wbReport()
     print(('  dui           : made %s  ready %s  live %s  page-open %s  waiting-to-send %s'):format(
         tostring(DUI.made), tostring(DUI.ready), tostring(DUI.live),
         tostring(DUI.avail), tostring(DUI.dirty)))
-    print(('  texture       : %s / %s   %dx%d'):format(
-        tostring(DUI.txd), tostring(DUI.tex), DUI.w, DUI.h))
+    print(('  texture       : %s / %s   %dx%d   held %s'):format(
+        tostring(DUI.txd), tostring(DUI.tex), DUI.w, DUI.h,
+        tostring(DUI.texObj ~= nil)))
 
     if #screens == 0 then
         print('  NO SCREENS in the layout — nothing can be drawn.')
@@ -3966,10 +3981,24 @@ end
 
 if Config.ClientCommands.board and Config.ClientCommands.board.enabled then
     RegisterCommand(Config.ClientCommands.board.name, function(_, args)
-        if args and args[1] and tostring(args[1]):lower() == 'status' then
+        local sub = args and args[1] and tostring(args[1]):lower() or ''
+
+        if sub == 'status' then
             wbReport()
             return
         end
+
+        if sub == 'test' then
+            WB_TEST_UNTIL = ms() + 15000
+            print('[M5RP] drawing the board as a plain grey panel for 15 seconds.')
+            print('[M5RP]   a panel appears -> the shape and the place are right, and it is')
+            print('[M5RP]                      the leaderboard page that is not painting.')
+            print('[M5RP]   nothing appears -> the panel is not where you are looking.')
+            nui({ action = 'toast', kind = 'info', title = 'BOARD',
+                  message = _L('Drawing a plain test panel for 15 seconds.') })
+            return
+        end
+
         wbEditOpen()
     end, false)
 end
