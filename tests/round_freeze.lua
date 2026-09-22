@@ -182,6 +182,37 @@ send({ phase = 'live', round = 3, time = 120 })
 check('a player already on full is left alone', P.health, 200)
 check('  and so is their armour',               P.armour, 50)
 
+-- ==========================================================================
+-- 6. armour is the loadout's business, and nobody else's
+-- ==========================================================================
+-- Health is topped up because a round should not start already hurt. Armour
+-- is not health: a mode that hands out no vest is a mode you fight in without
+-- one, and the round start must not quietly put one on you.
+ENV.State.loadout = { health = 100 }
+P.health, P.armour = 150, 0
+send({ phase = 'live', round = 4, time = 120 })
+check('a loadout with no armour gets none', P.armour, 0)
+check('  but the health still fills up',    P.health, 200)
+
+ENV.State.loadout = { health = 100, armor = 0 }
+P.armour = 0
+send({ phase = 'live', round = 5, time = 120 })
+check('nor does an explicit zero', P.armour, 0)
+
+-- and the mode settings are not a back door to one either
+ENV.State.loadout = nil
+ENV.State.settings = { health = 100, armor = 100 }
+P.health, P.armour = 150, 0
+send({ phase = 'live', round = 6, time = 120 })
+check('the settings alone do not hand out a vest', P.armour, 0)
+check('  though the settings health still applies', P.health, 200)
+
+-- armour you are already wearing is never taken off you
+ENV.State.loadout = { health = 100, armor = 25 }
+P.armour = 80
+send({ phase = 'live', round = 7, time = 120 })
+check('armour above the loadout is left alone', P.armour, 80)
+
 -- and what the damage check compares against is reset with it, so the top-up
 -- is not read as somebody having hit you for the difference
 check('the damage watch starts from there too', ENV.State.lastHealth, 200)

@@ -959,8 +959,8 @@ RegisterNetEvent('m5rp:cl:round', function(data)
             SetEntityMaxHealth(ped, full)
             SetEntityHealth(ped, full)
         end
-        local armour = (lo and lo.armor) or State.settings.armor or 0
-        if GetPedArmour(ped) < armour then SetPedArmour(ped, armour) end
+        local armour = (lo and lo.armor) or 0
+        if armour > 0 and GetPedArmour(ped) < armour then SetPedArmour(ped, armour) end
         ClearPedBloodDamage(ped)
         State.lastHealth, State.lastArmor = GetEntityHealth(ped), GetPedArmour(ped)
 
