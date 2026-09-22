@@ -951,7 +951,20 @@ RegisterNetEvent('m5rp:cl:round', function(data)
     elseif data.phase == 'live' then
         State.roundLive = true
         State.frozen    = false
-        FreezeEntityPosition(playerPed(), false)
+
+        local ped = playerPed()
+        local lo  = State.loadout
+        local full = ((lo and lo.health) or State.settings.health or 100) + 100
+        if GetEntityHealth(ped) < full then
+            SetEntityMaxHealth(ped, full)
+            SetEntityHealth(ped, full)
+        end
+        local armour = (lo and lo.armor) or State.settings.armor or 0
+        if GetPedArmour(ped) < armour then SetPedArmour(ped, armour) end
+        ClearPedBloodDamage(ped)
+        State.lastHealth, State.lastArmor = GetEntityHealth(ped), GetPedArmour(ped)
+
+        FreezeEntityPosition(ped, false)
         DisablePlayerFiring(PlayerId(), false)
         SetPlayerCanDoDriveBy(PlayerId(), true)
         nui({ action = 'round', data = { phase = 'live', round = data.round, time = data.time } })
@@ -2915,7 +2928,7 @@ local function wbSpawn(cfg)
                     local n = #WB.peds + 1
                     WB.peds[n] = ped
                     local at = GetEntityCoords(ped)
-                    WB.pedAt[n] = { x = at.x, y = at.y, z = at.z + 1.05 }
+                    WB.pedAt[n] = { x = at.x, y = at.y, z = at.z + 1.28 }
                 end
             end
         end
@@ -2924,12 +2937,45 @@ local function wbSpawn(cfg)
     WB.spawned = #WB.peds > 0
 end
 
+local WB_MEDAL = {
+    { 245, 197, 66 },
+    { 200, 208, 218 },
+    { 199, 123, 60 }
+}
+
+local function wbGroup(n)
+    n = math.floor(tonumber(n) or 0)
+    if n < 1000 then return tostring(n) end
+    local s = tostring(n)
+    local out = s:sub(-3)
+    local i = #s - 3
+    while i > 0 do
+        out = s:sub(math.max(1, i - 2), i) .. ',' .. out
+        i = i - 3
+    end
+    return out
+end
+
 local function wbFormatRows()
     for i = 1, #WB.rows do
         local row = WB.rows[i]
-        row.plate = ('#%d  %s'):format(row.position or i, row.name or '')
-        row.under = ('%s \194\183 %d RP'):format(row.rank or '', row.rp or 0)
+        local place = row.position or i
+
+        row.plate = ('#%d   %s   %s'):format(place, row.name or '', wbGroup(row.rp))
+        row.under = tostring(row.rank or ''):upper()
+
+        local m = WB_MEDAL[place]
+        if m then
+            row.mr, row.mg, row.mb = m[1], m[2], m[3]
+        else
+            row.mr, row.mg, row.mb = wbColour(row.color)
+        end
         row.r, row.g, row.b = wbColour(row.color)
+
+        local chars = math.max(#row.plate, #row.under + 4)
+        local w = chars * 0.0056 + 0.016
+        if w < 0.05 then w = 0.05 elseif w > 0.16 then w = 0.16 end
+        row.plateW = w
     end
 end
 
@@ -3085,15 +3131,23 @@ function wbTick(me, podiumAcc)
                 local d2 = dx * dx + dy * dy + dz * dz
                 if d2 <= 144.0 and World3dToScreen2d(pos.x, pos.y, pos.z) then
                     sleep = 0
-                    local close = d2 <= 49.0
+                    local w = row.plateW or 0.09
                     SetDrawOrigin(pos.x, pos.y, pos.z, 0)
-                    DrawRect(0.0, 0.0, 0.058, close and 0.026 or 0.017, 8, 10, 14, 170)
-                    wbText(row.plate or '', 0.0, close and -0.010 or -0.005,
-                           0.32, 240, 240, 245, 255, 'centre')
-                    if close then
-                        wbText(row.under or '', 0.0, 0.001, 0.24,
-                               row.r or 220, row.g or 220, row.b or 225, 235, 'centre')
+
+                    if d2 <= 49.0 then
+                        DrawRect(0.0, 0.0, w, 0.030, 8, 10, 14, 190)
+                        DrawRect(0.0, -0.0165, w, 0.003,
+                                 row.mr or 245, row.mg or 197, row.mb or 66, 235)
+                        wbText(row.plate or '', 0.0, -0.0115, 0.33,
+                               244, 246, 250, 255, 'centre')
+                        wbText(row.under or '', 0.0, 0.0025, 0.22,
+                               row.r or 200, row.g or 208, row.b or 218, 225, 'centre')
+                    else
+                        DrawRect(0.0, 0.0, w, 0.019, 8, 10, 14, 175)
+                        wbText(row.plate or '', 0.0, -0.0065, 0.30,
+                               row.mr or 245, row.mg or 197, row.mb or 66, 255, 'centre')
                     end
+
                     ClearDrawOrigin()
                 end
             end
@@ -3370,18 +3424,39 @@ local function wbwGoTo()
     local ped = playerPed()
     RequestCollisionAtCoord(x, y, z)
 
-    local found, groundZ = GetGroundZFor_3dCoord(x, y, z + 3.0, false)
-    if found and math.abs(groundZ - z) < 12.0 then z = groundZ end
-
-    SetEntityCoordsNoOffset(ped, x, y, z + 0.1, false, false, false)
+    SetEntityCoordsNoOffset(ped, x, y, z, false, false, false)
     SetEntityHeading(ped, face)
 
     Citizen.CreateThread(function()
-        local until_ = ms() + 3000
-        while ms() < until_ and not HasCollisionLoadedAroundEntity(ped) do
+        local wasFrozen = State.frozen
+        FreezeEntityPosition(ped, true)
+
+        local until_ = ms() + 5000
+        local settled = false
+
+        while ms() < until_ do
             RequestCollisionAtCoord(x, y, z)
+
+            if HasCollisionLoadedAroundEntity(ped) then
+                local found, groundZ = GetGroundZFor_3dCoord(x, y, z + 5.0, false)
+                if found and math.abs(groundZ - z) < 25.0 then
+                    SetEntityCoordsNoOffset(ped, x, y, groundZ + 0.05, false, false, false)
+                    settled = true
+                    break
+                end
+                settled = true
+                break
+            end
+
             Citizen.Wait(50)
         end
+
+        if not settled then
+            local found, groundZ = GetGroundZFor_3dCoord(x, y, z + 5.0, false)
+            if found then SetEntityCoordsNoOffset(ped, x, y, groundZ + 0.05, false, false, false) end
+        end
+
+        if not wasFrozen then FreezeEntityPosition(ped, false) end
     end)
 
     return true

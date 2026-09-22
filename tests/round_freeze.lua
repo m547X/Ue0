@@ -55,6 +55,9 @@ ENV.SetPlayerCanDoDriveBy  = function(_, v) P.driveBy = v == true end
 ENV.GetEntityHealth        = function() return P.health end
 ENV.GetPedArmour           = function() return P.armour end
 ENV.SetEntityHealth        = function(_, v) P.health = v end
+ENV.SetEntityMaxHealth     = function(_, v) P.maxHealth = v end
+ENV.SetPedArmour           = function(_, v) P.armour = v end
+ENV.ClearPedBloodDamage    = function() P.bloodCleared = true end
 ENV.IsPedRagdoll           = function() return false end
 ENV.IsPedFalling           = function() return false end
 ENV.IsPedDeadOrDying       = function() return false end
@@ -156,6 +159,32 @@ check('and the next round still releases after them', canMove(), true)
 send({ phase = 'live', round = 8, time = 120 })
 ENV.__round({ matchId = 'other', phase = 'end', round = 1, winner = 1 })
 check('a round ending in another match does not freeze us', canMove(), true)
+
+-- ==========================================================================
+-- 5. a round starts at full health, whatever the countdown did to you
+-- ==========================================================================
+-- Between the spawn and the round going live the player is standing on a map
+-- that may only just have streamed in, and a short drop onto it is a few
+-- points of fall damage. Starting a round on 93 of 100 because the ground
+-- arrived late is not a fight anybody agreed to.
+ENV.State.loadout = { health = 100, armor = 50 }
+ENV.State.settings = { health = 100, armor = 50 }
+
+P.health, P.armour, P.bloodCleared = 193, 12, false
+send({ phase = 'live', round = 2, time = 120 })
+check('the round starts on full health', P.health, 200)
+check('  and the armour it was given',   P.armour, 50)
+check('  with the blood wiped off',      P.bloodCleared, true)
+
+-- but it tops up, it does not hand out more than the loadout said
+P.health, P.armour = 200, 50
+send({ phase = 'live', round = 3, time = 120 })
+check('a player already on full is left alone', P.health, 200)
+check('  and so is their armour',               P.armour, 50)
+
+-- and what the damage check compares against is reset with it, so the top-up
+-- is not read as somebody having hit you for the difference
+check('the damage watch starts from there too', ENV.State.lastHealth, 200)
 
 print(fails > 0 and ('\n%d FAILED of %d'):format(fails, checks)
                 or ('\nALL PASS (%d checks)'):format(checks))

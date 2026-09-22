@@ -285,9 +285,14 @@ html[dir="rtl"] .hud-timer{direction:ltr}
 .pc-bar.hp.low span{color:var(--lose);animation:blink .9s infinite}
 
 /* ----- weapon card ----- */
-.gc-art{width:66px;height:38px;flex:none;display:grid;place-items:center;
+/* Weapon renders are square with the gun drawn small inside a lot of empty
+   space — 100x100 is the usual pack. `cover` filled the box by zooming into
+   the middle of that and cropping the barrel off both ends; `contain` fits the
+   whole picture in and leaves the padding where the artist put it. */
+.gc-art{width:66px;height:46px;flex:none;display:grid;place-items:center;
   border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--edge-soft);
-  background-size:cover;background-position:center;color:var(--dim);overflow:hidden}
+  background-size:contain;background-repeat:no-repeat;background-position:center;
+  color:var(--dim);overflow:hidden}
 .gc-art svg{width:44px;height:22px;filter:drop-shadow(0 1px 2px #000)}
 .gc-art.art svg{display:none}
 .gc-body{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}

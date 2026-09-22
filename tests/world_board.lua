@@ -541,6 +541,45 @@ wbTick(vector3(0, 0, 0), 0)
 check('  and the board is back where the config puts it', DRAWS > 0, true)
 
 -- ==========================================================================
+-- 6b. the plate over each podium ped
+-- ==========================================================================
+-- Three people standing in a row, each with a label over their head. It has to
+-- read from across the plaza and it has to not look like debug output, and
+-- every line of it is drawn sixty times a second on the machine of anybody
+-- standing there — so what is on it is a design decision with a price.
+onBoard({ rows = {
+  { position = 1, name = 'SHADOW', rp = 2680, rank = 'Radiant', color = '#FFE9A8' },
+  { position = 2, name = 'VIPER',  rp = 2310, rank = 'Immortal', color = '#E0304E' },
+  { position = 3, name = 'GHOST',  rp = 990,  rank = 'Gold III', color = '#E8B33C' },
+  { position = 4, name = 'FALCON', rp = 12,   rank = 'Iron I',  color = '#7C7C80' }
+}, season = 'S1' })
+
+local p1, p4 = WB.rows[1], WB.rows[4]
+check('the plate is one line: place, name, score', p1.plate, '#1   SHADOW   2,680')
+check('  with the score grouped, not a wall of digits',
+      WB.rows[3].plate, '#3   GHOST   990')
+check('  and a small score is not padded',        p4.plate, '#4   FALCON   12')
+check('the rank sits under it, in capitals',      p1.under, 'RADIANT')
+
+-- The bar under the name is the medal colour for the top three, because that
+-- is what they are standing on, and the player's own rank colour below that.
+check('first place wears gold',   ('%d,%d,%d'):format(p1.mr, p1.mg, p1.mb), '245,197,66')
+check('  second silver',          ('%d,%d,%d'):format(WB.rows[2].mr, WB.rows[2].mg, WB.rows[2].mb), '200,208,218')
+check('  third bronze',           ('%d,%d,%d'):format(WB.rows[3].mr, WB.rows[3].mg, WB.rows[3].mb), '199,123,60')
+check('  and anyone else their own rank colour',
+      ('%d,%d,%d'):format(p4.mr, p4.mg, p4.mb), '124,124,128')
+
+-- The backdrop used to be one fixed width whatever was written on it, so a
+-- long name ran off both ends of its own box and a short one floated in the
+-- middle of an empty slab. It is measured from the text now.
+check('a longer plate gets a wider backdrop', p1.plateW > p4.plateW, true)
+check('  and it never gets silly',
+      p1.plateW >= 0.05 and p1.plateW <= 0.16, true)
+
+WB.rows = rows(10)
+wbTick(vector3(0, 0, 0), 0)
+
+-- ==========================================================================
 -- 7. asking for the rows is not a one-off
 -- ==========================================================================
 -- The client asks the server for the board a few seconds after it starts. If

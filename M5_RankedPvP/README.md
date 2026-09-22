@@ -923,14 +923,16 @@ against counted stubs:
 | standing in front of the board | **6 native calls, 1 allocation** — four `DrawSpritePoly`, the camera once, the on-screen test once |
 | looking away while standing there | 8 calls, **nothing drawn** |
 | …with the podium nameplates, from ten metres | **39** |
-| …standing among the peds | 60 |
+| …standing among the peds | 63 |
 
 So the board itself is six calls a frame, and the nameplates are the rest. Each
 is a backdrop, a line or two of text and a projection, and GTA resets the text
 state between draws so it cannot be done in fewer calls — what it can do is
-draw fewer of them: past seven metres the rank line under the name is dropped
-and only the name is drawn, which is where the 60 becomes 39. Turning the
-plates off entirely (`podium.showNames = false`) leaves the board at its six.
+draw fewer of them. Past seven metres the plate is **one line** — place, name
+and score, tinted with the medal colour — over a backdrop measured to fit it.
+Walk closer and it gains a bar in the medal colour and the rank underneath.
+Turning the plates off entirely (`podium.showNames = false`) leaves the board
+at its six.
 
 **The texture is the real weight, and it sizes itself now.** The page is not
 animated — no timers, no transitions, no keyframes — so once it is painted the
