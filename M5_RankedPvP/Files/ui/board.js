@@ -141,19 +141,33 @@ function drawRows(rows, note) {
 }
 
 /* -------------------------------------------------------------------- skin */
+/* Only something that really is a colour is allowed through. A CSS variable
+   set to nonsense does not fall back to what it was — it makes every property
+   that reads it invalid, so one bad value in the config would turn the page's
+   own background transparent and the board would go invisible in the world
+   with nothing anywhere to say why. */
+const COLOUR = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\))$/i;
+const colourOf = (v) => (typeof v === 'string' && COLOUR.test(v.trim()) ? v.trim() : null);
+
 function applyTheme(t) {
   if (!t) return;
   const root = document.documentElement.style;
-  if (t.accent) {
-    root.setProperty('--accent', t.accent);
-    const rgb = rgbOf(t.accent);
+  const set = (name, value) => {
+    const c = colourOf(value);
+    if (c) root.setProperty(name, c);
+  };
+
+  const accent = colourOf(t.accent);
+  if (accent) {
+    root.setProperty('--accent', accent);
+    const rgb = rgbOf(accent);
     if (rgb) root.setProperty('--accent-rgb', rgb);
   }
-  if (t.gold) root.setProperty('--gold', t.gold);
-  if (t.text) root.setProperty('--text', t.text);
-  if (t.dim)  root.setProperty('--dim', t.dim);
-  if (t.bg)   root.setProperty('--bg', t.bg);
-  if (t.panel) root.setProperty('--panel', t.panel);
+  set('--gold', t.gold);
+  set('--text', t.text);
+  set('--dim', t.dim);
+  set('--bg', t.bg);
+  set('--panel', t.panel);
 }
 
 function applyBrand(b) {

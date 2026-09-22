@@ -277,6 +277,42 @@ const spill = (page) => page.evaluate((size) => {
   check('  and off :has()',                   /:has\(/.test(src), false);
   check('  and blurs nothing',                /blur\(/.test(src), false);
 
+  // ======================================================================
+  // the page must never end up see-through
+  // ======================================================================
+  // The board is a texture drawn on a flat surface in the world, so a page
+  // with no background is a board that is not there — and every flag on the
+  // client side still reads healthy. A CSS variable set to something that is
+  // not a colour does not keep its old value: it poisons every property that
+  // reads it, so one bad entry in Config.UI.colors used to be enough.
+  const opaque = () => page.evaluate(() => {
+    const bg = getComputedStyle(document.body).backgroundColor;
+    const m = bg.match(/rgba?\(([^)]+)\)/);
+    const parts = m ? m[1].split(',').map((n) => parseFloat(n)) : [];
+    return { bg, alpha: parts.length === 4 ? parts[3] : 1 };
+  });
+
+  check('the page has a solid background of its own', (await opaque()).alpha, 1);
+
+  await page.evaluate(() => window.__send({
+    action: 'board', rows: [], max: 10, season: 'S1',
+    theme: { bg: 'not a colour', panel: 'javascript:alert(1)',
+             text: '', dim: undefined, accent: '#25D0A0' }
+  }));
+  await page.waitForTimeout(120);
+  const after = await opaque();
+  check('a config value that is not a colour cannot blank it', after.alpha, 1);
+  check('  and the background it kept is its own',
+        after.bg, 'rgb(6, 7, 10)');
+
+  // a real colour still gets through
+  await page.evaluate(() => window.__send({
+    action: 'board', rows: [], max: 10, season: 'S1',
+    theme: { bg: '#123456', accent: '#25D0A0' }
+  }));
+  await page.waitForTimeout(120);
+  check('a real colour is still applied', (await opaque()).bg, 'rgb(18, 52, 86)');
+
   check('nothing threw along the way', errors, []);
 
   await page.screenshot({ path: path.resolve(__dirname, '../scratchpad/world_board.png') });

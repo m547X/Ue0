@@ -2630,7 +2630,9 @@ local function duiPush()
         subtitle = sc.subtitle,
         emptyText = sc.emptyText,
         theme  = { accent = col.accent, gold = col.gold, text = col.text,
-                   dim = col.dim, bg = col.bgDeep or col.bg, panel = col.panel },
+                   dim = col.textDim or col.dim,
+                   bg = col.background or col.bg,
+                   panel = col.panel },
         brand  = { name = brand.name, accent = brand.accent }
     })
     DUI.dirty = true
@@ -3935,6 +3937,7 @@ local function wbReport()
     print('')
     print('[M5RP] ---- world board ----')
     print(('  resource      : %s'):format(GetCurrentResourceName()))
+    print(('  you are at    : %.2f %.2f %.2f'):format(me.x, me.y, me.z))
     print(('  page url      : %s'):format(duiUrl()))
     print(('  config on     : %s'):format(tostring(wbOn())))
     print(('  server said   : %s'):format(
@@ -3967,12 +3970,27 @@ local function wbReport()
         local centre = World3dToScreen2d(tonumber(p.x) or 0.0,
                                          tonumber(p.y) or 0.0,
                                          tonumber(p.z) or 0.0)
-        print(('  screen %d      : %.2f %.2f %.2f  h %.0f  w %.1fm  on %s'):format(
+        local sw, sh = screenSize(s)
+        print(('  screen %d      : %.2f %.2f %.2f  h %.0f  pitch %.0f  %.1f x %.1f m  on %s'):format(
             i, tonumber(p.x) or 0, tonumber(p.y) or 0, tonumber(p.z) or 0,
-            tonumber(s.h) or 0, tonumber(s.width) or 0, tostring(s.enabled ~= false)))
+            tonumber(s.h) or 0, tonumber(s.pitch) or 0, sw, sh,
+            tostring(s.enabled ~= false)))
         print(('                  you are %.1fm away, seen from %.0fm -> %s, in view -> %s (centre %s)'):format(
             d, far, d <= far and 'IN RANGE' or 'TOO FAR',
             tostring(onScreen), tostring(centre)))
+
+        local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(s)
+        local q = s.__quad
+        local eye = GetFinalRenderedCamCoord()
+        local dot = (eye.x - q.px) * q.nx + (eye.y - q.py) * q.ny + (eye.z - q.pz) * q.nz
+        print(('                  corners z %.2f..%.2f, you see the %s of it'):format(
+            math.min(tlz, blz), math.max(tlz, blz),
+            dot >= 0.0 and 'FRONT' or 'BACK'))
+        print(('                  corner on screen: TL %s TR %s BR %s BL %s'):format(
+            tostring(World3dToScreen2d(tlx, tly, tlz)),
+            tostring(World3dToScreen2d(trx, try, trz)),
+            tostring(World3dToScreen2d(brx, bry, brz)),
+            tostring(World3dToScreen2d(blx, bly, blz))))
     end
 
     print('[M5RP] ---------------------')
