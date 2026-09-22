@@ -912,6 +912,30 @@ The editor used to be the expensive part, and is not any more:
   immediately unless the thing being edited or the orbit around it actually
   changed.
 
+### Measured, per frame, on the machine of someone standing at it
+
+`tests/bench_board.lua` runs the real `wbTick` out of the shipped client
+against counted stubs:
+
+| where you are | per frame |
+|---|---|
+| anywhere else on the map | **0 native calls**, thread asleep 2 s between looks |
+| standing in front of the board | **6 native calls, 1 allocation** — four `DrawSpritePoly`, the camera once, the on-screen test once |
+| looking away while standing there | 8 calls, **nothing drawn** |
+| …with the three podium nameplates up | **60** |
+
+So the board itself is six calls a frame and **the nameplates are ten times the
+board**. Each one is a backdrop, two lines of text and a projection, and GTA
+resets the text state between draws, so it cannot be done in fewer. If the
+board needs to be as light as it can be, `podium.showNames = false` is the one
+switch that matters: it takes ~90% of the per-frame work away and leaves the
+board and the three peds exactly as they are.
+
+Below that, everything else is already paid once rather than per frame: the
+layout is read once a tick instead of twice, the corner maths and the distance
+thresholds are cached until the board moves, the page is sent rows only when
+the rows change, and the browser is built once rather than per frame.
+
 **If it is still too heavy**, in the order worth trying:
 
 | lever | where | what it buys |

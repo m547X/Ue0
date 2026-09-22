@@ -116,7 +116,7 @@ html, body {
 .stand {
   flex: 1; display: grid; grid-template-columns: 1fr 1.16fr 1fr;
   align-items: end; gap: 10px;
-  margin-top: auto; padding-top: 30px; min-width: 0; min-height: 0;
+  margin-top: auto; padding-top: 16px; min-width: 0; min-height: 0;
   border-bottom: 2px solid rgba(255,255,255,.11);
 }
 .col {
@@ -131,29 +131,29 @@ html, body {
   border: 1px solid var(--line); border-bottom: none;
 }
 .col.c1 .base {
-  height: 132px; font-size: 44px; color: var(--gold);
+  height: 152px; font-size: 44px; color: var(--gold);
   background: linear-gradient(180deg, rgba(245,197,66,.26), rgba(245,197,66,.03));
   border-color: rgba(245,197,66,.34);
 }
 .col.c2 .base {
-  height: 92px; font-size: 36px; color: var(--silver);
+  height: 108px; font-size: 36px; color: var(--silver);
   background: linear-gradient(180deg, rgba(200,208,218,.18), rgba(200,208,218,.02));
   border-color: rgba(200,208,218,.22);
 }
 .col.c3 .base {
-  height: 66px; font-size: 31px; color: var(--bronze);
+  height: 80px; font-size: 31px; color: var(--bronze);
   background: linear-gradient(180deg, rgba(199,123,60,.20), rgba(199,123,60,.02));
   border-color: rgba(199,123,60,.26);
 }
 
 .pod {
   position: relative; min-width: 0;
-  border-radius: 14px; padding: 18px 7px 14px;
+  border-radius: 14px; padding: 20px 8px 16px;
   background: linear-gradient(180deg, var(--panel-2), rgba(8,10,14,.9));
   border: 1px solid var(--line);
   text-align: center;
 }
-.pod.p1 { padding: 32px 7px 18px; border-color: rgba(245,197,66,.45);
+.pod.p1 { padding: 34px 8px 20px; border-color: rgba(245,197,66,.45);
   background: linear-gradient(180deg, rgba(40,32,10,.95), rgba(8,10,14,.92));
   box-shadow: 0 0 0 1px rgba(245,197,66,.16), 0 0 40px -18px var(--gold); }
 .pod.p2 { border-color: rgba(200,208,218,.28);
@@ -161,10 +161,20 @@ html, body {
 .pod.p3 { border-color: rgba(199,123,60,.32);
   background: linear-gradient(180deg, rgba(36,26,18,.95), rgba(8,10,14,.92)); }
 
+/* The crown sits ON the top edge of the card rather than inside it, so the
+   leader's card reads as wearing it instead of having a badge printed at the
+   top. Struck gold with a dark rim, because a flat gold shape at board
+   distance turns into a yellow blob. */
 .pod-crown {
-  position: absolute; top: 7px; left: 50%; transform: translateX(-50%);
-  width: 22px; height: 22px; fill: var(--gold);
+  position: absolute; top: -17px; left: 50%; transform: translateX(-50%);
+  width: 46px; height: 33px; overflow: visible;
+  filter: drop-shadow(0 3px 7px rgba(0,0,0,.85))
+          drop-shadow(0 0 13px rgba(245,197,66,.42));
 }
+.cr-body, .cr-band, .cr-tip { fill: url(#crownGold); }
+.cr-body, .cr-band { stroke: rgba(70,44,2,.85); stroke-width: 1.1; stroke-linejoin: round; }
+.cr-tip { stroke: rgba(70,44,2,.85); stroke-width: 1; }
+.cr-gem { fill: #2B1704; opacity: .55; }
 
 .pod-av {
   width: 62px; height: 62px; border-radius: 50%; margin: 0 auto;
@@ -190,15 +200,21 @@ html, body {
    name. */
 /* the rank, in its own colour, the way the table shows it */
 .pod-rank {
-  margin: 7px auto 0; display: inline-flex; align-items: center; gap: 5px;
-  max-width: 100%; padding: 3px 7px; border-radius: 6px;
+  margin: 7px auto 0; display: inline-flex; align-items: center; gap: 4px;
+  max-width: 100%; padding: 3px 6px; border-radius: 6px;
   background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07);
 }
-.pod-rank svg { width: 15px; height: 15px; flex: none; }
-.pod-rank span {
-  font-size: 9px; font-weight: 800; letter-spacing: .04em;
+.pod-rank svg { width: 13px; height: 13px; flex: none; }
+.pod-rank b {
+  font-size: 8.5px; font-weight: 800; letter-spacing: .01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* the division, set apart from the tier so neither has to be cut short */
+.pod-rank i, .c-rank i {
+  font-style: normal; flex: none; opacity: .72;
+  font-weight: 900; letter-spacing: .02em;
+}
+.pod-rank i { font-size: 8.5px; }
 
 .pod-score { margin-top: 9px; font-size: 26px; font-weight: 800; line-height: 1; }
 .pod.p1 .pod-score { font-size: 31px; color: var(--gold); }
@@ -258,7 +274,7 @@ html, body {
 .grid {
   display: grid; column-gap: 6px;
   grid-template-columns:
-    44px 104px minmax(146px,1fr) 42px 52px 60px 50px 60px 48px 82px;
+    44px 124px minmax(138px,1fr) 38px 48px 56px 46px 54px 44px 84px;
   align-items: center;
 }
 
@@ -325,16 +341,17 @@ html, body {
 
 /* the rank as a chip in its own colour, rather than loose text */
 .c-rank {
-  display: flex; align-items: center; gap: 7px; min-width: 0;
-  padding: 4px 8px 4px 5px; border-radius: 7px;
+  display: flex; align-items: center; gap: 5px; min-width: 0;
+  padding: 4px 6px 4px 5px; border-radius: 7px;
   background: rgba(255,255,255,.05);
   border: 1px solid rgba(255,255,255,.07);
 }
-.c-rank svg { width: 21px; height: 21px; flex: none; }
-.c-rank span {
-  font-size: 10px; font-weight: 800; letter-spacing: .05em;
+.c-rank svg { width: 18px; height: 18px; flex: none; }
+.c-rank b {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .015em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.c-rank i { font-size: 9px; }
 
 .c-player { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .av {
@@ -367,11 +384,19 @@ html, body {
 
 /* the score is what everybody is looking for, so it is the loudest thing in
    the row and sits in its own slab */
+/* The accent is whatever the server set it to, and a dark one made the score
+   dark text on a dark slab — the one number everybody is looking for, and the
+   hardest to read. The slab carries the colour, the number stays bright. */
 .c-score {
-  color: var(--accent); font-size: 16px; font-weight: 900;
-  padding: 4px 8px; border-radius: 7px;
-  background: rgba(var(--accent-rgb),.10);
-  border: 1px solid rgba(var(--accent-rgb),.20);
+  color: var(--text); font-size: 17px; font-weight: 900;
+  padding: 5px 9px; border-radius: 7px;
+  background: linear-gradient(180deg, rgba(var(--accent-rgb),.34), rgba(var(--accent-rgb),.14));
+  border: 1px solid rgba(var(--accent-rgb),.42);
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+.row.top1 .c-score {
+  color: #1B1300; background: linear-gradient(180deg, #F8D976, var(--gold));
+  border-color: rgba(255,240,190,.55); text-shadow: none;
 }
 .head .c-score { background: none; border-color: transparent; padding: 0;
   font-size: 11px; font-weight: 800; }

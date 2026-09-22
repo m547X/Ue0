@@ -23,6 +23,29 @@ const num = (n) => {
 
 const initial = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
 
+/* A rank is a tier and, usually, a division: "ASCENDANT III". Written as one
+   run of text it is the longest thing in its column and was being cut off —
+   "ASCEND…" tells nobody anything. The division is a numeral, so it is split
+   off and set smaller beside the tier, which fits and reads better anyway. */
+const DIVISIONS = { I: 1, II: 1, III: 1, IV: 1, V: 1 };
+
+function rankParts(name) {
+  const words = String(name || '').trim().toUpperCase().split(/\s+/);
+  const last = words[words.length - 1];
+  if (words.length > 1 && DIVISIONS[last]) {
+    return { tier: words.slice(0, -1).join(' '), div: last };
+  }
+  return { tier: words.join(' '), div: '' };
+}
+
+function rankChip(row, cls) {
+  const p = rankParts(row && row.rank);
+  if (!p.tier) return `<span class="${cls}"></span>`;
+  return `<span class="${cls}" style="color:${esc(tint(row && row.color))}">`
+       + `<svg><use href="#crest"/></svg>`
+       + `<b>${esc(p.tier)}</b>${p.div ? `<i>${esc(p.div)}</i>` : ''}</span>`;
+}
+
 /** A hex colour the config wrote, or the accent if it wrote something odd. */
 const tint = (c) => (typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c)) ? c : 'var(--accent)';
 
@@ -56,13 +79,10 @@ function drawPodium(rows) {
     const score = num(r.rp);
     return `<div class="col c${n}">
       <div class="pod p${n}">
-        ${n === 1 ? `<svg class="pod-crown" viewBox="0 0 24 24">
-          <path d="M3 7l4.5 3.2L12 4l4.5 6.2L21 7l-1.6 11H4.6L3 7z"/></svg>` : ''}
+        ${n === 1 ? '<svg class="pod-crown" viewBox="0 0 64 46"><use href="#crown"/></svg>' : ''}
         ${avatar(r, 'pod-av')}
         <div class="pod-name">${esc(r.name)}</div>
-        <div class="pod-rank" style="color:${esc(tint(r.color))}">
-          <svg><use href="#crest"/></svg><span>${esc(String(r.rank || '').toUpperCase())}</span>
-        </div>
+        ${rankChip(r, 'pod-rank')}
         <div class="pod-score${score.length > 5 ? ' long' : ''}">${score}</div>
         <div class="pod-unit">POINTS</div>
         <div class="pod-stats">
@@ -122,9 +142,7 @@ function drawRows(rows, note) {
     const col = tint(r.color);
     return `<div class="grid row${top}">
       <span class="c-top">#${esc(r.position || i + 1)}</span>
-      <span class="c-rank" style="color:${esc(col)}">
-        <svg><use href="#crest"/></svg><span>${esc(String(r.rank || '').toUpperCase())}</span>
-      </span>
+      ${rankChip(r, 'c-rank')}
       <span class="c-player">
         ${avatar(r, 'av')}
         <span class="who"><b>${esc(r.name)}</b><i>#${esc(r.userId)}</i></span>

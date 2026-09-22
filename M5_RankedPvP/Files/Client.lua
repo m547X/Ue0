@@ -2551,8 +2551,10 @@ local function wbText(text, x, y, scale, r, g, b, a, align, wrapTo)
     SetTextScale(0.0, scale)
     SetTextColour(r, g, b, a)
     SetTextCentre(align == 'centre')
-    SetTextRightJustify(align == 'right')
-    if align == 'right' then SetTextWrap(0.0, wrapTo or x) end
+    if align == 'right' then
+        SetTextRightJustify(true)
+        SetTextWrap(0.0, wrapTo or x)
+    end
     BeginTextCommandDisplayText('STRING')
     AddTextComponentSubstringPlayerName(text)
     EndTextCommandDisplayText(x, y)
@@ -2943,27 +2945,44 @@ local WB_ASK_EVERY = 5000
 function wbTick(me, podiumAcc)
     local sleep = WB_FAR
 
-    if WB.off then return sleep, podiumAcc end
+    if WB.off or not wbOn() then return sleep, podiumAcc end
 
-    local screens = wbScreens()
+    local layout = wbLayout()
+    local screens = layout.screens
+    if layout.screensEnabled == false or not screens or #screens == 0 then
+        screens = nil
+    end
+
     local anyNear = false
     local eyeX, eyeY, eyeZ
+    local drewAny = false
+
     if screens then
         local mx, my, mz = me.x, me.y, me.z
         for i = 1, #screens do
             local spot = screens[i]
             local p    = spot.pos
             if spot.enabled ~= false and p then
-                local far = tonumber(spot.distance) or 35.0
                 local dx, dy, dz = mx - p.x, my - p.y, mz - p.z
                 local d2  = dx * dx + dy * dy + dz * dz
-                if d2 <= far * far then
+
+                local near = spot.__near
+                if not near or spot.__nearOf ~= spot.distance then
+                    local far = tonumber(spot.distance) or 35.0
+                    near = far * far
+                    spot.__near = near
+                    spot.__far  = (far * 1.6) * (far * 1.6)
+                    spot.__nearOf = spot.distance
+                end
+
+                if d2 <= near then
                     anyNear = true
                     if screenInView(spot) then
                         sleep = 0
                         if duiCreate() then
-                            duiFlush()
-                            if not eyeX then
+                            if not drewAny then
+                                drewAny = true
+                                duiFlush()
                                 local cam = GetFinalRenderedCamCoord()
                                 eyeX, eyeY, eyeZ = cam.x, cam.y, cam.z
                             end
@@ -2972,7 +2991,7 @@ function wbTick(me, podiumAcc)
                     elseif sleep > WB_NEAR then
                         sleep = WB_NEAR
                     end
-                elseif d2 <= (far * 1.6) * (far * 1.6) then
+                elseif d2 <= spot.__far then
                     anyNear = true
                     if sleep > WB_NEAR then sleep = WB_NEAR end
                 end
@@ -2993,7 +3012,11 @@ function wbTick(me, podiumAcc)
         end
     end
 
-    local podium = wbPodium()
+    local podium = layout
+    if layout.podiumEnabled == false
+       or not layout.podium or #layout.podium == 0 then
+        podium = nil
+    end
     if not podium then
         if WB.spawned then wbDespawn() end
         return sleep, podiumAcc
