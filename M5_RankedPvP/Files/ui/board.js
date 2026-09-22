@@ -158,6 +158,22 @@ function drawRows(rows, note) {
   }).join('');
 }
 
+/* The page is built for 1280x720 and scaled onto the texture it was actually
+   given. Reading the size once on load is enough — a DUI surface never
+   changes size — but the listener costs nothing and covers a client that
+   rebuilds the board at a different size without reloading the page. */
+const DESIGN_W = 1280, DESIGN_H = 720;
+
+function fitToSurface() {
+  const w = window.innerWidth || DESIGN_W;
+  const h = window.innerHeight || DESIGN_H;
+  const s = Math.min(w / DESIGN_W, h / DESIGN_H) || 1;
+  document.documentElement.style.setProperty('--s', s);
+}
+
+fitToSurface();
+window.addEventListener('resize', fitToSurface);
+
 /* -------------------------------------------------------------------- skin */
 /* Only something that really is a colour is allowed through. A CSS variable
    set to nonsense does not fall back to what it was — it makes every property
@@ -210,6 +226,13 @@ function render(d) {
   if (d.subtitle) $('bd-sub').textContent = d.subtitle;
 
   const rows = Array.isArray(d.rows) ? d.rows : [];
+
+  /* The season strip carries the season even when the standings have not
+     changed, because a new season starts with the same empty ladder. */
+  $('bd-meta-season').textContent = String(d.season || '—')
+    .replace(/\s*STANDINGS\s*$/i, '') || '—';
+  $('bd-meta-count').textContent = num(rows.length);
+
   const key = JSON.stringify(rows);
   if (key === lastKey) return;
   lastKey = key;

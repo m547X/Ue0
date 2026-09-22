@@ -2591,10 +2591,34 @@ local DUI = {
 
 local DUI_GRACE = 4000
 
+local function duiAutoWidth()
+    local l = wbLayout() or {}
+    local widest = 0.0
+    local screens = l.screens or {}
+    for i = 1, #screens do
+        local w = tonumber(screens[i].width) or 0.0
+        if screens[i].enabled ~= false and w > widest then widest = w end
+    end
+    if widest <= 0 then widest = 6.0 end
+
+    local px = widest * 110.0
+    if px < 640 then px = 640 elseif px > 1280 then px = 1280 end
+    return math.floor(px / 16) * 16
+end
+
 local function duiSize()
     local sc = (Config.WorldBoard or {}).screens or {}
-    local w = math.floor(tonumber(sc.textureWidth)  or 1280)
-    local h = math.floor(tonumber(sc.textureHeight) or 720)
+
+    local w = tonumber(sc.textureWidth)
+    local h = tonumber(sc.textureHeight)
+
+    if not w or w <= 0 then
+        w = duiAutoWidth()
+        h = math.floor(w * 9 / 16)
+    end
+    if not h or h <= 0 then h = math.floor(w * 9 / 16) end
+
+    w, h = math.floor(w), math.floor(h)
     if w < 256 then w = 256 elseif w > 2048 then w = 2048 end
     if h < 144 then h = 144 elseif h > 2048 then h = 2048 end
     return w, h
@@ -3048,14 +3072,18 @@ function wbTick(me, podiumAcc)
             local row = WB.rows[i]
             if row and pos then
                 local dx, dy, dz = me.x - pos.x, me.y - pos.y, me.z - pos.z
-                if (dx * dx + dy * dy + dz * dz) <= 196.0
-                   and World3dToScreen2d(pos.x, pos.y, pos.z) then
+                local d2 = dx * dx + dy * dy + dz * dz
+                if d2 <= 144.0 and World3dToScreen2d(pos.x, pos.y, pos.z) then
                     sleep = 0
+                    local close = d2 <= 49.0
                     SetDrawOrigin(pos.x, pos.y, pos.z, 0)
-                    DrawRect(0.0, 0.0, 0.058, 0.026, 8, 10, 14, 170)
-                    wbText(row.plate or '', 0.0, -0.010, 0.32, 240, 240, 245, 255, 'centre')
-                    wbText(row.under or '', 0.0, 0.001, 0.24,
-                           row.r or 220, row.g or 220, row.b or 225, 235, 'centre')
+                    DrawRect(0.0, 0.0, 0.058, close and 0.026 or 0.017, 8, 10, 14, 170)
+                    wbText(row.plate or '', 0.0, close and -0.010 or -0.005,
+                           0.32, 240, 240, 245, 255, 'centre')
+                    if close then
+                        wbText(row.under or '', 0.0, 0.001, 0.24,
+                               row.r or 220, row.g or 220, row.b or 225, 235, 'centre')
+                    end
                     ClearDrawOrigin()
                 end
             end

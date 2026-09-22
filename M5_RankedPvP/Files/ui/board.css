@@ -39,8 +39,15 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* The page is drawn at one size and scaled onto whatever texture it is given.
+   Everything below is laid out for 1280x720 and nothing in it is responsive —
+   it does not need to be, because the texture is the only thing that ever
+   looks at it. board.js sets --s from the surface it actually got, so the
+   texture size becomes a pure memory dial: a board rendered at 800x450 is the
+   same picture with fewer pixels behind it, not a broken layout. */
 .board {
-  width: 100%; height: 100%;
+  width: 1280px; height: 720px;
+  transform: scale(var(--s, 1)); transform-origin: 0 0;
   display: grid;
   grid-template-columns: 34% 1fr;
   /* the row is pinned to the board's height: an auto row grows to fit its
@@ -109,6 +116,25 @@ html, body {
   background: linear-gradient(90deg, rgba(245,197,66,.55), transparent);
 }
 
+/* what ladder this is and how many are on it, filling the panel above the
+   podium with something worth reading rather than air */
+.pod-meta { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.meta {
+  padding: 9px 12px; border-radius: 11px;
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012));
+  border: 1px solid var(--line);
+}
+.meta label {
+  display: block; font-size: 9px; font-weight: 800; letter-spacing: .26em;
+  color: var(--dim-2); margin-bottom: 5px;
+}
+.meta b {
+  display: block; font-size: 16px; font-weight: 800; letter-spacing: .02em;
+  color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.meta:last-child b { color: var(--gold); }
+
 /* the three cards, tallest in the middle, each standing on a plinth. The
    plinths are what make it a podium instead of three cards in a row, and they
    are what fills the panel down to the floor without stretching the cards
@@ -116,7 +142,7 @@ html, body {
 .stand {
   flex: 1; display: grid; grid-template-columns: 1fr 1.16fr 1fr;
   align-items: end; gap: 10px;
-  margin-top: auto; padding-top: 16px; min-width: 0; min-height: 0;
+  margin-top: auto; padding-top: 12px; min-width: 0; min-height: 0;
   border-bottom: 2px solid rgba(255,255,255,.11);
 }
 .col {
@@ -131,17 +157,17 @@ html, body {
   border: 1px solid var(--line); border-bottom: none;
 }
 .col.c1 .base {
-  height: 152px; font-size: 44px; color: var(--gold);
+  height: 112px; font-size: 38px; color: var(--gold);
   background: linear-gradient(180deg, rgba(245,197,66,.26), rgba(245,197,66,.03));
   border-color: rgba(245,197,66,.34);
 }
 .col.c2 .base {
-  height: 108px; font-size: 36px; color: var(--silver);
+  height: 78px; font-size: 31px; color: var(--silver);
   background: linear-gradient(180deg, rgba(200,208,218,.18), rgba(200,208,218,.02));
   border-color: rgba(200,208,218,.22);
 }
 .col.c3 .base {
-  height: 80px; font-size: 31px; color: var(--bronze);
+  height: 58px; font-size: 27px; color: var(--bronze);
   background: linear-gradient(180deg, rgba(199,123,60,.20), rgba(199,123,60,.02));
   border-color: rgba(199,123,60,.26);
 }
@@ -204,9 +230,9 @@ html, body {
   max-width: 100%; padding: 3px 6px; border-radius: 6px;
   background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07);
 }
-.pod-rank svg { width: 13px; height: 13px; flex: none; }
+.pod-rank svg { width: 12px; height: 12px; flex: none; }
 .pod-rank b {
-  font-size: 8.5px; font-weight: 800; letter-spacing: .01em;
+  font-size: 8px; font-weight: 800; letter-spacing: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* the division, set apart from the tier so neither has to be cut short */

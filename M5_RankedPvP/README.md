@@ -922,14 +922,26 @@ against counted stubs:
 | anywhere else on the map | **0 native calls**, thread asleep 2 s between looks |
 | standing in front of the board | **6 native calls, 1 allocation** — four `DrawSpritePoly`, the camera once, the on-screen test once |
 | looking away while standing there | 8 calls, **nothing drawn** |
-| …with the three podium nameplates up | **60** |
+| …with the podium nameplates, from ten metres | **39** |
+| …standing among the peds | 60 |
 
-So the board itself is six calls a frame and **the nameplates are ten times the
-board**. Each one is a backdrop, two lines of text and a projection, and GTA
-resets the text state between draws, so it cannot be done in fewer. If the
-board needs to be as light as it can be, `podium.showNames = false` is the one
-switch that matters: it takes ~90% of the per-frame work away and leaves the
-board and the three peds exactly as they are.
+So the board itself is six calls a frame, and the nameplates are the rest. Each
+is a backdrop, a line or two of text and a projection, and GTA resets the text
+state between draws so it cannot be done in fewer calls — what it can do is
+draw fewer of them: past seven metres the rank line under the name is dropped
+and only the name is drawn, which is where the 60 becomes 39. Turning the
+plates off entirely (`podium.showNames = false`) leaves the board at its six.
+
+**The texture is the real weight, and it sizes itself now.** The page is not
+animated — no timers, no transitions, no keyframes — so once it is painted the
+browser composites nothing at all and what it costs is its surface: 1280×720 is
+921,600 pixels held in memory for a board most people read from eight metres.
+`textureWidth`/`textureHeight` set to **0** means *work it out*: 110 pixels per
+metre of board width, clamped to 640–1280 and always 16:9. A seven-metre board
+gets 800×450 — **61% fewer pixels for the same picture**, because the page is
+laid out at 1280×720 and scaled onto whatever surface it is given rather than
+reflowed into it. Set the numbers by hand only if you have a board big enough
+to stand and read at arm's length.
 
 Below that, everything else is already paid once rather than per frame: the
 layout is read once a tick instead of twice, the corner maths and the distance
@@ -940,7 +952,7 @@ the rows change, and the browser is built once rather than per frame.
 
 | lever | where | what it buys |
 |---|---|---|
-| `screens.textureWidth` / `textureHeight` | Config_Client.lua | the floor cost. A DUI is a real browser; 1280×720 is one. 960×540 is noticeably cheaper and still readable at four metres — keep 16:9. |
+| `screens.textureWidth` / `textureHeight` | Config_Client.lua | the floor cost. **0 means automatic**, sized from the board's own width — that is the setting. A number forces it, and forcing a big one is the most expensive thing you can do here. |
 | `keepAlive` | Config_Client.lua | how long the browser lingers after you walk away. Lower it on a server where people pass the board constantly. |
 | `screens.distance` | Config_Client.lua | how far out the board starts existing. Nothing at all is paid outside it. |
 | `podium.enabled` | Config_Client.lua | the three peds are ordinary peds with real clothing; switching them off is the single biggest saving. |
