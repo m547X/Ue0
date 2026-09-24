@@ -81,7 +81,7 @@ SetEntityAsMissionEntity = noop
 RequestAnimDict, HasAnimDictLoaded, TaskPlayAnim, RemoveAnimDict =
   noop, function() return true end, noop, noop
 Citizen = { Wait = noop }
-RegisterNetEvent, AddEventHandler = noop, noop
+RegisterNetEvent, AddEventHandler, RegisterNUICallback = noop, noop, noop
 function GetCurrentResourceName() return 'M5_RankedPvP' end
 
 -- the browser, counted rather than opened

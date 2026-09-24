@@ -28,15 +28,21 @@ function check(name, got, want) {
   else console.log(`ok   ${name.padEnd(56)} ${JSON.stringify(got)}`);
 }
 
-/* Counts every way a page has of waking itself up. The board must use none of
-   them: a repainting texture is paid for by everyone standing in front of it. */
+/* Counts every way a page has of waking itself up. The board must not draw on
+   any of them: a repainting texture is paid for by everyone standing in front
+   of it. The one thing it is allowed to do is ask the client for standings it
+   was never given, which touches the network and nothing on screen. */
 const SPY = () => {
-  window.__woke = { interval: 0, timeout: 0, frame: 0, fetch: 0 };
+  window.__woke = { interval: 0, timeout: 0, frame: 0, fetch: 0, urls: [] };
   const si = window.setInterval, st = window.setTimeout, raf = window.requestAnimationFrame;
   window.setInterval = function (...a) { window.__woke.interval++; return si.apply(window, a); };
   window.setTimeout = function (...a) { window.__woke.timeout++; return st.apply(window, a); };
   window.requestAnimationFrame = function (...a) { window.__woke.frame++; return raf.apply(window, a); };
-  window.fetch = function () { window.__woke.fetch++; return Promise.reject(new Error('no')); };
+  window.fetch = function (url) {
+    window.__woke.fetch++;
+    window.__woke.urls.push(String(url));
+    return Promise.reject(new Error('no'));
+  };
   window.__send = (m) => window.dispatchEvent(new MessageEvent('message', { data: m }));
 };
 
@@ -90,7 +96,7 @@ const spill = (page) => page.evaluate((size) => {
   page.on('pageerror', (e) => errors.push(String(e)));
 
   await page.addInitScript(SPY);
-  await page.goto(PAGE);
+  await page.goto(PAGE + '?res=M5_RankedPvP');
   await page.waitForTimeout(150);
 
   // ======================================================================
@@ -238,7 +244,34 @@ const spill = (page) => page.evaluate((size) => {
   const woke = await page.evaluate(() => window.__woke);
   check('the page runs no clock of its own', woke.interval, 0);
   check('  no animation frames',              woke.frame, 0);
-  check('  and asks the network for nothing', woke.fetch, 0);
+
+  // ======================================================================
+  // 5b. a page that was never told anything says so
+  // ======================================================================
+  // A message sent to a page that has not finished loading is not queued
+  // anywhere — it is gone, and the client cannot tell. The standings have not
+  // changed since, so nothing is ever sent again and the board hangs on its
+  // empty line with a full ladder sitting on the server. So the page speaks
+  // first: it says it is here, and keeps saying it until it is answered.
+  check('a fresh page asks the client for the standings', woke.fetch > 0, true);
+  check('  addressed to the resource that opened it',
+        woke.urls[0], 'https://M5_RankedPvP/boardHello');
+
+  const asked = woke.fetch;
+  await page.waitForTimeout(2000);
+  check('  and once it has them it stops asking',
+        await page.evaluate(() => window.__woke.fetch), asked);
+
+  // a page that is never answered gives up rather than asking for ever
+  const quiet = await browser.newPage({ viewport: { width: W, height: H } });
+  await quiet.addInitScript(SPY);
+  await quiet.goto(PAGE + '?res=M5_RankedPvP');
+  await quiet.waitForTimeout(1400);
+  const twice = await quiet.evaluate(() => window.__woke.fetch);
+  check('an unanswered page asks again', twice > 1, true);
+  check('  and the asking is bounded',
+        await quiet.evaluate(() => window.__woke.fetch <= 15), true);
+  await quiet.close();
 
   // ======================================================================
   // 6. names come from players, so they are not trusted

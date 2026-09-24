@@ -102,6 +102,8 @@ Citizen = { Wait = noop }
 -- called here too rather than only read
 HANDLERS = {}
 RegisterNetEvent = function(name, fn) if fn then HANDLERS[name] = fn end end
+NUICB = {}
+RegisterNUICallback = function(name, fn) NUICB[name] = fn end
 AddEventHandler = noop
 function GetCurrentResourceName() return 'M5_RankedPvP' end
 
@@ -531,6 +533,50 @@ DRAWS = 0
 local placedSleep = select(1, wbTick(vector3(300, 300, 30), 0))
 check('the board is drawn where it was placed', DRAWS > 0, true)
 check('  and the thread wakes up for it',        placedSleep, 0)
+
+-- ==========================================================================
+-- 6a. how far a board is seen from is a line in the config file
+-- ==========================================================================
+-- The board is placed in the world once and then lives there, but how far
+-- away it starts drawing is a setting, not a position — and a setting that
+-- only works until somebody places a board is no setting at all. A saved
+-- layout carries a distance only for a board that was deliberately given one
+-- of its own in the editor; every other board reads the config, so one line
+-- there moves all of them without touching a single position.
+Config.WorldBoard.screens.distance = 80.0
+
+local INHERIT = {
+  screens = { { pos = { x = 300.0, y = 300.0, z = 30.0 }, title = 'PLACED',
+                enabled = true, h = 90.0, pitch = 0.0, width = 6.0,
+                rows = 10, opacity = 255 },
+              { pos = { x = 400.0, y = 300.0, z = 30.0 }, title = 'ITS OWN',
+                enabled = true, h = 90.0, pitch = 0.0, width = 6.0,
+                rows = 10, opacity = 255, distance = 12.0 } },
+  podium = { { pos = { x = 302.0, y = 300.0, z = 29.0 }, h = 90.0 } },
+  screensEnabled = true, podiumEnabled = true
+}
+
+onBoard({ rows = rows(10), season = 'S1', layout = INHERIT })
+check('a placed board with no distance of its own reads the config',
+      wbLayout().screens[1].distance, 80.0)
+check('  and says where that came from',
+      wbLayout().screens[1].distanceSet, false)
+check('one that was given its own keeps it',
+      wbLayout().screens[2].distance, 12.0)
+check('  and is marked as set',
+      wbLayout().screens[2].distanceSet, true)
+check('the podium reads the config the same way',
+      wbLayout().podiumDistance, 25.0)
+
+-- and it is the config's distance that is actually used, not just stored
+DRAWS = 0
+wbTick(vector3(300, 300 + 60, 30), 0)
+check('sixty metres away is within the eighty it was told', DRAWS > 0, true)
+DRAWS = 0
+wbTick(vector3(300, 300 + 95, 30), 0)
+check('  and past it nothing is drawn',                     DRAWS, 0)
+
+Config.WorldBoard.screens.distance = 35.0
 
 -- Resetting it in the editor sends a payload with no layout on it, and that
 -- has to put the config back rather than leave the placed one standing.

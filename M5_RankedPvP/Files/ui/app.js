@@ -1642,7 +1642,8 @@ function customPayload() {
    control here pushes the whole layout straight back to the client, which
    redraws from it — so what is on screen is always exactly what will be saved,
    and there is no second copy to keep in step. */
-const BE = { layout: null, here: null, sel: 's0', speed: 1 };
+const BE = { layout: null, here: null, sel: 's0', speed: 1,
+             defaults: { distance: 35, podiumDistance: 25 } };
 
 function beSel() {
   const kind = BE.sel[0];
@@ -1697,6 +1698,7 @@ function beStatus(st) {
 function beRender(d) {
   if (d && d.layout) BE.layout = d.layout;
   if (d && d.here) BE.here = d.here;
+  if (d && d.defaults) BE.defaults = d.defaults;
   if (d && d.status !== undefined) BE.status = d.status;
   beStatus(BE.status);
   if (!BE.layout) return;
@@ -1869,7 +1871,10 @@ function beBody() {
     body.appendChild(beNudge(tx('FACING'), () => it.h || 0,
       (v) => { it.h = ((v % 360) + 360) % 360; }, 5, (n) => Math.round(n) + '°'));
     body.appendChild(beNudge(tx('SEEN FROM'), () => BE.layout.podiumDistance,
-      (v) => { BE.layout.podiumDistance = Math.max(3, Math.min(120, v)); }, 1, (n) => Math.round(n) + 'm'));
+      (v) => {
+        BE.layout.podiumDistance = Math.max(3, Math.min(120, v));
+        BE.layout.podiumDistanceSet = true;
+      }, 1, (n) => Math.round(n) + 'm' + (BE.layout.podiumDistanceSet ? '' : ' ·cfg')));
     body.appendChild(beToggle(tx('PODIUM ON'),
       () => BE.layout.podiumEnabled !== false,
       (v) => { BE.layout.podiumEnabled = v; }));
@@ -1889,8 +1894,16 @@ function beBody() {
     (n) => (Math.round(n * 10) / 10) + 'm'));
   body.appendChild(beNudge(tx('ROWS'), () => it.rows,
     (v) => { it.rows = Math.max(1, Math.min(25, Math.round(v))); }, 1, String));
+  /* The distance a board is seen from lives in the config file, so one line
+     there moves every board on the server. Nudging it here takes that board
+     out of the config's hands and gives it a distance of its own — which is
+     the point of the control, but it is worth being able to tell the two
+     apart, so a board still following the config says so. */
   body.appendChild(beNudge(tx('SEEN FROM'), () => it.distance,
-    (v) => { it.distance = Math.max(3, Math.min(200, v)); }, 5, (n) => Math.round(n) + 'm'));
+    (v) => {
+      it.distance = Math.max(3, Math.min(200, v));
+      it.distanceSet = true;
+    }, 5, (n) => Math.round(n) + 'm' + (it.distanceSet ? '' : ' ·cfg')));
   body.appendChild(beNudge(tx('OPACITY'), () => it.opacity,
     (v) => { it.opacity = Math.max(20, Math.min(255, Math.round(v))); }, 10,
     (n) => Math.round((n / 255) * 100) + '%'));
@@ -4934,7 +4947,8 @@ document.addEventListener('click', (e) => {
       BE.layout.screens.push({
         pos: { x: h.x, y: h.y, z: h.z + 1.35 }, title: '', enabled: true,
         h: (((h.h || 0) + 180) % 360), pitch: 0,
-        width: 6.0, rows: 10, opacity: 255, distance: 35.0
+        width: 6.0, rows: 10, opacity: 255,
+        distance: (BE.defaults && BE.defaults.distance) || 35.0, distanceSet: false
       });
       BE.sel = 's' + (BE.layout.screens.length - 1);
       post('boardEdit', { action: 'here' });

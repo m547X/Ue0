@@ -121,8 +121,21 @@ const beRow = (page, label) => page.locator('#be-body .be-row').filter({
   check('  widened, in metres',     Math.round(sent.layout.screens[0].width * 100) / 100, 7);
   sent = await bump('ROWS', 3);
   check('  given more rows',        sent.layout.screens[0].rows, 13);
+  /* How far a board is seen from comes from the config file, so one line
+     there moves every board on the server. A board only stops listening to
+     that line when somebody sets its own distance here — so a board still
+     following the config says so beside its number, and touching the control
+     is what takes it out of the config's hands. */
+  check('a board on the config distance says so',
+        (await beRow(page, 'SEEN FROM').locator('.be-val').textContent()).includes('cfg'),
+        true);
   sent = await bump('SEEN FROM', 5);
   check('  and seen from further',  sent.layout.screens[0].distance, 43);
+  check('  setting it takes the board off the config',
+        sent.layout.screens[0].distanceSet, true);
+  check('  which the number no longer claims',
+        (await beRow(page, 'SEEN FROM').locator('.be-val').textContent()).includes('cfg'),
+        false);
   sent = await bump('OPACITY', 2);
   check('  it can be faded',        sent.layout.screens[0].opacity, 210);
 

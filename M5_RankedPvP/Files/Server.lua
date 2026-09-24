@@ -7836,7 +7836,8 @@ function WorldBoard.sanitiseLayout(raw)
                 height  = s.height ~= nil and clampNum(s.height, 0.3, 24.0, 2.25) or nil,
                 rows    = math.floor(clampNum(s.rows, 1, 25, 10)),
                 opacity = math.floor(clampNum(s.opacity, 20, 255, 255)),
-                distance = clampNum(s.distance, 3.0, 200.0, 35.0)
+                distance = s.distanceSet == true
+                    and clampNum(s.distance, 3.0, 200.0, 35.0) or nil
             }
         end
     end
@@ -7853,7 +7854,8 @@ function WorldBoard.sanitiseLayout(raw)
         end
     end
 
-    out.podiumDistance = clampNum(raw.podiumDistance, 3.0, 120.0, 25.0)
+    out.podiumDistance = raw.podiumDistanceSet == true
+        and clampNum(raw.podiumDistance, 3.0, 120.0, 25.0) or nil
     out.podiumEnabled  = raw.podiumEnabled ~= false
     out.screensEnabled = raw.screensEnabled ~= false
 

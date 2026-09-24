@@ -244,11 +244,43 @@ function render(d) {
            d.emptyText || 'NO RANKED PLAYERS YET');
 }
 
+let told = false;
+
 window.addEventListener('message', (e) => {
   const d = e.data || {};
-  if (d.action === 'board') render(d);
+  if (d.action !== 'board') return;
+  told = true;
+  render(d);
 });
 
 /* Nothing has been sent yet, so the board says so rather than sitting blank
    while the client works out whether anyone is near enough to see it. */
 render({ rows: [] });
+
+/* A message sent to this page before it had finished loading is not queued
+   anywhere — it is simply gone, and the client has no way of knowing. That is
+   how a board ends up hanging on "no ranked players yet" with a full ladder
+   sitting on the server: one dropped message and the page is never told again,
+   because the standings have not changed since.
+   So the page asks. It says it is here as soon as it is, and keeps saying so
+   until the client answers with some standings. The asking is a timer with no
+   drawing in it, so it costs nothing in the world — a DUI texture is only
+   repainted when the page changes, and a page that is waiting does not. */
+const RES = new URLSearchParams(location.search).get('res') || location.hostname;
+const ASK_EVERY = 900, ASK_TIMES = 15;
+let asks = 0;
+
+function sayHello() {
+  if (told || asks >= ASK_TIMES) return;
+  asks++;
+  try {
+    fetch(`https://${RES}/boardHello`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: '{}'
+    }).catch(() => {});
+  } catch (e) { /* not running inside the game */ }
+  setTimeout(sayHello, ASK_EVERY);
+}
+
+sayHello();

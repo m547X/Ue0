@@ -68,8 +68,19 @@ check('a facing past a full turn wraps round', out.screens[1].h, 40.0)
 out = sanitise(layout({ screens = { screen({ pitch = 200 }) } }))
 check('a tilt past upside down is clamped',    out.screens[1].pitch, 60.0)
 
-out = sanitise(layout({ screens = { screen({ distance = 5000 }) } }))
+-- The distance a board is seen from belongs to the config file, so that one
+-- line moves every board on the server. A board only stops listening to it
+-- when somebody deliberately sets that board's own distance in the editor,
+-- and that is the only case the layout carries one at all.
+out = sanitise(layout({ screens = { screen({ distance = 5000, distanceSet = true }) } }))
 check('a board visible from a kilometre away is clamped', out.screens[1].distance, 200.0)
+out = sanitise(layout({ screens = { screen({ distance = 18 }) } }))
+check('a board nobody set a distance on follows the config',
+      out.screens[1].distance, nil)
+out = sanitise(layout({ podiumDistance = 90 }))
+check('  and so does the podium',       out.podiumDistance, nil)
+out = sanitise(layout({ podiumDistance = 90, podiumDistanceSet = true }))
+check('  unless that was set too',      out.podiumDistance, 90.0)
 
 out = sanitise(layout({ screens = { screen({ rows = 999 }) } }))
 check('the row count is clamped', out.screens[1].rows, 25)

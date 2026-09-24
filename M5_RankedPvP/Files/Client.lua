@@ -2492,9 +2492,37 @@ end
 
 local wbFromConfig = nil
 
+function wbCfgDistance()
+    local sc = (Config.WorldBoard or {}).screens or {}
+    return tonumber(sc.distance) or 35.0
+end
+
+function wbCfgPodiumDistance()
+    local pc = (Config.WorldBoard or {}).podium or {}
+    return tonumber(pc.distance) or 25.0
+end
+
+local function wbFitConfig(l)
+    if not l or l.__cfg then return l end
+    local screens = l.screens or {}
+    local d = wbCfgDistance()
+    for i = 1, #screens do
+        local s = screens[i]
+        s.distanceSet = tonumber(s.distance) ~= nil
+        if not s.distanceSet then s.distance = d end
+    end
+    if tonumber(l.podiumDistance) then
+        l.podiumDistanceSet = true
+    else
+        l.podiumDistance = wbCfgPodiumDistance()
+    end
+    l.__cfg = true
+    return l
+end
+
 local function wbLayout()
     if WB.edit then return WB.edit end
-    if WB.layout then return WB.layout end
+    if WB.layout then return wbFitConfig(WB.layout) end
     local c = Config.WorldBoard or {}
 
     if wbFromConfig then
@@ -2519,10 +2547,11 @@ local function wbLayout()
         screens = {}, podium = {},
         screensEnabled = sc.enabled ~= false,
         podiumEnabled  = pc.enabled ~= false,
-        podiumDistance = tonumber(pc.distance) or 25.0
+        podiumDistance = wbCfgPodiumDistance()
     }
     for i = 1, #(sc.spots or {}) do
         local spot = sc.spots[i]
+        local own  = tonumber(spot.distance)
 
         out.screens[i] = {
             pos      = spot.pos,
@@ -2534,7 +2563,8 @@ local function wbLayout()
             height   = tonumber(spot.height),
             rows     = tonumber(sc.rows) or 10,
             opacity  = tonumber(sc.opacity) or 255,
-            distance = tonumber(sc.distance) or 35.0
+            distance = own or wbCfgDistance(),
+            distanceSet = own ~= nil
         }
     end
     for i = 1, #(pc.spots or {}) do
@@ -2596,6 +2626,9 @@ local DUI = {
     dirty   = false,
     msg     = nil,
     liveAt  = 0,
+    sentAt  = 0,
+    sendN   = nil,
+    hello   = false,
     warned  = false,
     w       = 1280,
     h       = 720,
@@ -2603,6 +2636,7 @@ local DUI = {
 }
 
 local DUI_GRACE = 4000
+local DUI_RESEND = { 500, 1500, 3000, 5000, 8000, 12000 }
 
 local function duiAutoWidth()
     local l = wbLayout() or {}
@@ -2638,7 +2672,8 @@ local function duiSize()
 end
 
 local function duiUrl()
-    return ('nui://%s/Files/ui/board.html'):format(GetCurrentResourceName())
+    local res = GetCurrentResourceName()
+    return ('nui://%s/Files/ui/board.html?res=%s'):format(res, res)
 end
 
 local function duiPush()
@@ -2653,7 +2688,7 @@ local function duiPush()
               .. ':' .. tostring(rows[i].kills) .. ':' .. tostring(rows[i].deaths)
               .. ':' .. tostring(rows[i].wins) .. ':' .. tostring(rows[i].losses)
     end
-    if key == DUI.lastKey then return end
+    if key == DUI.lastKey and DUI.msg then return end
     DUI.lastKey = key
 
     local ui    = Config.UI or {}
@@ -2685,10 +2720,39 @@ local function duiFlush()
         DUI.avail = true
     end
 
-    if not DUI.dirty or not DUI.msg then return end
-    SendDuiMessage(DUI.obj, DUI.msg)
-    DUI.dirty = false
+    if not DUI.msg then return end
+
+    if DUI.dirty then
+        SendDuiMessage(DUI.obj, DUI.msg)
+        DUI.dirty  = false
+        DUI.sentAt = ms()
+        DUI.sendN  = 1
+        return
+    end
+
+    if DUI.hello or not DUI.sendN then return end
+    local at = DUI_RESEND[DUI.sendN]
+    if not at then DUI.sendN = nil return end
+    if (ms() - DUI.sentAt) >= at then
+        DUI.sendN = DUI.sendN + 1
+        SendDuiMessage(DUI.obj, DUI.msg)
+    end
 end
+
+RegisterNUICallback('boardHello', function(_, cb)
+    DUI.hello = true
+    DUI.sendN = nil
+    if DUI.live and DUI.obj and DUI.msg then
+        if DUI.avail or IsDuiAvailable(DUI.obj) then
+            DUI.avail = true
+            SendDuiMessage(DUI.obj, DUI.msg)
+            DUI.dirty = false
+        else
+            DUI.dirty = true
+        end
+    end
+    cb({ ok = true })
+end)
 
 local function duiMakeTxd()
     for i = 0, 9 do
@@ -2707,6 +2771,8 @@ local function duiWake()
     SetDuiUrl(DUI.obj, duiUrl())
     DUI.live    = true
     DUI.avail   = false
+    DUI.hello   = false
+    DUI.sendN   = nil
     DUI.liveAt  = ms()
     DUI.lastKey = ''
     duiPush()
@@ -2744,6 +2810,8 @@ local function duiCreate()
     if not DUI.texObj then return duiFailed('CreateRuntimeTextureFromDuiHandle') end
 
     DUI.ready, DUI.live, DUI.avail = true, true, false
+    DUI.hello   = false
+    DUI.sendN   = nil
     DUI.liveAt  = ms()
     DUI.lastKey = ''
     duiPush()
@@ -2754,6 +2822,8 @@ local function duiPark()
     if not DUI.obj or not DUI.live then return end
     SetDuiUrl(DUI.obj, 'about:blank')
     DUI.live, DUI.avail, DUI.dirty = false, false, false
+    DUI.hello   = false
+    DUI.sendN   = nil
     DUI.lastKey = ''
 end
 
@@ -2762,6 +2832,8 @@ local function duiDestroy()
     DUI.obj, DUI.handle, DUI.txdObj, DUI.texObj = nil, nil, nil, nil
     DUI.made, DUI.ready, DUI.live = false, false, false
     DUI.avail, DUI.dirty, DUI.msg = false, false, nil
+    DUI.hello   = false
+    DUI.sendN   = nil
     DUI.lastKey = ''
 end
 
@@ -3214,7 +3286,8 @@ local function wbEditSnapshot()
     local out = { screens = {}, podium = {},
                   screensEnabled = l.screensEnabled ~= false,
                   podiumEnabled  = l.podiumEnabled ~= false,
-                  podiumDistance = tonumber(l.podiumDistance) or 25.0 }
+                  podiumDistance = tonumber(l.podiumDistance) or wbCfgPodiumDistance(),
+                  podiumDistanceSet = l.podiumDistanceSet == true }
     for i = 1, #l.screens do
         local s = l.screens[i]
         out.screens[i] = {
@@ -3224,7 +3297,8 @@ local function wbEditSnapshot()
             width = tonumber(s.width) or 6.0,
             rows = tonumber(s.rows) or 10, opacity = tonumber(s.opacity) or 255,
             height = tonumber(s.height),
-            distance = tonumber(s.distance) or 35.0
+            distance = tonumber(s.distance) or wbCfgDistance(),
+            distanceSet = s.distanceSet == true
         }
     end
     for i = 1, #l.podium do
@@ -3274,6 +3348,8 @@ local function wbEditPush()
     local c = GetEntityCoords(playerPed())
     nui({ action = 'boardEdit', layout = WB.edit,
           status = wbEditStatus(),
+          defaults = { distance = wbCfgDistance(),
+                       podiumDistance = wbCfgPodiumDistance() },
           here = { x = c.x, y = c.y, z = c.z, h = GetEntityHeading(playerPed()) } })
 end
 
@@ -3293,7 +3369,8 @@ local function wbEditOpen()
             end)(),
             title = 'LEADERBOARD', enabled = true,
             h = ((GetEntityHeading(playerPed()) + 180.0) % 360),
-            pitch = 0.0, width = 6.0, rows = 9, opacity = 255, distance = 35.0
+            pitch = 0.0, width = 6.0, rows = 9, opacity = 255,
+            distance = wbCfgDistance(), distanceSet = false
         }
     end
 
@@ -3827,7 +3904,8 @@ local function wbpPlace()
             pos = { x = WBP.x, y = WBP.y, z = WBP.z + 1.35 },
             title = '', enabled = true,
             h = (h + 180.0) % 360, pitch = 0.0, width = 6.0,
-            rows = 10, opacity = 255, distance = 35.0
+            rows = 10, opacity = 255,
+            distance = wbCfgDistance(), distanceSet = false
         }
         WBW.sel = 's' .. (#WB.edit.screens - 1)
     else
@@ -4075,6 +4153,10 @@ local function wbReport()
     print(('  dui           : made %s  ready %s  live %s  page-open %s  waiting-to-send %s'):format(
         tostring(DUI.made), tostring(DUI.ready), tostring(DUI.live),
         tostring(DUI.avail), tostring(DUI.dirty)))
+    print(('  page answered : %s   resends left %s'):format(
+        tostring(DUI.hello),
+        DUI.hello and 'none needed'
+            or tostring(math.max(0, #DUI_RESEND - ((DUI.sendN or 1) - 1)))))
     print(('  texture       : %s / %s   %dx%d   held %s'):format(
         tostring(DUI.txd), tostring(DUI.tex), DUI.w, DUI.h,
         tostring(DUI.texObj ~= nil)))
@@ -4100,8 +4182,10 @@ local function wbReport()
             i, tonumber(p.x) or 0, tonumber(p.y) or 0, tonumber(p.z) or 0,
             tonumber(s.h) or 0, tonumber(s.pitch) or 0, sw, sh,
             tostring(s.enabled ~= false)))
-        print(('                  you are %.1fm away, seen from %.0fm -> %s, in view -> %s (centre %s)'):format(
-            d, far, d <= far and 'IN RANGE' or 'TOO FAR',
+        print(('                  you are %.1fm away, seen from %.0fm (%s) -> %s, in view -> %s (centre %s)'):format(
+            d, far,
+            s.distanceSet == true and 'set on this screen' or 'Config_Client.lua',
+            d <= far and 'IN RANGE' or 'TOO FAR',
             tostring(onScreen), tostring(centre)))
 
         local tlx, tly, tlz, trx, try, trz, brx, bry, brz, blx, bly, blz = screenCorners(s)

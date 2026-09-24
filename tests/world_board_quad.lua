@@ -47,6 +47,8 @@ ENV.IsDuiAvailable = function() return AVAIL end
 ENV.SendDuiMessage = function(_, m) SENT[#SENT + 1] = m end
 ENV.SetDuiUrl = function(_, u) URLS[#URLS + 1] = u end
 ENV.DestroyDui = function() end
+CB = {}
+ENV.RegisterNUICallback = function(name, fn) CB[name] = fn end
 
 -- the corner maths is the only trigonometry in the hot path, so it is counted
 local TRIG = 0
@@ -260,6 +262,51 @@ check('coming back points it at the board again',
 check('  and nothing is sent until it has opened', #SENT, 0)
 M.flush()
 check('  then the rows go out once more',          #SENT, 1)
+
+-- ==========================================================================
+-- 4. a message nobody received
+-- ==========================================================================
+-- SendDuiMessage into a page that has not finished loading is not queued
+-- anywhere: it is dropped, and there is no way for the client to know. The
+-- standings have not changed since, so the client never sends them again and
+-- the board hangs on "no ranked players yet" with a full ladder on the
+-- server. Both ends now assume the first one went missing — the page asks as
+-- soon as it is up, and the client keeps offering until it hears back.
+SENT, CLOCK = {}, 0
+M.park()
+M.create()
+
+check('the page is told which resource to answer',
+      URLS[#URLS]:find('res=M5_RankedPvP', 1, true) ~= nil, true)
+
+M.flush()
+check('the standings go out as soon as the page is open', #SENT, 1)
+M.flush()
+check('  and not twice in the same frame',                 #SENT, 1)
+
+CLOCK = 600
+M.flush()
+check('a page that has not answered is told again', #SENT, 2)
+CLOCK = 1600
+M.flush()
+check('  and again a moment later',                 #SENT, 3)
+
+CB.boardHello({}, function() end)
+check('a page saying hello is handed the standings there and then', #SENT, 4)
+
+CLOCK = 60000
+for _ = 1, 20 do M.flush() end
+check('  and once it has answered, the offering stops', #SENT, 4)
+
+-- and a page reloaded after being parked is a page that knows nothing again
+SENT, CLOCK = {}, 0
+M.park()
+M.create()
+M.flush()
+check('a reloaded page is told everything afresh', #SENT, 1)
+CLOCK = 600
+M.flush()
+check('  and is chased again until it answers',    #SENT, 2)
 
 M.destroy()
 check('stopping the resource forgets the page', M.dui.ready, false)
